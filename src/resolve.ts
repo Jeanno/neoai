@@ -79,11 +79,25 @@ async function resolveOnce(): Promise<Resolved> {
   )
 }
 
+/**
+ * The caller never picked this model, so they are told which one answered —
+ * once, on stderr, where it cannot corrupt piped stdout.
+ */
+function announce(r: Resolved): void {
+  if (process.env.NEOROUTER_QUIET) return
+  const where = r.local ? 'local' : 'REMOTE — prompts leave this machine'
+  const cold = r.coldStartMs ? `, ${(r.coldStartMs / 1000).toFixed(1)}s cold start` : ''
+  console.error(`neorouter: ${r.backend} · ${r.modelId} · ${where} (${r.rung}${cold})`)
+}
+
 let pending: Promise<Resolved> | null = null
 
 /** Resolution is memoised per process; the first call pays for discovery. */
 export function resolveBackend(): Promise<Resolved> {
-  pending ??= resolveOnce()
+  pending ??= resolveOnce().then((r) => {
+    announce(r)
+    return r
+  })
   return pending
 }
 
