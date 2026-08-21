@@ -40,7 +40,7 @@ async function fromServers(servers: Server[], rung: 'reachable' | 'launched') {
 async function resolveOnce(): Promise<Resolved> {
   const rejected: { id: string; why: string }[] = []
   // Debug escape hatch for exercising a rung that would otherwise never win.
-  const only = process.env.NEOADAPTER_ONLY_RUNG
+  const only = process.env.NEOROUTER_ONLY_RUNG
 
   // Rung 1 — something is already listening.
   const reachable = only && only !== 'reachable' ? [] : await reachableServers()
@@ -75,7 +75,7 @@ async function resolveOnce(): Promise<Resolved> {
   }
 
   throw new Error(
-    'neoadapter: nothing to talk to — no local server, no installed runtime, no network.',
+    'neorouter: nothing to talk to — no local server, no installed runtime, no network.',
   )
 }
 

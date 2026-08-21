@@ -67,14 +67,14 @@ function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean) {
       ...(o.topP != null && { top_p: o.topP }),
       ...(o.stopSequences?.length && { stop: o.stopSequences }),
       // Pollinations asks callers to identify themselves; harmless elsewhere.
-      ...(r.backend === 'pollinations' && { referrer: 'neoadapter' }),
+      ...(r.backend === 'pollinations' && { referrer: 'neorouter' }),
     },
   }
 }
 
 function metadata(r: Resolved) {
   return {
-    neoadapter: {
+    neorouter: {
       backend: r.backend,
       rung: r.rung,
       local: r.local,
@@ -130,7 +130,7 @@ async function send(
   hosted: boolean,
   attempt = 0,
 ): Promise<Response> {
-  if (process.env.NEOADAPTER_DEBUG) console.error('POST', url, JSON.stringify(payload))
+  if (process.env.NEOROUTER_DEBUG) console.error('POST', url, JSON.stringify(payload))
   let res: Response
   try {
     res = await fetchWithHeaderDeadline(url, payload, hosted ? HOSTED_HEADER_TIMEOUT_MS : null)
@@ -139,7 +139,7 @@ async function send(
       await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt))
       return send(url, payload, hosted, attempt + 1)
     }
-    throw new Error(`neoadapter: ${url} did not respond (${String(e)})`)
+    throw new Error(`neorouter: ${url} did not respond (${String(e)})`)
   }
   if (res.ok) return res
   if (TRANSIENT.has(res.status) && attempt < 3) {
@@ -147,7 +147,7 @@ async function send(
     await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt))
     return send(url, payload, hosted, attempt + 1)
   }
-  throw new Error(`neoadapter: ${url} responded ${res.status} ${await res.text()}`)
+  throw new Error(`neorouter: ${url} responded ${res.status} ${await res.text()}`)
 }
 
 function post(url: string, payload: unknown, hosted: boolean): Promise<Response> {
@@ -160,7 +160,7 @@ class AutoModel implements LanguageModelV2 {
   private resolution: Resolved | null = null
 
   get provider() {
-    return this.resolution ? `neoadapter:${this.resolution.backend}` : 'neoadapter'
+    return this.resolution ? `neorouter:${this.resolution.backend}` : 'neorouter'
   }
 
   get modelId() {

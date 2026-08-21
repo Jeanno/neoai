@@ -29,7 +29,7 @@ console.log()
 // process that still holds memory, and what we passed over on the way.
 
 console.log((await result.response).modelId)
-console.log((await result.providerMetadata)?.neoadapter)
+console.log((await result.providerMetadata)?.neorouter)
 
 // ─── 4. Shorthand ────────────────────────────────────────────────────────────
 
