@@ -193,13 +193,17 @@ async function fetchWithHeaderDeadline(
   url: string,
   payload: unknown,
   ms: number | null,
+  auth?: string,
 ): Promise<Response> {
   const ctrl = new AbortController()
   const timer = ms == null ? null : setTimeout(() => ctrl.abort(), ms)
   try {
     return await fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(auth && { authorization: `Bearer ${auth}` }),
+      },
       body: JSON.stringify(payload),
       signal: ctrl.signal,
     })
@@ -214,16 +218,17 @@ async function send(
   url: string,
   payload: unknown,
   hosted: boolean,
+  auth?: string,
   attempt = 0,
 ): Promise<Response> {
   if (process.env.NEOROUTER_DEBUG) console.error('POST', url, JSON.stringify(payload))
   let res: Response
   try {
-    res = await fetchWithHeaderDeadline(url, payload, hosted ? HOSTED_HEADER_TIMEOUT_MS : null)
+    res = await fetchWithHeaderDeadline(url, payload, hosted ? HOSTED_HEADER_TIMEOUT_MS : null, auth)
   } catch (e) {
     if (hosted && attempt < 3) {
       await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt))
-      return send(url, payload, hosted, attempt + 1)
+      return send(url, payload, hosted, auth, attempt + 1)
     }
     throw new Error(`neorouter: ${url} did not respond (${String(e)})`)
   }
@@ -231,13 +236,22 @@ async function send(
   if (TRANSIENT.has(res.status) && attempt < 3) {
     // Seconds, not milliseconds: a fast retry re-enters a queue we just filled.
     await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt))
-    return send(url, payload, hosted, attempt + 1)
+    return send(url, payload, hosted, auth, attempt + 1)
   }
   throw new Error(`neorouter: ${url} responded ${res.status} ${await res.text()}`)
 }
 
-function post(url: string, payload: unknown, hosted: boolean): Promise<Response> {
-  return hosted ? serialize(() => send(url, payload, true)) : send(url, payload, false)
+/**
+ * Only the anonymous tier needs pacing. OpenRouter is authenticated and takes
+ * concurrent requests, so serialising it would cost 3s a call for nothing.
+ */
+function post(url: string, payload: unknown, r: Resolved): Promise<Response> {
+  const hosted = !r.local
+  const auth = r.server.auth
+  const paced = hosted && r.backend === 'pollinations'
+  return paced
+    ? serialize(() => send(url, payload, true, auth))
+    : send(url, payload, hosted, auth)
 }
 
 class AutoModel implements LanguageModelV2 {
@@ -265,7 +279,7 @@ class AutoModel implements LanguageModelV2 {
   async doGenerate(options: LanguageModelV2CallOptions) {
     const r = await this.ready()
     const { payload, warnings } = body(options, r, false, this.think)
-    const res = await post(chatEndpoint(r.server, r.backend), payload, !r.local)
+    const res = await post(chatEndpoint(r.server, r.backend), payload, r)
     const json = (await res.json()) as any
     const choice = json.choices?.[0]
     return {
@@ -311,9 +325,11 @@ class AutoModel implements LanguageModelV2 {
     // The keyless tier accepts `stream: true` and then never sends headers, so
     // on that rung we generate once and emit the result as deltas. Callers get
     // a working stream instead of a hang; only the token-by-token pacing is lost.
-    if (!r.local) return this.simulateStream(options)
+    // Only the keyless tier accepts `stream: true` and then never sends headers;
+    // an authenticated backend streams properly and should not be faked.
+    if (r.backend === 'pollinations') return this.simulateStream(options)
     const { payload, warnings } = body(options, r, true, this.think)
-    const res = await post(chatEndpoint(r.server, r.backend), payload, !r.local)
+    const res = await post(chatEndpoint(r.server, r.backend), payload, r)
     const id = 'txt-0'
 
     const stream = new ReadableStream<LanguageModelV2StreamPart>({

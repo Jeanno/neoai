@@ -63,7 +63,7 @@ async function resolveOnce(prefer?: Prefer): Promise<Resolved> {
   // Rung 3 — off the machine.
   const [hosted] = await hostedServers()
   if (hosted) {
-    const models = await hostedModels()
+    const models = await hostedModels(hosted)
     return {
       rung: 'hosted',
       backend: hosted.backend,
@@ -71,7 +71,10 @@ async function resolveOnce(prefer?: Prefer): Promise<Resolved> {
       modelId: models[0] ?? 'openai',
       local: false,
       contextWindow: 8192,
-      reason: 'no usable local model; fell through to a keyless hosted endpoint',
+      reason:
+        hosted.backend === 'openrouter'
+          ? 'no usable local model; fell through to a free model on OpenRouter'
+          : 'no usable local model; fell through to a keyless hosted endpoint',
       rejected,
       server: hosted,
     }

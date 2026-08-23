@@ -13,6 +13,8 @@ export interface Hardware {
 }
 
 export interface Server {
+  /** Bearer token, when the backend needs one. Never included in metadata. */
+  auth?: string
   backend: string
   baseURL: string
   /** Ollama needs its native API for model sizes; everything else is OpenAI-shaped. */

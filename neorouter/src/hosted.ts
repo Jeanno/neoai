@@ -1,4 +1,5 @@
 import type { Server } from './types.ts'
+import { readKey } from './config.ts'
 
 /**
  * Keyless endpoints. This tier is inherently unstable — anything free and
@@ -13,7 +14,21 @@ const HOSTED: (Server & { probe: string })[] = [
   },
 ]
 
+const OPENROUTER = 'https://openrouter.ai/api/v1'
+
+/**
+ * Above the keyless tier when a key is present: it streams, it does not need
+ * pacing, and its free models are far beyond anything anonymous. Absent a key
+ * the rung simply does not exist, so nothing has to be configured to get the
+ * old behaviour.
+ */
+async function openrouter(): Promise<Server | null> {
+  const key = await readKey('openrouterKey')
+  return key ? { backend: 'openrouter', baseURL: OPENROUTER, auth: key } : null
+}
+
 export async function hostedServers(): Promise<Server[]> {
+  const keyed = await openrouter()
   const hits = await Promise.all(
     HOSTED.map(async (h) => {
       try {
@@ -24,10 +39,18 @@ export async function hostedServers(): Promise<Server[]> {
       }
     }),
   )
-  return hits.filter((s): s is Server => s !== null)
+  return [...(keyed ? [keyed] : []), ...hits.filter((s): s is Server => s !== null)]
 }
 
-export async function hostedModels(): Promise<string[]> {
+export async function hostedModels(server?: Server): Promise<string[]> {
+  if (server?.backend === 'openrouter') {
+    try {
+      const r = await fetch(`${OPENROUTER}/models`, { signal: AbortSignal.timeout(8000) })
+      return freeChatModels(await r.json())
+    } catch {
+      return []
+    }
+  }
   try {
     const r = await fetch('https://text.pollinations.ai/models', {
       signal: AbortSignal.timeout(4000),
@@ -63,4 +86,24 @@ export function serialize<T>(fn: () => Promise<T>): Promise<T> {
   const next = tail.then(run, run)
   tail = next.catch(() => {})
   return next
+}
+
+/**
+ * Free ids come and go, so the choice is made from the live catalogue rather
+ * than hardcoded. Selects on what a model *outputs*: several free models accept
+ * images or video and answer in text, and requiring an exact 'text->text'
+ * modality would drop the strongest of them.
+ */
+export function freeChatModels(catalog: any): string[] {
+  const models = catalog?.data
+  if (!Array.isArray(models)) return []
+  return models
+    .filter(
+      (m: any) =>
+        m?.pricing?.prompt === '0' &&
+        m?.pricing?.completion === '0' &&
+        String(m?.architecture?.modality ?? '').endsWith('->text'),
+    )
+    .sort((a: any, b: any) => (b.context_length ?? 0) - (a.context_length ?? 0))
+    .map((m: any) => m.id)
 }
