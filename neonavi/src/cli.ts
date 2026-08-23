@@ -2,6 +2,7 @@
 import { generateText, stepCountIs, type ModelMessage } from 'ai'
 import { auto } from 'neorouter'
 import { homedir } from 'node:os'
+import { readdir } from 'node:fs/promises'
 import { promptFrom, systemPrompt } from './args.ts'
 import { makeApprover } from './approve.ts'
 import { makeTools } from './tools.ts'
@@ -36,6 +37,7 @@ async function main() {
   }
 
   const cwd = process.cwd()
+  const entries = await readdir(cwd).catch(() => [])
   const file = sessionFile(cwd, homedir())
   const history = fresh.value === undefined ? trim(await loadSession(file)) : []
   if (history.length) console.error(dim(`· continuing (${history.length} messages)`))
@@ -45,7 +47,7 @@ async function main() {
   try {
     const { text, response } = await generateText({
       model: auto({ prefer: 'fast', think: false }),
-      system: systemPrompt(cwd),
+      system: systemPrompt(cwd, entries),
       tools: makeTools({ approve }),
       stopWhen: stepCountIs(maxSteps),
       messages,

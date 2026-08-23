@@ -53,3 +53,20 @@ test('still reads the answer when asked well after construction', async () => {
   assert.equal(await approve('echo hi'), true)
   close()
 })
+
+test('lists what is in the working directory so the model need not guess', () => {
+  const p = systemPrompt('/tmp/x', ['neonavi', 'neorouter', 'package.json'])
+  assert.match(p, /neonavi/)
+  assert.match(p, /neorouter/)
+  assert.match(p, /package\.json/)
+})
+
+// It answered "I cannot see its contents" while holding read_file and list_dir.
+test('forbids answering from a name instead of looking', () => {
+  assert.match(systemPrompt('/tmp/x', []), /never (guess|answer).*name|do not guess/i)
+})
+
+// "list the dir" resolved to a directory discussed in an earlier turn.
+test('pins bare references like "the dir" to the working directory', () => {
+  assert.match(systemPrompt('/tmp/x', []), /"the dir"|the directory|here/i)
+})
