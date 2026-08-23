@@ -124,7 +124,18 @@ export function fromChoice(choice: any): LanguageModelV2Content[] {
   return [{ type: 'text' as const, text: choice?.message?.content ?? '' }]
 }
 
-function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean) {
+/**
+ * Measured on ollama 0.32.15 / qwen3.5:2b: a reasoning model spends ~120 tokens
+ * of thinking per token of answer, and in an agent loop it will exhaust its
+ * budget mid-thought and return nothing at all. 'none' is the only knob that
+ * works here — `think: false` is silently ignored on the OpenAI-shaped endpoint.
+ * Only ollama is measured, so only ollama is asked.
+ */
+export function reasoningEffort(server: Server, think: boolean | undefined): 'none' | undefined {
+  return server.native === 'ollama' && think === false ? 'none' : undefined
+}
+
+function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean, think?: boolean) {
   const { messages, warnings } = toMessages(o.prompt)
   const tools = o.tools?.length ? toolsPayload(o.tools) : undefined
   return {
@@ -139,6 +150,7 @@ function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean) {
       ...(o.stopSequences?.length && { stop: o.stopSequences }),
       ...(tools?.length && { tools }),
       ...(o.toolChoice?.type === 'required' && { tool_choice: 'required' }),
+      ...(reasoningEffort(r.server, think) && { reasoning_effort: reasoningEffort(r.server, think) }),
       ...(responseFormat(o) && { response_format: responseFormat(o) }),
       // Pollinations asks callers to identify themselves; harmless elsewhere.
       ...(r.backend === 'pollinations' && { referrer: 'neorouter' }),
@@ -233,7 +245,10 @@ class AutoModel implements LanguageModelV2 {
   readonly supportedUrls = {}
   private resolution: Resolved | null = null
 
-  constructor(private readonly prefer?: Prefer) {}
+  constructor(
+    private readonly prefer?: Prefer,
+    private readonly think?: boolean,
+  ) {}
 
   get provider() {
     return this.resolution ? `neorouter:${this.resolution.backend}` : 'neorouter'
@@ -249,7 +264,7 @@ class AutoModel implements LanguageModelV2 {
 
   async doGenerate(options: LanguageModelV2CallOptions) {
     const r = await this.ready()
-    const { payload, warnings } = body(options, r, false)
+    const { payload, warnings } = body(options, r, false, this.think)
     const res = await post(chatEndpoint(r.server, r.backend), payload, !r.local)
     const json = (await res.json()) as any
     const choice = json.choices?.[0]
@@ -297,7 +312,7 @@ class AutoModel implements LanguageModelV2 {
     // on that rung we generate once and emit the result as deltas. Callers get
     // a working stream instead of a hang; only the token-by-token pacing is lost.
     if (!r.local) return this.simulateStream(options)
-    const { payload, warnings } = body(options, r, true)
+    const { payload, warnings } = body(options, r, true, this.think)
     const res = await post(chatEndpoint(r.server, r.backend), payload, !r.local)
     const id = 'txt-0'
 
@@ -351,10 +366,12 @@ class AutoModel implements LanguageModelV2 {
 export interface AutoOptions {
   /** 'fast' picks the smallest usable model instead of the largest that fits. */
   prefer?: Prefer
+  /** false asks a reasoning model to skip thinking. Left alone by default. */
+  think?: boolean
 }
 
 export function auto(options: AutoOptions = {}): LanguageModelV2 {
-  return new AutoModel(options.prefer)
+  return new AutoModel(options.prefer, options.think)
 }
 
 auto.shutdown = shutdown

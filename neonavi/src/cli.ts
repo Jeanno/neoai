@@ -24,7 +24,7 @@ async function main() {
   const { approve, close } = makeApprover({ input: process.stdin, output: process.stdout })
   try {
     const { text, steps } = await generateText({
-      model: auto({ prefer: 'fast' }),
+      model: auto({ prefer: 'fast', think: false }),
       system: systemPrompt(process.cwd()),
       tools: makeTools({ approve }),
       stopWhen: stepCountIs(maxSteps),
