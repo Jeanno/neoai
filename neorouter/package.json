@@ -8,6 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
     "example": "tsx example.ts",
     "inspect": "tsx src/cli.ts",
     "example:streaming": "tsx examples/streaming.ts",

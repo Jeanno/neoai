@@ -1,5 +1,6 @@
 import type {
   LanguageModelV2,
+  LanguageModelV2Content,
   LanguageModelV2CallOptions,
   LanguageModelV2CallWarning,
   LanguageModelV2FinishReason,
@@ -17,12 +18,20 @@ function chatEndpoint(server: Server, backend: string): string {
   return `${server.baseURL}/chat/completions`
 }
 
+interface OaiToolCall {
+  id: string
+  type: 'function'
+  function: { name: string; arguments: string }
+}
+
 interface OaiMessage {
   role: string
   content: string
+  tool_calls?: OaiToolCall[]
+  tool_call_id?: string
 }
 
-function toMessages(prompt: LanguageModelV2CallOptions['prompt']): {
+export function toMessages(prompt: LanguageModelV2CallOptions['prompt']): {
   messages: OaiMessage[]
   warnings: LanguageModelV2CallWarning[]
 } {
@@ -35,17 +44,30 @@ function toMessages(prompt: LanguageModelV2CallOptions['prompt']): {
       continue
     }
     if (m.role === 'tool') {
-      warnings.push({ type: 'other', message: 'tool results are not supported yet' })
+      for (const p of m.content)
+        messages.push({ role: 'tool', tool_call_id: p.toolCallId, content: outputText(p.output) })
       continue
     }
+    const calls: OaiToolCall[] = []
     const text = m.content
       .map((p) => {
         if (p.type === 'text') return p.text
+        if (p.type === 'tool-call') {
+          calls.push({
+            id: p.toolCallId,
+            type: 'function',
+            function: { name: p.toolName, arguments: JSON.stringify(p.input ?? {}) },
+          })
+          return ''
+        }
         warnings.push({ type: 'other', message: `dropped unsupported ${p.type} part` })
         return ''
       })
       .join('')
-    if (text) messages.push({ role: m.role, content: text })
+    // An assistant turn that only called a tool still has to appear in history,
+    // or the tool result that follows refers to a call the model never made.
+    if (calls.length) messages.push({ role: m.role, content: text, tool_calls: calls })
+    else if (text) messages.push({ role: m.role, content: text })
   }
   return { messages, warnings }
 }
@@ -66,10 +88,51 @@ function responseFormat(o: LanguageModelV2CallOptions) {
   }
 }
 
+/** The AI SDK's tool-result output is a tagged union; the wire wants a string. */
+function outputText(output: any): string {
+  if (output == null) return ''
+  if (output.type === 'text' || output.type === 'error-text') return String(output.value)
+  return JSON.stringify(output.value ?? output)
+}
+
+export function toolsPayload(tools: readonly any[]): unknown[] {
+  return tools
+    .filter((t) => t.type === 'function')
+    .map((t) => ({
+      type: 'function',
+      function: {
+        name: t.name,
+        ...(t.description && { description: t.description }),
+        parameters: t.inputSchema,
+      },
+    }))
+}
+
+export function fromChoice(choice: any): LanguageModelV2Content[] {
+  const calls = choice?.message?.tool_calls ?? []
+  if (calls.length)
+    return calls.map((c: any) => ({
+      type: 'tool-call' as const,
+      toolCallId: c.id,
+      toolName: c.function?.name,
+      input: parseArgs(c.function?.arguments),
+    }))
+  return [{ type: 'text' as const, text: choice?.message?.content ?? '' }]
+}
+
+/** A small model will occasionally emit arguments that are not valid JSON. */
+function parseArgs(raw: unknown): unknown {
+  if (typeof raw !== 'string') return raw ?? {}
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return {}
+  }
+}
+
 function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean) {
   const { messages, warnings } = toMessages(o.prompt)
-  if (o.tools?.length)
-    warnings.push({ type: 'other', message: 'tool calling is not supported yet' })
+  const tools = o.tools?.length ? toolsPayload(o.tools) : undefined
   return {
     warnings,
     payload: {
@@ -80,6 +143,8 @@ function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean) {
       ...(o.temperature != null && { temperature: o.temperature }),
       ...(o.topP != null && { top_p: o.topP }),
       ...(o.stopSequences?.length && { stop: o.stopSequences }),
+      ...(tools?.length && { tools }),
+      ...(o.toolChoice?.type === 'required' && { tool_choice: 'required' }),
       ...(responseFormat(o) && { response_format: responseFormat(o) }),
       // Pollinations asks callers to identify themselves; harmless elsewhere.
       ...(r.backend === 'pollinations' && { referrer: 'neorouter' }),
@@ -193,7 +258,7 @@ class AutoModel implements LanguageModelV2 {
     const json = (await res.json()) as any
     const choice = json.choices?.[0]
     return {
-      content: [{ type: 'text' as const, text: choice?.message?.content ?? '' }],
+      content: fromChoice(choice),
       finishReason: FINISH[choice?.finish_reason] ?? 'unknown',
       usage: {
         inputTokens: json.usage?.prompt_tokens,
