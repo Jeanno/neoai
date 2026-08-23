@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { stat } from 'node:fs/promises'
 import { sessionFile, loadSession, saveSession, trim } from '../src/session.ts'
 
 const msg = (role: 'user' | 'assistant', text: string) => ({ role, content: text }) as any
@@ -12,6 +13,22 @@ test('each directory gets its own session file', () => {
   const b = sessionFile('/Users/x/projects/two', '/home')
 
   assert.notEqual(a, b)
+})
+
+test('history lives beside the config, in one app directory', () => {
+  assert.match(sessionFile('/Users/x/one', '/home'), /^\/home\/\.neoai\/sessions\//)
+})
+
+// These files hold whatever navi has read: file contents, shell output. They
+// were world-readable at 0755.
+test('the session directory is not readable by other users', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'navi-p-'))
+  const file = join(dir, 'sessions', 's.json')
+
+  await saveSession(file, [msg('user', 'secret')])
+
+  const mode = (await stat(join(dir, 'sessions'))).mode & 0o777
+  assert.equal(mode.toString(8), '700')
 })
 
 test('the same directory always maps to the same file', () => {

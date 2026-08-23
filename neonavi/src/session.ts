@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { ModelMessage } from 'ai'
+import { sessionsDir } from 'neorouter'
 
 /** Turns to carry forward. Enough to follow up, short of filling the context. */
 export const KEEP_TURNS = 20
@@ -13,7 +14,7 @@ export const KEEP_TURNS = 20
  */
 export function sessionFile(cwd: string, home: string): string {
   const key = createHash('sha256').update(cwd).digest('hex').slice(0, 16)
-  return join(home, '.neonavi', 'sessions', `${key}.json`)
+  return join(sessionsDir(home), `${key}.json`)
 }
 
 export async function loadSession(file: string): Promise<ModelMessage[]> {
@@ -27,8 +28,10 @@ export async function loadSession(file: string): Promise<ModelMessage[]> {
 }
 
 export async function saveSession(file: string, messages: ModelMessage[]): Promise<void> {
-  await mkdir(dirname(file), { recursive: true })
-  await writeFile(file, JSON.stringify(messages, null, 2))
+  // 0700: these files hold whatever navi has read — file contents, shell
+  // output — so they are nobody else's business on a shared machine.
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 })
+  await writeFile(file, JSON.stringify(messages, null, 2), { mode: 0o600 })
 }
 
 export function trim(messages: ModelMessage[], keep = KEEP_TURNS): ModelMessage[] {
