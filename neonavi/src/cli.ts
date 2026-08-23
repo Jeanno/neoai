@@ -7,6 +7,7 @@ import { modelOptions, promptFrom, systemPrompt } from './args.ts'
 import { makeApprover } from './approve.ts'
 import { makeTools } from './tools.ts'
 import { loadSession, saveSession, sessionFile, trim } from './session.ts'
+import { collectContext } from './context.ts'
 
 const DEFAULT_STEPS = 8
 
@@ -48,6 +49,7 @@ async function main() {
 
   const cwd = process.cwd()
   const entries = await readdir(cwd).catch(() => [])
+  const context = await collectContext(cwd)
   const file = sessionFile(cwd, homedir())
   const history = fresh.value === undefined ? trim(await loadSession(file)) : []
   if (history.length) console.error(dim(`· continuing (${history.length} messages)`))
@@ -57,7 +59,7 @@ async function main() {
   try {
     const { text, response } = await generateText({
       model: auto(options),
-      system: systemPrompt(cwd, entries),
+      system: systemPrompt(cwd, entries, context),
       tools: makeTools({ approve }),
       stopWhen: stepCountIs(maxSteps),
       messages,

@@ -74,3 +74,8 @@ test('pins bare references like "the dir" to the working directory', () => {
 test('points the model at search before it starts opening files', () => {
   assert.match(systemPrompt('/tmp/x', []), /grep/)
 })
+
+test('folds the project context file into the prompt when there is one', () => {
+  const p = systemPrompt('/tmp/x', [], 'neonavi is a CLI agent.')
+  assert.match(p, /neonavi is a CLI agent/)
+})

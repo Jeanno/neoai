@@ -14,7 +14,7 @@ export function promptFrom(argv: string[]): string | null {
  * "list the dir" resolving to a directory from an earlier turn instead of here.
  * The listing is included so looking around is free and guessing has no excuse.
  */
-export function systemPrompt(cwd: string, entries: string[] = []): string {
+export function systemPrompt(cwd: string, entries: string[] = [], context = ''): string {
   const here = entries.length ? entries.join(', ') : '(empty)'
   return [
     'You are navi, a command-line assistant.',
@@ -28,6 +28,9 @@ export function systemPrompt(cwd: string, entries: string[] = []): string {
     'files one at a time — one search beats four reads.',
     'run_shell asks the user for approval every time; if they decline, do not retry it.',
     'When you have the answer, state it plainly. Do not narrate your tool use.',
+    ...(context
+      ? ['', 'What this project is, from its own NAVI.md files:', context]
+      : []),
   ].join('\n')
 }
 
