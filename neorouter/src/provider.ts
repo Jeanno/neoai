@@ -7,7 +7,7 @@ import type {
   LanguageModelV2StreamPart,
 } from '@ai-sdk/provider'
 import type { Resolved } from './resolve.ts'
-import { resolveBackend } from './resolve.ts'
+import { resolveBackend, type Scope } from './resolve.ts'
 import { shutdown } from './launch.ts'
 import { serialize } from './hosted.ts'
 import type { Prefer, Server } from './types.ts'
@@ -263,6 +263,8 @@ class AutoModel implements LanguageModelV2 {
     private readonly prefer?: Prefer,
     private readonly think?: boolean,
     private readonly remote?: boolean,
+    private readonly pinned?: string,
+    private readonly scope?: Scope,
   ) {}
 
   get provider() {
@@ -274,7 +276,7 @@ class AutoModel implements LanguageModelV2 {
   }
 
   private async ready(): Promise<Resolved> {
-    return (this.resolution ??= await resolveBackend(this.prefer, this.remote))
+    return (this.resolution ??= await resolveBackend(this.prefer, this.remote, this.pinned, this.scope))
   }
 
   async doGenerate(options: LanguageModelV2CallOptions) {
@@ -387,10 +389,14 @@ export interface AutoOptions {
   think?: boolean
   /** true tries the hosted rung before the local ones, still falling back. */
   remote?: boolean
+  /** Pin an exact model id instead of letting neorouter rank. */
+  model?: string
+  /** Restrict resolution to one class of backend, for chain callers. */
+  scope?: Scope
 }
 
 export function auto(options: AutoOptions = {}): LanguageModelV2 {
-  return new AutoModel(options.prefer, options.think, options.remote)
+  return new AutoModel(options.prefer, options.think, options.remote, options.model, options.scope)
 }
 
 auto.shutdown = shutdown

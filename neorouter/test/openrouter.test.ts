@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { freeChatModels } from '../src/hosted.ts'
+import { catalogIds, freeChatModels } from '../src/hosted.ts'
 
 const catalog = {
   data: [
@@ -63,4 +63,20 @@ test('puts the roomiest free chat model first', () => {
 test('an unexpected catalogue shape yields nothing rather than throwing', () => {
   assert.deepEqual(freeChatModels({} as any), [])
   assert.deepEqual(freeChatModels(null as any), [])
+})
+
+// A pinned id must be checked against the catalogue. Accepting a typo as
+// resolved defeats the chain: the link "succeeds" and nothing falls through.
+test('the catalogue lists every id, not only the free ones', () => {
+  assert.deepEqual(catalogIds(catalog).sort(), [
+    'audio/lyria:free',
+    'nvidia/big:free',
+    'paid/good',
+    'small/tiny:free',
+    'stealth/multi:free',
+  ])
+})
+
+test('an unexpected catalogue shape lists nothing', () => {
+  assert.deepEqual(catalogIds(null as any), [])
 })

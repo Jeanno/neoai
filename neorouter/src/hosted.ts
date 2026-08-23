@@ -42,15 +42,27 @@ export async function hostedServers(): Promise<Server[]> {
   return [...(keyed ? [keyed] : []), ...hits.filter((s): s is Server => s !== null)]
 }
 
-export async function hostedModels(server?: Server): Promise<string[]> {
-  if (server?.backend === 'openrouter') {
-    try {
-      const r = await fetch(`${OPENROUTER}/models`, { signal: AbortSignal.timeout(8000) })
-      return freeChatModels(await r.json())
-    } catch {
-      return []
-    }
+async function openrouterCatalog(): Promise<any> {
+  try {
+    const r = await fetch(`${OPENROUTER}/models`, { signal: AbortSignal.timeout(8000) })
+    return await r.json()
+  } catch {
+    return null
   }
+}
+
+/**
+ * Whether a pinned model is really on offer. Checked against the whole
+ * catalogue, not the free subset, so pinning a paid model is allowed — but a
+ * typo fails the link instead of resolving and blowing up at request time.
+ */
+export async function hostedHasModel(server: Server, id: string): Promise<boolean> {
+  if (server.backend !== 'openrouter') return true
+  return catalogIds(await openrouterCatalog()).includes(id)
+}
+
+export async function hostedModels(server?: Server): Promise<string[]> {
+  if (server?.backend === 'openrouter') return freeChatModels(await openrouterCatalog())
   try {
     const r = await fetch('https://text.pollinations.ai/models', {
       signal: AbortSignal.timeout(4000),
@@ -94,6 +106,12 @@ export function serialize<T>(fn: () => Promise<T>): Promise<T> {
  * images or video and answer in text, and requiring an exact 'text->text'
  * modality would drop the strongest of them.
  */
+/** Every id on offer, free or paid: what a pinned model is checked against. */
+export function catalogIds(catalog: any): string[] {
+  const models = catalog?.data
+  return Array.isArray(models) ? models.map((m: any) => m?.id).filter(Boolean) : []
+}
+
 export function freeChatModels(catalog: any): string[] {
   const models = catalog?.data
   if (!Array.isArray(models)) return []

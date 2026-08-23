@@ -1,5 +1,6 @@
 {
   "keys": {
     "openrouter": "sk-or-..."
-  }
+  },
+  "model": ["remote", "local"]
 }

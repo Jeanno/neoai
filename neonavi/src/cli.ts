@@ -3,11 +3,13 @@ import { generateText, stepCountIs, type ModelMessage } from 'ai'
 import { auto } from 'neorouter'
 import { homedir } from 'node:os'
 import { readdir } from 'node:fs/promises'
-import { modelOptions, promptFrom, systemPrompt } from './args.ts'
+import { promptFrom, systemPrompt } from './args.ts'
+import { parseModelSpec, resolveChain } from './spec.ts'
 import { makeApprover } from './approve.ts'
 import { makeTools } from './tools.ts'
 import { loadSession, saveSession, sessionFile, trim } from './session.ts'
 import { collectContext } from './context.ts'
+import { readConfig } from 'neorouter'
 
 const DEFAULT_STEPS = 8
 
@@ -32,9 +34,16 @@ async function main() {
   const model = takeFlag(argv, '--model', true)
   argv = model.rest
 
-  const options = modelOptions(model.value)
-  if (!options) {
-    console.error(`unknown --model ${model.value}; expected fast or best`)
+  // --model overrides the config file for one run; both take the same values.
+  const config = await readConfig()
+  const chain = parseModelSpec(model.value ?? config.model)
+  const chosen = await resolveChain(chain)
+  if (!chosen) {
+    console.error(
+      `nothing in the model chain could be resolved: ${chain
+        .map((e) => e.id ?? e.where)
+        .join(' → ')}`,
+    )
     return 1
   }
 
@@ -42,7 +51,7 @@ async function main() {
   const prompt = promptFrom(argv)
   if (!prompt) {
     console.error(
-      'usage: navi <what you want done>   [--new] [--model fast|best] [--max-steps N]',
+      'usage: navi <what you want done>   [--new] [--model remote|local|<id>[,...]] [--max-steps N]',
     )
     return 1
   }
@@ -58,7 +67,7 @@ async function main() {
   const { approve, close } = makeApprover({ input: process.stdin, output: process.stdout })
   try {
     const { text, response } = await generateText({
-      model: auto(options),
+      model: auto(chosen.options),
       system: systemPrompt(cwd, entries, context),
       tools: makeTools({ approve }),
       stopWhen: stepCountIs(maxSteps),

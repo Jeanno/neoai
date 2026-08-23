@@ -83,3 +83,15 @@ export async function rank(
   const better = prefer === 'fast' ? (a: Candidate, b: Candidate) => a.score - b.score : (a: Candidate, b: Candidate) => b.score - a.score
   return all.flat().sort((a, b) => Number(!!a.reject) - Number(!!b.reject) || better(a, b))
 }
+
+/**
+ * The chosen candidate, or null when nothing is usable. A pinned id is honoured
+ * only if that model is actually present and usable: pinning something absent
+ * has to fail this link of the chain so the next one is tried, rather than
+ * quietly answering with a different model than the one asked for.
+ */
+export function pick(all: Candidate[], id?: string): Candidate | null {
+  const usable = all.filter((c) => !c.reject)
+  if (!id) return usable[0] ?? null
+  return usable.find((c) => c.id === id) ?? null
+}

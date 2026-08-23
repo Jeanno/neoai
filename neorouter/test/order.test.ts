@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rungOrder } from '../src/resolve.ts'
+import { rungOrder, rungsFor } from '../src/resolve.ts'
 
 test('local first by default: nothing leaves the machine unasked', () => {
   assert.deepEqual(rungOrder(false), ['reachable', 'launched', 'keyed', 'keyless'])
@@ -24,4 +24,26 @@ test('the keyless tier is last in both orders, below local', () => {
     assert.ok(order.indexOf('reachable') < order.indexOf('keyless'))
     assert.ok(order.indexOf('launched') < order.indexOf('keyless'))
   }
+})
+
+// With an explicit chain, the chain IS the fallback: each link resolves exactly
+// one class of backend, or fails so the next link is tried. Otherwise a link
+// quietly lands somewhere the caller never named — a typo'd remote id fell
+// through to the anonymous tier rather than to the machine.
+test('a keyed link tries only the keyed endpoint', () => {
+  assert.deepEqual(rungsFor('keyed'), ['keyed'])
+})
+
+test('a local link tries only the machine', () => {
+  assert.deepEqual(rungsFor('local'), ['reachable', 'launched'])
+})
+
+test('no scope keeps the full ordering for callers without a chain', () => {
+  assert.deepEqual(rungsFor(undefined, true), rungOrder(true))
+  assert.deepEqual(rungsFor(undefined, false), rungOrder(false))
+})
+
+test('no link reaches the anonymous tier unless it was asked for by name', () => {
+  assert.ok(!rungsFor('keyed').includes('keyless'))
+  assert.ok(!rungsFor('local').includes('keyless'))
 })

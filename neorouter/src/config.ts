@@ -43,3 +43,13 @@ export async function readKey(
     return null
   }
 }
+
+/** The whole config object, or an empty one. Never throws. */
+export async function readConfig(dir = configDir()): Promise<Record<string, any>> {
+  try {
+    const parsed = JSON.parse(await readFile(join(dir, 'config.json'), 'utf8'))
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
