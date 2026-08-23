@@ -94,8 +94,15 @@ test('reads a tool call out of an ollama response as a tool-call content part', 
     },
   }
 
+  // input stays the raw JSON string: LanguageModelV2ToolCall types it as
+  // `input: string` and the SDK parses it against the tool's schema itself.
   assert.deepEqual(fromChoice(choice), [
-    { type: 'tool-call', toolCallId: 'call_fu2at20l', toolName: 'list_dir', input: { path: '/tmp' } },
+    {
+      type: 'tool-call',
+      toolCallId: 'call_fu2at20l',
+      toolName: 'list_dir',
+      input: '{"path":"/tmp"}',
+    },
   ])
 })
 

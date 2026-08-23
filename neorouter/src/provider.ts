@@ -56,7 +56,10 @@ export function toMessages(prompt: LanguageModelV2CallOptions['prompt']): {
           calls.push({
             id: p.toolCallId,
             type: 'function',
-            function: { name: p.toolName, arguments: JSON.stringify(p.input ?? {}) },
+            function: {
+              name: p.toolName,
+              arguments: typeof p.input === 'string' ? p.input : JSON.stringify(p.input ?? {}),
+            },
           })
           return ''
         }
@@ -115,19 +118,10 @@ export function fromChoice(choice: any): LanguageModelV2Content[] {
       type: 'tool-call' as const,
       toolCallId: c.id,
       toolName: c.function?.name,
-      input: parseArgs(c.function?.arguments),
+      // Raw JSON text, not parsed: the SDK validates it against the tool schema.
+      input: typeof c.function?.arguments === 'string' ? c.function.arguments : JSON.stringify(c.function?.arguments ?? {}),
     }))
   return [{ type: 'text' as const, text: choice?.message?.content ?? '' }]
-}
-
-/** A small model will occasionally emit arguments that are not valid JSON. */
-function parseArgs(raw: unknown): unknown {
-  if (typeof raw !== 'string') return raw ?? {}
-  try {
-    return JSON.parse(raw)
-  } catch {
-    return {}
-  }
 }
 
 function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean) {
