@@ -17,8 +17,9 @@ export function sessionsDir(home = homedir()) {
   return join(configDir(home), 'sessions')
 }
 
+/** Provider name -> the variable people already export for it. */
 const ENV_FOR: Record<string, string> = {
-  openrouterKey: 'OPENROUTER_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY',
 }
 
 /**
@@ -26,15 +27,17 @@ const ENV_FOR: Record<string, string> = {
  * silently overridden by something written to disk weeks ago.
  */
 export async function readKey(
-  name: keyof typeof ENV_FOR | string,
+  provider: string,
   dir = configDir(),
   env: Record<string, string | undefined> = process.env,
 ): Promise<string | null> {
-  const fromEnv = ENV_FOR[name] && env[ENV_FOR[name]]
+  const fromEnv = ENV_FOR[provider] && env[ENV_FOR[provider]]
   if (fromEnv) return fromEnv
   try {
+    // { "keys": { "openrouter": "sk-or-..." } } — namespaced so a second
+    // provider does not turn into a second top-level key-shaped field.
     const parsed = JSON.parse(await readFile(join(dir, 'config.json'), 'utf8'))
-    return parsed?.[name] ?? null
+    return parsed?.keys?.[provider] ?? null
   } catch {
     // Absent or malformed: neither is worth failing a run that may not need it.
     return null

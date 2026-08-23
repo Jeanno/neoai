@@ -13,6 +13,14 @@ It then ranks the models that backend offers and picks the largest that fits the
 machine's memory, or the smallest usable one with `auto({ prefer: 'fast' })`.
 `auto({ think: false })` asks a reasoning model to skip thinking.
 
+Above the keyless tier sits OpenRouter, present only when a key is:
+`OPENROUTER_API_KEY`, or in `~/.neoai/config.json`
+
+    { "keys": { "openrouter": "sk-or-..." } }
+
+with the environment taking precedence. It picks the roomiest free chat model
+from the live catalogue.
+
 Which backend answered is announced once on stderr, so a local-looking call that
 quietly went to the network cannot pass unnoticed.
 

@@ -17,27 +17,34 @@ test('sessions sit beside the config, not in a separate tree', () => {
 
 test('an environment variable wins over the config file', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'navi-cfg-'))
-  await writeFile(join(dir, 'config.json'), JSON.stringify({ openrouterKey: 'from-file' }))
+  await writeFile(join(dir, 'config.json'), JSON.stringify({ keys: { openrouter: 'from-file' } }))
 
-  assert.equal(await readKey('openrouterKey', dir, { OPENROUTER_API_KEY: 'from-env' }), 'from-env')
+  assert.equal(await readKey('openrouter', dir, { OPENROUTER_API_KEY: 'from-env' }), 'from-env')
 })
 
 test('falls back to the config file when the variable is absent', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'navi-cfg-'))
-  await writeFile(join(dir, 'config.json'), JSON.stringify({ openrouterKey: 'from-file' }))
+  await writeFile(join(dir, 'config.json'), JSON.stringify({ keys: { openrouter: 'from-file' } }))
 
-  assert.equal(await readKey('openrouterKey', dir, {}), 'from-file')
+  assert.equal(await readKey('openrouter', dir, {}), 'from-file')
 })
 
 test('no key anywhere is null, not an error', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'navi-cfg-'))
 
-  assert.equal(await readKey('openrouterKey', dir, {}), null)
+  assert.equal(await readKey('openrouter', dir, {}), null)
+})
+
+test('a config file with no keys section is not a crash', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'navi-cfg-'))
+  await writeFile(join(dir, 'config.json'), JSON.stringify({ model: 'fast' }))
+
+  assert.equal(await readKey('openrouter', dir, {}), null)
 })
 
 test('a corrupt config file reads as no key rather than throwing', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'navi-cfg-'))
   await writeFile(join(dir, 'config.json'), '{oops')
 
-  assert.equal(await readKey('openrouterKey', dir, {}), null)
+  assert.equal(await readKey('openrouter', dir, {}), null)
 })

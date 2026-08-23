@@ -23,7 +23,7 @@ const OPENROUTER = 'https://openrouter.ai/api/v1'
  * old behaviour.
  */
 async function openrouter(): Promise<Server | null> {
-  const key = await readKey('openrouterKey')
+  const key = await readKey('openrouter')
   return key ? { backend: 'openrouter', baseURL: OPENROUTER, auth: key } : null
 }
 
