@@ -12,14 +12,65 @@ export interface Gate {
 }
 
 const MAX_OUTPUT = 8000
+const MAX_MATCHES = 100
 
 /** A small model will happily read a 3 MB file into a 4k context otherwise. */
 function clip(s: string): string {
   return s.length > MAX_OUTPUT ? `${s.slice(0, MAX_OUTPUT)}\n…[truncated]` : s
 }
 
+/**
+ * ripgrep, not grep: it honors .gitignore and skips hidden files, so a search
+ * in a JS project returns the answer instead of thousands of node_modules hits.
+ */
+async function rg(args: string[]): Promise<string[]> {
+  // .gitignore covers these in a real project, but not in a directory that has
+  // no .gitignore — and dependency hits are never the answer either way.
+  const never = ['-g', '!node_modules', '-g', '!.git']
+  try {
+    const cmd = ['rg', ...never, ...args].map(quote).join(' ')
+    const { stdout } = await run(cmd, { maxBuffer: 1 << 24 })
+    return stdout.split('\n').filter(Boolean)
+  } catch (e: any) {
+    // rg exits 1 with no output when nothing matched; that is not an error.
+    if (e.code === 1 && !e.stderr) return []
+    throw e
+  }
+}
+
+const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
+
 export function makeTools(gate: Gate) {
   return {
+    grep: tool({
+      description: 'Search file contents for a pattern. Returns file:line:text.',
+      inputSchema: z.object({
+        pattern: z.string(),
+        path: z.string().optional(),
+      }),
+      execute: async ({ pattern, path }) => {
+        const hits = await rg(['--line-number', '--with-filename', pattern, path ?? '.'])
+        if (!hits.length) return `no matches for ${pattern}`
+        const shown = hits.slice(0, MAX_MATCHES).join('\n')
+        return hits.length > MAX_MATCHES
+          ? `${shown}\n…[${hits.length - MAX_MATCHES} more matches not shown]`
+          : shown
+      },
+    }),
+
+    glob: tool({
+      description: 'Find files whose names match a pattern, e.g. "*.ts".',
+      inputSchema: z.object({
+        pattern: z.string(),
+        path: z.string().optional(),
+      }),
+      execute: async ({ pattern, path }) => {
+        const files = await rg(['--files', '-g', pattern, path ?? '.'])
+        if (!files.length) return `no files matching ${pattern}`
+        return clip(files.slice(0, MAX_MATCHES).join('\n'))
+      },
+    }),
+
     read_file: tool({
       description: 'Read a file and return its contents.',
       inputSchema: z.object({ path: z.string() }),

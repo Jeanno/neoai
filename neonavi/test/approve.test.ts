@@ -70,3 +70,7 @@ test('forbids answering from a name instead of looking', () => {
 test('pins bare references like "the dir" to the working directory', () => {
   assert.match(systemPrompt('/tmp/x', []), /"the dir"|the directory|here/i)
 })
+
+test('points the model at search before it starts opening files', () => {
+  assert.match(systemPrompt('/tmp/x', []), /grep/)
+})

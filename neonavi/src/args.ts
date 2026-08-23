@@ -23,7 +23,9 @@ export function systemPrompt(cwd: string, entries: string[] = []): string {
     '"here", "this directory", "the dir" and "this project" always mean that',
     'directory — never a directory mentioned earlier in the conversation.',
     'You have tools. Never guess what a file or directory holds from its name,',
-    'and never say you cannot see something: call read_file or list_dir and look.',
+    'and never say you cannot see something: go and look.',
+    'To find something, prefer grep (contents) and glob (filenames) over opening',
+    'files one at a time — one search beats four reads.',
     'run_shell asks the user for approval every time; if they decline, do not retry it.',
     'When you have the answer, state it plainly. Do not narrate your tool use.',
   ].join('\n')
