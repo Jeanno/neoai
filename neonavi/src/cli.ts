@@ -1,4 +1,4 @@
-#!/usr/bin/env -S npx tsx
+#!/usr/bin/env bun
 import { generateText, stepCountIs } from 'ai'
 import { auto } from 'neorouter'
 import { promptFrom, systemPrompt } from './args.ts'
