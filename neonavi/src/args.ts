@@ -28,3 +28,17 @@ export function systemPrompt(cwd: string, entries: string[] = []): string {
     'When you have the answer, state it plainly. Do not narrate your tool use.',
   ].join('\n')
 }
+
+/**
+ * 'fast' is the default because most questions are cheap ones. 'best' drops the
+ * size preference so neorouter picks the largest model that fits — measurably
+ * better at reading source rather than guessing from filenames, and measurably
+ * slower: 2m05s against 6s on a 32 GiB machine.
+ */
+export function modelOptions(
+  flag: string | undefined,
+): { prefer?: 'fast'; think: boolean } | null {
+  if (flag === undefined || flag === 'fast') return { prefer: 'fast', think: false }
+  if (flag === 'best') return { think: false }
+  return null
+}

@@ -3,7 +3,7 @@ import { generateText, stepCountIs, type ModelMessage } from 'ai'
 import { auto } from 'neorouter'
 import { homedir } from 'node:os'
 import { readdir } from 'node:fs/promises'
-import { promptFrom, systemPrompt } from './args.ts'
+import { modelOptions, promptFrom, systemPrompt } from './args.ts'
 import { makeApprover } from './approve.ts'
 import { makeTools } from './tools.ts'
 import { loadSession, saveSession, sessionFile, trim } from './session.ts'
@@ -28,11 +28,21 @@ async function main() {
   argv = steps.rest
   const fresh = takeFlag(argv, '--new', false)
   argv = fresh.rest
+  const model = takeFlag(argv, '--model', true)
+  argv = model.rest
+
+  const options = modelOptions(model.value)
+  if (!options) {
+    console.error(`unknown --model ${model.value}; expected fast or best`)
+    return 1
+  }
 
   const maxSteps = steps.value === undefined ? DEFAULT_STEPS : Number(steps.value)
   const prompt = promptFrom(argv)
   if (!prompt) {
-    console.error('usage: navi <what you want done>   [--new] [--max-steps N]')
+    console.error(
+      'usage: navi <what you want done>   [--new] [--model fast|best] [--max-steps N]',
+    )
     return 1
   }
 
@@ -46,7 +56,7 @@ async function main() {
   const { approve, close } = makeApprover({ input: process.stdin, output: process.stdout })
   try {
     const { text, response } = await generateText({
-      model: auto({ prefer: 'fast', think: false }),
+      model: auto(options),
       system: systemPrompt(cwd, entries),
       tools: makeTools({ approve }),
       stopWhen: stepCountIs(maxSteps),
