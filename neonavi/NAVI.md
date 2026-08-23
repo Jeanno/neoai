@@ -13,6 +13,10 @@ remembers nothing. Nothing writes to disk except a shell command you approved.
 Flags: `--new` (forget this directory's history), `--model fast|best`,
 `--max-steps N` (default 8).
 
+navi asks OpenRouter first when a key is configured, and falls back to a local
+model when there is no key or no network. Prompts leave the machine on the
+remote path; the backend that answered is announced on stderr every run.
+
 Conversation history is kept per directory under `~/.neonavi/sessions/`, so a
 follow-up continues where you left off and another project's context never
 leaks in.

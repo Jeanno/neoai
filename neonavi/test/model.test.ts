@@ -2,17 +2,21 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { modelOptions } from '../src/args.ts'
 
-test('defaults to the fast model when no flag is given', () => {
-  assert.deepEqual(modelOptions(undefined), { prefer: 'fast', think: false })
+test('goes remote first by default, with the small local model behind it', () => {
+  assert.deepEqual(modelOptions(undefined), { prefer: 'fast', think: false, remote: true })
 })
 
-test('fast asks neorouter for the smallest usable model', () => {
-  assert.deepEqual(modelOptions('fast'), { prefer: 'fast', think: false })
+test('fast picks the smallest local model for the fallback', () => {
+  assert.deepEqual(modelOptions('fast'), { prefer: 'fast', think: false, remote: true })
 })
 
-// No prefer: neorouter falls back to its default, the largest model that fits.
-test('best drops the size preference and takes the capable model', () => {
-  assert.deepEqual(modelOptions('best'), { think: false })
+// No prefer: the local fallback is the largest model that fits.
+test('best drops the size preference for the fallback', () => {
+  assert.deepEqual(modelOptions('best'), { think: false, remote: true })
+})
+
+test('every mode tries remote first', () => {
+  for (const f of [undefined, 'fast', 'best']) assert.equal(modelOptions(f)!.remote, true)
 })
 
 test('an unrecognised value is rejected rather than silently treated as fast', () => {

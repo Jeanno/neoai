@@ -262,6 +262,7 @@ class AutoModel implements LanguageModelV2 {
   constructor(
     private readonly prefer?: Prefer,
     private readonly think?: boolean,
+    private readonly remote?: boolean,
   ) {}
 
   get provider() {
@@ -273,7 +274,7 @@ class AutoModel implements LanguageModelV2 {
   }
 
   private async ready(): Promise<Resolved> {
-    return (this.resolution ??= await resolveBackend(this.prefer))
+    return (this.resolution ??= await resolveBackend(this.prefer, this.remote))
   }
 
   async doGenerate(options: LanguageModelV2CallOptions) {
@@ -384,10 +385,12 @@ export interface AutoOptions {
   prefer?: Prefer
   /** false asks a reasoning model to skip thinking. Left alone by default. */
   think?: boolean
+  /** true tries the hosted rung before the local ones, still falling back. */
+  remote?: boolean
 }
 
 export function auto(options: AutoOptions = {}): LanguageModelV2 {
-  return new AutoModel(options.prefer, options.think)
+  return new AutoModel(options.prefer, options.think, options.remote)
 }
 
 auto.shutdown = shutdown

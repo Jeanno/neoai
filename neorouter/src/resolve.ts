@@ -40,28 +40,73 @@ async function fromServers(servers: Server[], rung: 'reachable' | 'launched', pr
   return { all, resolved }
 }
 
-async function resolveOnce(prefer?: Prefer): Promise<Resolved> {
+export type Rung = 'reachable' | 'launched' | 'keyed' | 'keyless'
+
+/**
+ * Local first unless asked otherwise: nothing leaves the machine because of a
+ * default. Remote-first raises only the *keyed* endpoint, never the keyless
+ * one — falling back from a missing key to an anonymous endpoint would be
+ * slower, flakier, and still off-machine, which is worse than the laptop on
+ * every axis. So the keyless tier stays last in both orders.
+ */
+export function rungOrder(remote: boolean): Rung[] {
+  return remote
+    ? ['keyed', 'reachable', 'launched', 'keyless']
+    : ['reachable', 'launched', 'keyed', 'keyless']
+}
+
+async function resolveOnce(prefer?: Prefer, remote = false): Promise<Resolved> {
   const rejected: { id: string; why: string }[] = []
   // Debug escape hatch for exercising a rung that would otherwise never win.
   const only = process.env.NEOROUTER_ONLY_RUNG
 
-  // Rung 1 — something is already listening.
-  const reachable = only && only !== 'reachable' ? [] : await reachableServers()
-  const r1 = await fromServers(reachable, 'reachable', prefer)
-  if (r1?.resolved) return r1.resolved
-  if (r1) rejected.push(...r1.all.map((c) => ({ id: c.id, why: c.reject! })))
+  let reachable: Server[] = []
 
-  // Rung 2 — a runtime is installed but idle.
-  for (const l of only && only !== 'launched' ? [] : await launchable(reachable)) {
-    const started = await launch(l, l.files[0])
-    if (!started) continue
-    const r2 = await fromServers([started.server], 'launched', prefer)
-    if (r2?.resolved)
-      return { ...r2.resolved, pid: started.pid, coldStartMs: started.coldStartMs }
+  const tryReachable = async (): Promise<Resolved | null> => {
+    reachable = only && only !== 'reachable' ? [] : await reachableServers()
+    const r1 = await fromServers(reachable, 'reachable', prefer)
+    if (r1?.resolved) return r1.resolved
+    if (r1) rejected.push(...r1.all.map((c) => ({ id: c.id, why: c.reject! })))
+    return null
   }
 
-  // Rung 3 — off the machine.
-  const [hosted] = await hostedServers()
+  const tryLaunched = async (): Promise<Resolved | null> => {
+    for (const l of only && only !== 'launched' ? [] : await launchable(reachable)) {
+      const started = await launch(l, l.files[0])
+      if (!started) continue
+      const r2 = await fromServers([started.server], 'launched', prefer)
+      if (r2?.resolved) return { ...r2.resolved, pid: started.pid, coldStartMs: started.coldStartMs }
+    }
+    return null
+  }
+
+  const tryHosted = (keyed: boolean) => async (): Promise<Resolved | null> => {
+    if (only && only !== 'hosted') return null
+    return hostedResolution(rejected, keyed)
+  }
+
+  const attempt = {
+    reachable: tryReachable,
+    launched: tryLaunched,
+    keyed: tryHosted(true),
+    keyless: tryHosted(false),
+  }
+  for (const rung of rungOrder(remote)) {
+    const got = await attempt[rung]()
+    if (got) return got
+  }
+
+  throw new Error(
+    'neorouter: nothing to talk to — no local server, no installed runtime, no network.',
+  )
+}
+
+async function hostedResolution(
+  rejected: { id: string; why: string }[],
+  keyed: boolean,
+): Promise<Resolved | null> {
+  const all = await hostedServers()
+  const [hosted] = all.filter((s) => !!s.auth === keyed)
   if (hosted) {
     const models = await hostedModels(hosted)
     return {
@@ -79,10 +124,7 @@ async function resolveOnce(prefer?: Prefer): Promise<Resolved> {
       server: hosted,
     }
   }
-
-  throw new Error(
-    'neorouter: nothing to talk to — no local server, no installed runtime, no network.',
-  )
+  return null
 }
 
 /**
@@ -101,11 +143,11 @@ function announce(r: Resolved): void {
 const pending = new Map<string, Promise<Resolved>>()
 
 /** Resolution is memoised per process; the first call pays for discovery. */
-export function resolveBackend(prefer?: Prefer): Promise<Resolved> {
-  const key = prefer ?? 'default'
+export function resolveBackend(prefer?: Prefer, remote = false): Promise<Resolved> {
+  const key = `${prefer ?? 'default'}:${remote ? 'remote' : 'local'}`
   let p = pending.get(key)
   if (!p) {
-    p = resolveOnce(prefer).then((r) => {
+    p = resolveOnce(prefer, remote).then((r) => {
       announce(r)
       return r
     })

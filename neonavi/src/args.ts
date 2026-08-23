@@ -42,8 +42,11 @@ export function systemPrompt(cwd: string, entries: string[] = [], context = ''):
  */
 export function modelOptions(
   flag: string | undefined,
-): { prefer?: 'fast'; think: boolean } | null {
-  if (flag === undefined || flag === 'fast') return { prefer: 'fast', think: false }
-  if (flag === 'best') return { think: false }
+): { prefer?: 'fast'; think: boolean; remote: boolean } | null {
+  // remote first, local behind it: the free hosted model outclasses anything
+  // that fits on this machine, and with no key or no network the local rungs
+  // still answer. prefer only governs which local model that fallback picks.
+  if (flag === undefined || flag === 'fast') return { prefer: 'fast', think: false, remote: true }
+  if (flag === 'best') return { think: false, remote: true }
   return null
 }
