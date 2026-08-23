@@ -1,0 +1,21 @@
+{
+  "name": "neonavi",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": { "navi": "./src/cli.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "ai": "^5.0.240",
+    "neorouter": "*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
