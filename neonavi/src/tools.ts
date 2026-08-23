@@ -13,6 +13,7 @@ export interface Gate {
 
 const MAX_OUTPUT = 8000
 const MAX_MATCHES = 100
+const MAX_LINES = 400
 
 /** A small model will happily read a 3 MB file into a 4k context otherwise. */
 function clip(s: string): string {
@@ -72,9 +73,35 @@ export function makeTools(gate: Gate) {
     }),
 
     read_file: tool({
-      description: 'Read a file and return its contents.',
-      inputSchema: z.object({ path: z.string() }),
-      execute: async ({ path }) => clip(await readFile(path, 'utf8')),
+      description:
+        'Read a file. Returns numbered lines. Use offset and limit to page ' +
+        'through a file too long to return at once.',
+      inputSchema: z.object({
+        path: z.string(),
+        offset: z.number().optional().describe('first line to return, 1-based'),
+        limit: z.number().optional().describe('how many lines to return'),
+      }),
+      execute: async ({ path, offset = 1, limit = MAX_LINES }) => {
+        const lines = (await readFile(path, 'utf8')).split('\n')
+        const start = Math.max(1, offset)
+        const slice = lines.slice(start - 1, start - 1 + limit)
+        // Numbered so the model can cite a line. Cut on a line boundary whether
+        // the limit or the size budget runs out first, so the tail is never half
+        // a token and there is always a stated way to continue.
+        const kept: string[] = []
+        let size = 0
+        for (const [i, l] of slice.entries()) {
+          const numbered = `${start + i}→${l}`
+          if (size + numbered.length > MAX_OUTPUT && kept.length) break
+          kept.push(numbered)
+          size += numbered.length + 1
+        }
+        const end = start + kept.length - 1
+        const body = kept.join('\n')
+        return end < lines.length
+          ? `${body}\n…[${lines.length - end} more lines; read again with offset ${end + 1}]`
+          : body
+      },
     }),
 
     list_dir: tool({

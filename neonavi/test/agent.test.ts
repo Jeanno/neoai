@@ -24,13 +24,13 @@ test('reports no prompt when given nothing', () => {
   assert.equal(promptFrom([]), null)
 })
 
-test('read_file returns the contents of a real file', async () => {
+test('read_file returns the contents of a real file, numbered by line', async () => {
   const dir = await fixture()
   const tools = makeTools({ approve: async () => true })
 
   const out = await tools.read_file.execute!({ path: join(dir, 'a.txt') } as any, {} as any)
 
-  assert.equal(out, 'hello')
+  assert.equal(out, '1→hello')
 })
 
 test('list_dir lists real entries', async () => {
