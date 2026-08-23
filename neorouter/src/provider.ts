@@ -10,7 +10,7 @@ import type { Resolved } from './resolve.ts'
 import { resolveBackend } from './resolve.ts'
 import { shutdown } from './launch.ts'
 import { serialize } from './hosted.ts'
-import type { Server } from './types.ts'
+import type { Prefer, Server } from './types.ts'
 
 function chatEndpoint(server: Server, backend: string): string {
   if (server.native === 'ollama') return `${server.baseURL}/v1/chat/completions`
@@ -239,6 +239,8 @@ class AutoModel implements LanguageModelV2 {
   readonly supportedUrls = {}
   private resolution: Resolved | null = null
 
+  constructor(private readonly prefer?: Prefer) {}
+
   get provider() {
     return this.resolution ? `neorouter:${this.resolution.backend}` : 'neorouter'
   }
@@ -248,7 +250,7 @@ class AutoModel implements LanguageModelV2 {
   }
 
   private async ready(): Promise<Resolved> {
-    return (this.resolution ??= await resolveBackend())
+    return (this.resolution ??= await resolveBackend(this.prefer))
   }
 
   async doGenerate(options: LanguageModelV2CallOptions) {
@@ -352,8 +354,13 @@ class AutoModel implements LanguageModelV2 {
   }
 }
 
-export function auto(): LanguageModelV2 {
-  return new AutoModel()
+export interface AutoOptions {
+  /** 'fast' picks the smallest usable model instead of the largest that fits. */
+  prefer?: Prefer
+}
+
+export function auto(options: AutoOptions = {}): LanguageModelV2 {
+  return new AutoModel(options.prefer)
 }
 
 auto.shutdown = shutdown

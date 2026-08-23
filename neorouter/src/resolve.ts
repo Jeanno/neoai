@@ -1,4 +1,4 @@
-import type { Candidate, Resolution, Server } from './types.ts'
+import type { Candidate, Prefer, Resolution, Server } from './types.ts'
 import { detectHardware } from './hardware.ts'
 import { reachableServers } from './discover.ts'
 import { rank, contextWindow, evaluate } from './select.ts'
@@ -15,12 +15,12 @@ function rejectionsFrom(all: Candidate[], chosen: Candidate) {
     .map((c) => ({ id: c.id, why: c.reject ?? `outranked by ${chosen.id}` }))
 }
 
-async function fromServers(servers: Server[], rung: 'reachable' | 'launched') {
+async function fromServers(servers: Server[], rung: 'reachable' | 'launched', prefer?: Prefer) {
   if (!servers.length) return null
   const hw = await detectHardware()
   // We allocate the weights ourselves only on the launch rung.
   const mode = rung === 'launched' ? 'free' : 'capacity'
-  const all = await rank(servers, hw, mode)
+  const all = await rank(servers, hw, mode, prefer)
   const best = all.find((c) => !c.reject)
   if (!best) return { all, resolved: null as Resolved | null }
   const resolved: Resolved = {
@@ -30,21 +30,24 @@ async function fromServers(servers: Server[], rung: 'reachable' | 'launched') {
     modelId: best.id,
     local: true,
     contextWindow: contextWindow(best, hw, mode),
-    reason: 'largest chat model that fits the memory budget',
+    reason:
+      prefer === 'fast'
+        ? 'smallest usable chat model, for latency'
+        : 'largest chat model that fits the memory budget',
     rejected: rejectionsFrom(all, best),
     server: best.server,
   }
   return { all, resolved }
 }
 
-async function resolveOnce(): Promise<Resolved> {
+async function resolveOnce(prefer?: Prefer): Promise<Resolved> {
   const rejected: { id: string; why: string }[] = []
   // Debug escape hatch for exercising a rung that would otherwise never win.
   const only = process.env.NEOROUTER_ONLY_RUNG
 
   // Rung 1 — something is already listening.
   const reachable = only && only !== 'reachable' ? [] : await reachableServers()
-  const r1 = await fromServers(reachable, 'reachable')
+  const r1 = await fromServers(reachable, 'reachable', prefer)
   if (r1?.resolved) return r1.resolved
   if (r1) rejected.push(...r1.all.map((c) => ({ id: c.id, why: c.reject! })))
 
@@ -52,7 +55,7 @@ async function resolveOnce(): Promise<Resolved> {
   for (const l of only && only !== 'launched' ? [] : await launchable(reachable)) {
     const started = await launch(l, l.files[0])
     if (!started) continue
-    const r2 = await fromServers([started.server], 'launched')
+    const r2 = await fromServers([started.server], 'launched', prefer)
     if (r2?.resolved)
       return { ...r2.resolved, pid: started.pid, coldStartMs: started.coldStartMs }
   }
@@ -90,17 +93,24 @@ function announce(r: Resolved): void {
   console.error(`neorouter: ${r.backend} · ${r.modelId} · ${where} (${r.rung}${cold})`)
 }
 
-let pending: Promise<Resolved> | null = null
+// Keyed by preference: 'fast' and the default resolve to different models, so a
+// single memo would hand the second caller the first caller's backend.
+const pending = new Map<string, Promise<Resolved>>()
 
 /** Resolution is memoised per process; the first call pays for discovery. */
-export function resolveBackend(): Promise<Resolved> {
-  pending ??= resolveOnce().then((r) => {
-    announce(r)
-    return r
-  })
-  return pending
+export function resolveBackend(prefer?: Prefer): Promise<Resolved> {
+  const key = prefer ?? 'default'
+  let p = pending.get(key)
+  if (!p) {
+    p = resolveOnce(prefer).then((r) => {
+      announce(r)
+      return r
+    })
+    pending.set(key, p)
+  }
+  return p
 }
 
 export function reset(): void {
-  pending = null
+  pending.clear()
 }

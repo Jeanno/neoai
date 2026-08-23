@@ -43,3 +43,6 @@ export interface Resolution {
   coldStartMs?: number
   pid?: number
 }
+
+/** Which way to break the tie between models that all fit. */
+export type Prefer = 'fast'

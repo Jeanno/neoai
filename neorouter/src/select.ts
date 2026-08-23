@@ -1,4 +1,4 @@
-import type { Candidate, Hardware, Server } from './types.ts'
+import type { Candidate, Hardware, Prefer, Server } from './types.ts'
 import { memoryBudgetGiB } from './hardware.ts'
 import { listModels, parseParams, type RawModel } from './discover.ts'
 
@@ -71,11 +71,15 @@ export async function rank(
   servers: Server[],
   hw: Hardware,
   mode: 'free' | 'capacity' = 'capacity',
+  prefer?: Prefer,
 ): Promise<Candidate[]> {
   const all = await Promise.all(
     servers.map(async (s) =>
       (await listModels(s).catch(() => [])).map((m) => evaluate(m, s, hw, mode)),
     ),
   )
-  return all.flat().sort((a, b) => Number(!!a.reject) - Number(!!b.reject) || b.score - a.score)
+  // 'fast' inverts the ordering only; what counts as usable at all is unchanged,
+  // so a rejected model never wins by being the smallest.
+  const better = prefer === 'fast' ? (a: Candidate, b: Candidate) => a.score - b.score : (a: Candidate, b: Candidate) => b.score - a.score
+  return all.flat().sort((a, b) => Number(!!a.reject) - Number(!!b.reject) || better(a, b))
 }
