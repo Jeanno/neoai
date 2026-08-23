@@ -7,17 +7,20 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "typecheck": "tsc --noEmit",
     "example": "tsx example.ts",
     "inspect": "tsx src/cli.ts",
     "example:streaming": "tsx examples/streaming.ts",
     "example:transparency": "tsx examples/transparency.ts",
     "example:shorthand": "tsx examples/shorthand.ts",
     "example:inspect": "tsx examples/inspect.ts",
-    "example:lifecycle": "tsx examples/lifecycle.ts"
+    "example:lifecycle": "tsx examples/lifecycle.ts",
+    "example:primes": "tsx examples/primes.ts"
   },
   "dependencies": {
     "@ai-sdk/provider": "^2.0.3",
-    "ai": "^5.0.240"
+    "ai": "^5.0.240",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

@@ -50,10 +50,24 @@ function toMessages(prompt: LanguageModelV2CallOptions['prompt']): {
   return { messages, warnings }
 }
 
+/**
+ * The AI SDK does not prompt-engineer JSON on the provider's behalf — it sends
+ * responseFormat and expects the backend to constrain decoding. Every
+ * OpenAI-shaped server we talk to takes response_format, so pass it through:
+ * with a schema the output cannot be malformed, which beats parse-and-retry.
+ */
+function responseFormat(o: LanguageModelV2CallOptions) {
+  if (o.responseFormat?.type !== 'json') return undefined
+  const { schema, name } = o.responseFormat
+  if (!schema) return { type: 'json_object' as const }
+  return {
+    type: 'json_schema' as const,
+    json_schema: { name: name ?? 'response', strict: true, schema },
+  }
+}
+
 function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean) {
   const { messages, warnings } = toMessages(o.prompt)
-  if (o.responseFormat?.type === 'json')
-    warnings.push({ type: 'other', message: 'JSON mode is not supported yet' })
   if (o.tools?.length)
     warnings.push({ type: 'other', message: 'tool calling is not supported yet' })
   return {
@@ -66,6 +80,7 @@ function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean) {
       ...(o.temperature != null && { temperature: o.temperature }),
       ...(o.topP != null && { top_p: o.topP }),
       ...(o.stopSequences?.length && { stop: o.stopSequences }),
+      ...(responseFormat(o) && { response_format: responseFormat(o) }),
       // Pollinations asks callers to identify themselves; harmless elsewhere.
       ...(r.backend === 'pollinations' && { referrer: 'neorouter' }),
     },
