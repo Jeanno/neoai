@@ -140,7 +140,8 @@ async function main() {
     for (;;) {
       // Bold is opened as part of the prompt so the typed line inherits it.
       const prompt = (await line.ask(`\n${bold('navi>')} \x1b[1m`))?.trim()
-      if (process.stdout.isTTY) process.stdout.write('\x1b[0m')
+      // Reset the bold, and a blank line between what was asked and what comes back.
+      if (process.stdout.isTTY) process.stdout.write('\x1b[0m\n')
       if (prompt === undefined || prompt === null || QUIT.has(prompt.toLowerCase())) return 0
       if (!prompt) continue
       await turn(prompt)

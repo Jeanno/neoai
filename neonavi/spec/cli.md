@@ -45,7 +45,7 @@
 
 - CLI-18: On a terminal the `navi>` prompt and the line typed after it are
   bold, and the style is reset before anything else is printed, so the user's
-  turns stand out from the model's.
+  turns stand out from the model's. A blank line follows the typed line.
 
 ## Startup
 

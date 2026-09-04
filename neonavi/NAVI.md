@@ -1,13 +1,13 @@
 # neonavi
 
 `navi` — a command-line agent. Bare `navi` in a terminal opens a conversation
-at a `navi>` prompt; `navi <what you want done>` answers that first and then
+at a `navi>` prompt; `navi -p "<what you want done>"` answers that first and then
 keeps the prompt open. Bare words, no quoting. Each turn runs a tool loop until
 it has an answer, then prints it. `exit`, ^C or ^D leave.
 
     navi
-    navi where is shell approval handled
-    navi what changed in this file --model best
+    navi -p "where is shell approval handled"
+    navi -p "what changed in this file" --model best
 
 When stdin is not a terminal (a pipe, a script) navi answers once and exits, so
 it still composes: `echo | navi summarize this` behaves as before.
