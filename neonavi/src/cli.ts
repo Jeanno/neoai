@@ -96,10 +96,11 @@ async function main() {
       stopWhen: stepCountIs(maxSteps),
       messages,
       // A silent minute is indistinguishable from a hang.
-      onStepFinish: ({ toolCalls }) => {
+      onStepFinish: ({ toolCalls, finishReason }) => {
         spin.stop()
         for (const c of toolCalls) console.error(dim(`· ${c.toolName}(${JSON.stringify(c.input)})`))
-        spin.start()
+        // The last step is followed by the answer, not another call.
+        if (finishReason === 'tool-calls') spin.start()
       },
     }).finally(spin.stop)
     // Saved even when the answer came out empty: the tool results are the part
@@ -121,7 +122,9 @@ async function main() {
     }
     if (!first) console.error(dim('navi · ask anything; exit, ^C or ^D to leave'))
     for (;;) {
-      const prompt = (await line.ask(`\n${bold('navi>')} `))?.trim()
+      // Bold is opened as part of the prompt so the typed line inherits it.
+      const prompt = (await line.ask(`\n${bold('navi>')} \x1b[1m`))?.trim()
+      if (process.stdout.isTTY) process.stdout.write('\x1b[0m')
       if (prompt === undefined || prompt === null || QUIT.has(prompt.toLowerCase())) return 0
       if (!prompt) continue
       await turn(prompt)

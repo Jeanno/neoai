@@ -14,7 +14,7 @@ allowlist, refusing unsafe commands outright, a separate judge model.
 1. [x] Spinner on stderr while a model call is in flight, terminal only,
        cleared before any tool echo or answer. Pipe mode prints nothing.
        (`spec/cli.md`)
-2. [ ] Render the `navi>` prompt and the typed line bold. (`spec/cli.md`)
+2. [x] Render the `navi>` prompt and the typed line bold. (`spec/cli.md`)
 3. [ ] `judge(model, command, intent)` → safe | unsafe | unknown as a pure
        function, unit-tested with a fake model; anything unclear is unknown.
        No behaviour change. (`spec/tools.md`)

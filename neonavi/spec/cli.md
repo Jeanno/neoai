@@ -43,6 +43,10 @@
   prompt, or answer, so nothing it drew survives in the output.
 - CLI-17: When stderr is not a terminal the spinner writes nothing at all.
 
+- CLI-18: On a terminal the `navi>` prompt and the line typed after it are
+  bold, and the style is reset before anything else is printed, so the user's
+  turns stand out from the model's.
+
 ## Startup
 
 - CLI-14: If no link in the model chain resolves, navi names the chain on
