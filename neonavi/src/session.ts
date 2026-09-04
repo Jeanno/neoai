@@ -4,9 +4,6 @@ import { createHash } from 'node:crypto'
 import type { ModelMessage } from 'ai'
 import { sessionsDir } from 'neorouter'
 
-/** Turns to carry forward. Enough to follow up, short of filling the context. */
-export const KEEP_TURNS = 20
-
 /**
  * One history per directory, so a question asked in one project never answers
  * with another project's context. The path is hashed rather than flattened —
@@ -32,8 +29,4 @@ export async function saveSession(file: string, messages: ModelMessage[]): Promi
   // output — so they are nobody else's business on a shared machine.
   await mkdir(dirname(file), { recursive: true, mode: 0o700 })
   await writeFile(file, JSON.stringify(messages, null, 2), { mode: 0o600 })
-}
-
-export function trim(messages: ModelMessage[], keep = KEEP_TURNS): ModelMessage[] {
-  return messages.length <= keep ? messages : messages.slice(-keep)
 }

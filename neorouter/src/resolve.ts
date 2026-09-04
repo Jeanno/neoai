@@ -3,7 +3,7 @@ import { detectHardware } from './hardware.ts'
 import { reachableServers } from './discover.ts'
 import { rank, contextWindow, evaluate, pick } from './select.ts'
 import { launchable, launch } from './launch.ts'
-import { hostedServers, hostedModels, hostedHasModel } from './hosted.ts'
+import { hostedServers, hostedModels, hostedHasModel, hostedContextWindow } from './hosted.ts'
 
 export interface Resolved extends Resolution {
   server: Server
@@ -140,13 +140,14 @@ async function hostedResolution(
       if (!modelId.includes('/')) return null
       if (!(await hostedHasModel(hosted, modelId))) return null
     }
+    const id = modelId ?? models[0] ?? 'openai'
     return {
       rung: 'hosted',
       backend: hosted.backend,
       baseURL: hosted.baseURL,
-      modelId: modelId ?? models[0] ?? 'openai',
+      modelId: id,
       local: false,
-      contextWindow: 8192,
+      contextWindow: await hostedContextWindow(hosted, id),
       reason:
         hosted.backend === 'openrouter'
           ? 'no usable local model; fell through to a free model on OpenRouter'

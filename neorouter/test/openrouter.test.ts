@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { catalogIds, freeChatModels } from '../src/hosted.ts'
+import { catalogIds, contextLength, freeChatModels } from '../src/hosted.ts'
 
 const catalog = {
   data: [
@@ -79,4 +79,11 @@ test('the catalogue lists every id, not only the free ones', () => {
 
 test('an unexpected catalogue shape lists nothing', () => {
   assert.deepEqual(catalogIds(null as any), [])
+})
+
+test('the context window comes from the catalogue, with a floor when unknown', () => {
+  const catalog = { data: [{ id: 'z-ai/glm-5.3-flash', context_length: 1310720 }, { id: 'x/y' }] }
+  assert.equal(contextLength(catalog, 'z-ai/glm-5.3-flash'), 1310720)
+  assert.equal(contextLength(catalog, 'x/y'), 8192)
+  assert.equal(contextLength(null, 'x/y'), 8192)
 })

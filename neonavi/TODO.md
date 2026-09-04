@@ -26,14 +26,11 @@ allowlist, refusing unsafe commands outright, a separate judge model.
       A reasoning model is silent for 5–10s per step today. (`spec/cli.md`)
 - [ ] Cite spec ids from the existing tests so every requirement is traceable.
       (`test/*.test.ts`)
-- [ ] Report the real context window for hosted models instead of 8192.
-      (`spec/models.md`, neorouter `resolve.ts`)
 
 ## Later
 
 - [ ] `--model` or `/model` mid-session, without leaving the loop. (`spec/cli.md`)
 - [ ] A write/edit tool, approved like `run_shell`. (`spec/tools.md`)
-- [ ] Summarise old history instead of dropping it at 20 messages. (`spec/session.md`)
 - [ ] `navi --sessions` to list and clear per-directory history. (`spec/session.md`)
 
 ## Done
@@ -42,3 +39,4 @@ allowlist, refusing unsafe commands outright, a separate judge model.
 - [x] Model chain in `~/.neoai/config.json` with scoped fallback.
 - [x] Spec directory.
 - [x] Shell auto-approval by a model judge, bold prompt, spinner.
+- [x] Unbounded history, compacted by summary when it outgrows the model.

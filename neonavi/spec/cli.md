@@ -43,9 +43,10 @@
   prompt, or answer, so nothing it drew survives in the output.
 - CLI-17: When stderr is not a terminal the spinner writes nothing at all.
 
-- CLI-18: On a terminal the `navi>` prompt and the line typed after it are
-  bold, and the style is reset before anything else is printed, so the user's
-  turns stand out from the model's. A blank line follows the typed line.
+- CLI-18: On a terminal the `navi>` prompt sits on a lighter background, a
+  gray block with bright text, and the line typed after it is bold. The style
+  is reset before anything else is printed, so the user's turns stand out from
+  the model's. A blank line follows the typed line.
 
 ## Startup
 

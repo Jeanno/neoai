@@ -9,7 +9,8 @@ import { gated, makeApprover, makeLine } from './approve.ts'
 import { judge } from './judge.ts'
 import { makeTools } from './tools.ts'
 import { makeSpinner } from './spinner.ts'
-import { loadSession, saveSession, sessionFile, trim } from './session.ts'
+import { loadSession, saveSession, sessionFile } from './session.ts'
+import { compact, estimateTokens } from './compact.ts'
 import { collectContext } from './context.ts'
 import { readConfig } from 'neorouter'
 
@@ -17,6 +18,7 @@ const DEFAULT_STEPS = 32
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
+const highlight = (s: string) => `\x1b[100;97m${s}\x1b[0m`
 
 /** Pulls `--flag value` (or a bare `--flag`) out of argv, leaving the prompt. */
 function takeFlag(argv: string[], flag: string, hasValue: boolean) {
@@ -74,7 +76,7 @@ async function main() {
   const context = await collectContext(cwd)
   const file = sessionFile(cwd, homedir())
   const anew = startsFresh({ prompt: first, resume: resuming })
-  let messages: ModelMessage[] = anew ? [] : trim(await loadSession(file))
+  let messages: ModelMessage[] = anew ? [] : await loadSession(file)
   if (messages.length) console.error(dim(`· continuing (${messages.length} messages)`))
 
   const line = makeLine({ input: process.stdin, output: process.stdout })
@@ -103,10 +105,17 @@ async function main() {
   const tools = makeTools({ approve })
 
   /** One question in, one answer out. Returns whether the model said anything. */
+  const systemTokens = estimateTokens([{ role: 'system', content: system }])
   const turn = async (prompt: string) => {
-    messages = [...messages, { role: 'user', content: prompt }]
     intent = prompt
     spin.start()
+    const packed = await compact(llm, messages, { contextWindow: chosen.contextWindow, extraTokens: systemTokens })
+    if (packed.compacted) {
+      spin.stop()
+      console.error(dim(`· compacted ${packed.compacted} messages`))
+      spin.start()
+    }
+    messages = [...packed.messages, { role: 'user', content: prompt }]
     const { text, response } = await generateText({
       model: llm,
       system,
@@ -123,7 +132,7 @@ async function main() {
     }).finally(spin.stop)
     // Saved even when the answer came out empty: the tool results are the part
     // worth carrying forward, and a follow-up is how you recover from a bad turn.
-    messages = trim([...messages, ...response.messages])
+    messages = [...messages, ...response.messages]
     await saveSession(file, messages)
     if (text.trim()) {
       console.log(text)
@@ -140,8 +149,9 @@ async function main() {
     }
     if (!first) console.error(dim('navi · ask anything; exit, ^C or ^D to leave'))
     for (;;) {
-      // Bold is opened as part of the prompt so the typed line inherits it.
-      const prompt = (await line.ask(`\n${bold('navi>')} \x1b[1m`))?.trim()
+      // The marker gets a lighter background; bold is opened as part of the
+      // prompt so the typed line inherits it.
+      const prompt = (await line.ask(`\n${highlight('navi>')} \x1b[1m`))?.trim()
       // Reset the bold, and a blank line between what was asked and what comes back.
       if (process.stdout.isTTY) process.stdout.write('\x1b[0m\n')
       if (prompt === undefined || prompt === null || QUIT.has(prompt.toLowerCase())) return 0

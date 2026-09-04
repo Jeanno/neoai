@@ -39,6 +39,8 @@ import { probeBackend, type Scope } from 'neorouter'
 export interface Chosen {
   entry: Entry
   options: { prefer?: 'fast'; think: boolean; remote: boolean; model?: string; scope: Scope }
+  /** What the resolved backend can hold, in tokens. */
+  contextWindow: number
 }
 
 /**
@@ -59,6 +61,7 @@ export async function resolveChain(chain: Entry[]): Promise<Chosen | null> {
       return {
         entry,
         options: { prefer: entry.prefer, think: false, remote, model: entry.id, scope },
+        contextWindow: got.contextWindow,
       }
   }
   return null

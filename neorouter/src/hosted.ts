@@ -42,13 +42,30 @@ export async function hostedServers(): Promise<Server[]> {
   return [...(keyed ? [keyed] : []), ...hits.filter((s): s is Server => s !== null)]
 }
 
-async function openrouterCatalog(): Promise<any> {
-  try {
-    const r = await fetch(`${OPENROUTER}/models`, { signal: AbortSignal.timeout(8000) })
-    return await r.json()
-  } catch {
-    return null
-  }
+// Fetched once per process: resolution asks for it up to three times.
+let catalog: Promise<any> | null = null
+function openrouterCatalog(): Promise<any> {
+  return (catalog ??= (async () => {
+    try {
+      const r = await fetch(`${OPENROUTER}/models`, { signal: AbortSignal.timeout(8000) })
+      return await r.json()
+    } catch {
+      return null
+    }
+  })())
+}
+
+/** What the catalogue says a model can hold, or the conservative default. */
+export function contextLength(catalog: any, id: string, fallback = 8192): number {
+  const models = catalog?.data
+  const hit = Array.isArray(models) ? models.find((m: any) => m?.id === id) : null
+  const n = Number(hit?.context_length)
+  return Number.isFinite(n) && n > 0 ? n : fallback
+}
+
+export async function hostedContextWindow(server: Server, id: string): Promise<number> {
+  if (server.backend !== 'openrouter') return 8192
+  return contextLength(await openrouterCatalog(), id)
 }
 
 /**

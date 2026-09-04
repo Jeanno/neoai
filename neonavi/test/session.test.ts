@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { stat } from 'node:fs/promises'
-import { sessionFile, loadSession, saveSession, trim } from '../src/session.ts'
+import { sessionFile, loadSession, saveSession } from '../src/session.ts'
 
 const msg = (role: 'user' | 'assistant', text: string) => ({ role, content: text }) as any
 
@@ -69,20 +69,4 @@ test('saving creates the directory when it does not exist yet', async () => {
   await saveSession(file, [msg('user', 'hi')])
 
   assert.match(await readFile(file, 'utf8'), /hi/)
-})
-
-test('trim keeps the most recent turns and drops the oldest', () => {
-  const many = Array.from({ length: 50 }, (_, i) => msg('user', `message ${i}`))
-
-  const kept = trim(many, 10)
-
-  assert.equal(kept.length, 10)
-  assert.deepEqual(kept.at(-1), msg('user', 'message 49'))
-  assert.deepEqual(kept[0], msg('user', 'message 40'))
-})
-
-test('trim leaves a short history alone', () => {
-  const few = [msg('user', 'a'), msg('assistant', 'b')]
-
-  assert.deepEqual(trim(few, 10), few)
 })

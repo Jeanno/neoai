@@ -28,6 +28,11 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
 - MOD-10: The OpenRouter key is read from `OPENROUTER_API_KEY` first, then
   `keys.openrouter` in the config file.
 
+## Context
+
+- MOD-12: A hosted model's context window is read from the OpenRouter
+  catalogue; 8192 is assumed when it is unknown.
+
 ## Reasoning
 
 - MOD-11: navi asks local reasoning models not to think (they exhaust the step
@@ -35,5 +40,4 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
 
 ## Open
 
-- The hosted rung reports an 8k context window regardless of the model.
 - Per-link options such as reasoning effort or a token cap.
