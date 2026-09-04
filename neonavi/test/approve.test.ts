@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Readable, Writable } from 'node:stream'
-import { makeApprover } from '../src/approve.ts'
+import { makeApprover, makeLine } from '../src/approve.ts'
 import { systemPrompt } from '../src/args.ts'
 
 function io(typed: string) {
@@ -78,4 +78,22 @@ test('points the model at search before it starts opening files', () => {
 test('folds the project context file into the prompt when there is one', () => {
   const p = systemPrompt('/tmp/x', [], 'neonavi is a CLI agent.')
   assert.match(p, /neonavi is a CLI agent/)
+})
+
+// The REPL prompt and the approval prompt read the same stdin. Two readline
+// interfaces on one stream would race for lines, so they share one.
+test('a shared line reader serves the prompt and the approval in order', async () => {
+  const line = makeLine(io('do it\ny\n'))
+  const { approve } = makeApprover({ line })
+  assert.equal(await line.ask('> '), 'do it')
+  assert.equal(await approve('echo hi'), true)
+  line.close()
+})
+
+test('the line reader answers null once input is gone', async () => {
+  const line = makeLine(io('only\n'))
+  assert.equal(await line.ask('> '), 'only')
+  assert.equal(await line.ask('> '), null)
+  assert.equal(await line.ask('> '), null)
+  line.close()
 })
