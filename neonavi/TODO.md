@@ -5,6 +5,23 @@ file it would touch; add the requirement there first.
 
 ## Next
 
+Shell auto-approval, prompt highlight, spinner. Decided: the session's model
+judges each command; safe ones run unprompted, unsafe or unclear ones fall back
+to `run? [y/N]`; the judge sees the command and the current prompt; `approve:
+"ask"` in config restores always-ask. Ruled out: a `--yes` flag, a static
+allowlist, refusing unsafe commands outright, a separate judge model.
+
+1. [ ] Spinner on stderr while a model call is in flight, terminal only,
+       cleared before any tool echo or answer. Pipe mode prints nothing.
+       (`spec/cli.md`)
+2. [ ] Render the `navi>` prompt and the typed line bold. (`spec/cli.md`)
+3. [ ] `judge(model, command, intent)` → safe | unsafe | unknown as a pure
+       function, unit-tested with a fake model; anything unclear is unknown.
+       No behaviour change. (`spec/tools.md`)
+4. [ ] Wire the judge into approval: safe runs, unsafe/unknown asks, closed
+       stdin still declines. Add `approve: "ask"`. Depends on 3.
+       (`spec/tools.md`, `spec/models.md`)
+
 - [ ] Stream the answer as it is generated instead of printing it at the end.
       A reasoning model is silent for 5–10s per step today. (`spec/cli.md`)
 - [ ] Cite spec ids from the existing tests so every requirement is traceable.
@@ -18,7 +35,6 @@ file it would touch; add the requirement there first.
 - [ ] A write/edit tool, approved like `run_shell`. (`spec/tools.md`)
 - [ ] Summarise old history instead of dropping it at 20 messages. (`spec/session.md`)
 - [ ] `navi --sessions` to list and clear per-directory history. (`spec/session.md`)
-- [ ] Per-command approval allowlist for read-only shell commands. (`spec/tools.md`)
 
 ## Done
 
