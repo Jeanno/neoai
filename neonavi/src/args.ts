@@ -1,11 +1,12 @@
 /**
- * Everything after the binary name is the prompt. Bare words, so `navi list the
- * files` works without quotes — the shell has already done its expansion by the
- * time we see argv, which is why a prompt containing ? or * still needs quoting.
+ * The prompt is whatever follows -p, and nothing else: with bare words allowed,
+ * a mistyped flag silently became part of the question.
  */
-export function promptFrom(argv: string[]): string | null {
-  const text = argv.join(' ').trim()
-  return text || null
+export function promptFrom(argv: string[]): { prompt: string | null; stray: string[] } {
+  const at = argv.indexOf('-p')
+  if (at === -1) return { prompt: null, stray: argv }
+  const prompt = (argv[at + 1] ?? '').trim() || null
+  return { prompt, stray: [...argv.slice(0, at), ...argv.slice(at + 2)] }
 }
 
 /**
@@ -38,8 +39,6 @@ export function systemPrompt(cwd: string, entries: string[] = [], context = ''):
  * A bare `navi` is a fresh start: opening the loop is how you begin something.
  * A prompt on the command line is how you follow up, so that continues.
  */
-export function startsFresh(o: { prompt: string | null; fresh: boolean; resume: boolean }): boolean {
-  if (o.fresh) return true
-  if (o.resume) return false
-  return o.prompt === null
+export function startsFresh(o: { prompt: string | null; resume: boolean }): boolean {
+  return o.prompt === null && !o.resume
 }

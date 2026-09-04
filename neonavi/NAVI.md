@@ -2,7 +2,8 @@
 
 `navi` — a command-line agent. Bare `navi` in a terminal opens a conversation
 at a `navi>` prompt; `navi -p "<what you want done>"` answers that first and then
-keeps the prompt open. Bare words, no quoting. Each turn runs a tool loop until
+keeps the prompt open, and bare words without `-p` work too. Each turn runs a
+tool loop until
 it has an answer, then prints it. `exit`, ^C or ^D leave.
 
     navi
@@ -10,7 +11,7 @@ it has an answer, then prints it. `exit`, ^C or ^D leave.
     navi -p "what changed in this file" --model best
 
 When stdin is not a terminal (a pipe, a script) navi answers once and exits, so
-it still composes: `echo | navi summarize this` behaves as before.
+it still composes: `echo | navi -p "summarize this"` prints one answer.
 
 Tools: `grep`, `glob`, `read_file` (numbered lines, pageable), `list_dir`, and
 `run_shell`. Before a command runs, the session's model is asked whether it is
@@ -30,8 +31,8 @@ one. A list is the fallback chain, tried in order, so put the machine last:
 Unset means `["remote", "local"]`. Each link resolves the backend it names or
 fails so the next is tried, and if none resolve navi says so and exits 1.
 
-Other flags: `--new` (forget this directory's history), `--max-steps N`
-(default 32).
+Other flags: `-r` / `--resume` (open the loop with this directory's history),
+`--max-steps N` (default 32).
 
 navi asks OpenRouter first when a key is configured, and falls back to a local
 model when there is no key or no network. Prompts leave the machine on the
@@ -39,7 +40,7 @@ remote path; the backend that answered is announced on stderr every run.
 
 Conversation history is kept per directory under `~/.neoai/sessions/`. A
 prompt on the command line continues it, so a follow-up picks up where you
-left off; bare `navi` starts fresh, and `navi --resume` opens the loop with
+left off; bare `navi` starts fresh, and `navi -r` opens the loop with
 the history. Another project's context never leaks in.
 
 Behaviour is specified in `spec/`, one file per area with numbered

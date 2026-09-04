@@ -13,23 +13,22 @@ async function fixture() {
   return dir
 }
 
-test('joins bare argv into one prompt so no quoting is needed', () => {
-  assert.equal(
-    promptFrom(['list', 'the', 'files', 'and', 'summarize']),
-    'list the files and summarize',
-  )
+// CLI-1
+test('-p is the prompt, and bare words are reported as stray', () => {
+  assert.deepEqual(promptFrom(['-p', 'list the files']), { prompt: 'list the files', stray: [] })
+  assert.deepEqual(promptFrom(['list', 'the', 'files']), { prompt: null, stray: ['list', 'the', 'files'] })
+  assert.deepEqual(promptFrom(['-p', '']), { prompt: null, stray: [] })
 })
 
 test('reports no prompt when given nothing', () => {
-  assert.equal(promptFrom([]), null)
+  assert.deepEqual(promptFrom([]), { prompt: null, stray: [] })
 })
 
 // SES-3
-test('bare navi starts fresh, a prompt continues, flags override either', () => {
-  assert.equal(startsFresh({ prompt: null, fresh: false, resume: false }), true)
-  assert.equal(startsFresh({ prompt: 'hi', fresh: false, resume: false }), false)
-  assert.equal(startsFresh({ prompt: 'hi', fresh: true, resume: false }), true)
-  assert.equal(startsFresh({ prompt: null, fresh: false, resume: true }), false)
+test('bare navi starts fresh, a prompt continues, --resume continues', () => {
+  assert.equal(startsFresh({ prompt: null, resume: false }), true)
+  assert.equal(startsFresh({ prompt: 'hi', resume: false }), false)
+  assert.equal(startsFresh({ prompt: null, resume: true }), false)
 })
 
 test('read_file returns the contents of a real file, numbered by line', async () => {

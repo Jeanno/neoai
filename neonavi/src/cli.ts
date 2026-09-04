@@ -35,10 +35,11 @@ async function main() {
   let argv = process.argv.slice(2)
   const steps = takeFlag(argv, '--max-steps', true)
   argv = steps.rest
-  const fresh = takeFlag(argv, '--new', false)
-  argv = fresh.rest
   const resume = takeFlag(argv, '--resume', false)
   argv = resume.rest
+  const r = takeFlag(argv, '-r', false)
+  argv = r.rest
+  const resuming = resume.value !== undefined || r.value !== undefined
   const model = takeFlag(argv, '--model', true)
   argv = model.rest
 
@@ -46,10 +47,11 @@ async function main() {
   // the only place it can come from.
   const interactive = process.stdin.isTTY === true
   const maxSteps = steps.value === undefined ? DEFAULT_STEPS : Number(steps.value)
-  const first = promptFrom(argv)
-  if (!first && !interactive) {
+  const { prompt: first, stray } = promptFrom(argv)
+  if (stray.length || (!first && !interactive)) {
+    if (stray.length) console.error(`unexpected: ${stray.join(' ')}`)
     console.error(
-      'usage: navi [what you want done]   [--new|--resume] [--model remote|local|<id>[,...]] [--max-steps N]',
+      'usage: navi [-p "what you want done"] [-r|--resume] [--model remote|local|<id>[,...]] [--max-steps N]',
     )
     return 1
   }
@@ -71,7 +73,7 @@ async function main() {
   const entries = await readdir(cwd).catch(() => [])
   const context = await collectContext(cwd)
   const file = sessionFile(cwd, homedir())
-  const anew = startsFresh({ prompt: first, fresh: fresh.value !== undefined, resume: resume.value !== undefined })
+  const anew = startsFresh({ prompt: first, resume: resuming })
   let messages: ModelMessage[] = anew ? [] : trim(await loadSession(file))
   if (messages.length) console.error(dim(`· continuing (${messages.length} messages)`))
 
@@ -127,7 +129,7 @@ async function main() {
       console.log(text)
       return true
     }
-    console.error(dim('the model returned no answer; ask again or try --new'))
+    console.error(dim('the model returned no answer; ask again'))
     return false
   }
 

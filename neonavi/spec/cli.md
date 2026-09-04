@@ -1,24 +1,24 @@
 # CLI
 
-    navi [prompt words...] [--new | --resume] [--model <spec>] [--max-steps N]
+    navi [-p <prompt>] [-r|--resume] [--model <spec>] [--max-steps N]
 
 ## Prompt
 
-- CLI-1: Everything in argv that is not a recognised flag is the prompt, joined
-  by single spaces. No quoting is needed.
-- CLI-2: Flags may appear anywhere in argv. `--new` and `--resume` are bare;
-  `--model` and `--max-steps` take the next argument.
+- CLI-1: `-p <text>` is the prompt. Bare words are not a prompt: anything in
+  argv that is not a recognised flag is an error, reported with the usage line.
+- CLI-2: Flags may appear anywhere in argv. `--resume` and its short form `-r`
+  are bare; `-p`, `--model` and `--max-steps` take the next argument.
 
 ## Modes
 
 - CLI-3: When stdin is a terminal, navi is interactive: after answering the
-  argv prompt (if any) it reads further prompts from a `navi>` prompt until told
+  `-p` prompt (if any) it reads further prompts from a `navi>` prompt until told
   to leave.
-- CLI-4: When stdin is not a terminal, navi answers the argv prompt once and
+- CLI-4: When stdin is not a terminal, navi answers the `-p` prompt once and
   exits.
-- CLI-5: With no argv prompt and a non-terminal stdin, navi prints usage to
+- CLI-5: With no `-p` prompt and a non-terminal stdin, navi prints usage to
   stderr and exits 1.
-- CLI-6: With no argv prompt and a terminal stdin, navi starts a new session
+- CLI-6: With no `-p` prompt and a terminal stdin, navi starts a new session
   (SES-3), prints a one-line hint on how to leave, then opens the prompt.
 - CLI-7: `exit`, `quit`, `q` (case-insensitive), ^C at the prompt, or EOF all
   leave with exit 0. Blank lines are ignored.
@@ -28,7 +28,7 @@
 ## Turns
 
 - CLI-9: One turn is one `generateText` call with tools, stopping after
-  `--max-steps` steps (default 8). A step is one model response.
+  `--max-steps` steps (default 32). A step is one model response.
 - CLI-10: Each tool call is echoed to stderr, dimmed, as it happens.
 - CLI-11: The answer goes to stdout. Everything else — backend announcement,
   tool echo, hints, errors — goes to stderr, so stdout can be piped.
