@@ -3,7 +3,7 @@ import { generateText, stepCountIs, type ModelMessage } from 'ai'
 import { auto } from 'neorouter'
 import { homedir } from 'node:os'
 import { readdir } from 'node:fs/promises'
-import { promptFrom, systemPrompt } from './args.ts'
+import { promptFrom, startsFresh, systemPrompt } from './args.ts'
 import { parseModelSpec, resolveChain } from './spec.ts'
 import { gated, makeApprover, makeLine } from './approve.ts'
 import { judge } from './judge.ts'
@@ -37,6 +37,8 @@ async function main() {
   argv = steps.rest
   const fresh = takeFlag(argv, '--new', false)
   argv = fresh.rest
+  const resume = takeFlag(argv, '--resume', false)
+  argv = resume.rest
   const model = takeFlag(argv, '--model', true)
   argv = model.rest
 
@@ -47,7 +49,7 @@ async function main() {
   const first = promptFrom(argv)
   if (!first && !interactive) {
     console.error(
-      'usage: navi [what you want done]   [--new] [--model remote|local|<id>[,...]] [--max-steps N]',
+      'usage: navi [what you want done]   [--new|--resume] [--model remote|local|<id>[,...]] [--max-steps N]',
     )
     return 1
   }
@@ -69,7 +71,8 @@ async function main() {
   const entries = await readdir(cwd).catch(() => [])
   const context = await collectContext(cwd)
   const file = sessionFile(cwd, homedir())
-  let messages: ModelMessage[] = fresh.value === undefined ? trim(await loadSession(file)) : []
+  const anew = startsFresh({ prompt: first, fresh: fresh.value !== undefined, resume: resume.value !== undefined })
+  let messages: ModelMessage[] = anew ? [] : trim(await loadSession(file))
   if (messages.length) console.error(dim(`· continuing (${messages.length} messages)`))
 
   const line = makeLine({ input: process.stdin, output: process.stdout })

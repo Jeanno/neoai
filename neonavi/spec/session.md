@@ -4,8 +4,10 @@
   the first 16 hex chars of sha256 of the working directory path.
 - SES-2: One history per directory. A follow-up in the same directory continues
   it; another directory never sees it.
-- SES-3: On startup the history is loaded and "· continuing (N messages)" is
-  printed on stderr when N > 0. `--new` starts empty and overwrites on save.
+- SES-3: `navi <prompt>` continues this directory's history; bare `navi`
+  starts a new one. `--new` forces a fresh start and `--resume` forces
+  continuing, whichever form is used. When continuing with N > 0 messages,
+  "· continuing (N messages)" is printed on stderr. Saving overwrites.
 - SES-4: Only the last 20 messages are kept, both in what is sent to the model
   and what is saved. Tool calls and results count as messages.
 - SES-5: A missing, malformed, or non-array file is treated as empty, never as

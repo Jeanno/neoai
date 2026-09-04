@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { promptFrom } from '../src/args.ts'
+import { promptFrom, startsFresh } from '../src/args.ts'
 import { makeTools } from '../src/tools.ts'
 
 async function fixture() {
@@ -22,6 +22,14 @@ test('joins bare argv into one prompt so no quoting is needed', () => {
 
 test('reports no prompt when given nothing', () => {
   assert.equal(promptFrom([]), null)
+})
+
+// SES-3
+test('bare navi starts fresh, a prompt continues, flags override either', () => {
+  assert.equal(startsFresh({ prompt: null, fresh: false, resume: false }), true)
+  assert.equal(startsFresh({ prompt: 'hi', fresh: false, resume: false }), false)
+  assert.equal(startsFresh({ prompt: 'hi', fresh: true, resume: false }), true)
+  assert.equal(startsFresh({ prompt: null, fresh: false, resume: true }), false)
 })
 
 test('read_file returns the contents of a real file, numbered by line', async () => {

@@ -1,13 +1,13 @@
 # CLI
 
-    navi [prompt words...] [--new] [--model <spec>] [--max-steps N]
+    navi [prompt words...] [--new | --resume] [--model <spec>] [--max-steps N]
 
 ## Prompt
 
 - CLI-1: Everything in argv that is not a recognised flag is the prompt, joined
   by single spaces. No quoting is needed.
-- CLI-2: Flags may appear anywhere in argv. `--new` is bare; `--model` and
-  `--max-steps` take the next argument.
+- CLI-2: Flags may appear anywhere in argv. `--new` and `--resume` are bare;
+  `--model` and `--max-steps` take the next argument.
 
 ## Modes
 
@@ -18,8 +18,8 @@
   exits.
 - CLI-5: With no argv prompt and a non-terminal stdin, navi prints usage to
   stderr and exits 1.
-- CLI-6: With no argv prompt and a terminal stdin, navi prints a one-line hint
-  on how to leave, then opens the prompt.
+- CLI-6: With no argv prompt and a terminal stdin, navi starts a new session
+  (SES-3), prints a one-line hint on how to leave, then opens the prompt.
 - CLI-7: `exit`, `quit`, `q` (case-insensitive), ^C at the prompt, or EOF all
   leave with exit 0. Blank lines are ignored.
 - CLI-8: The interactive prompt and shell approval share one stdin reader, so

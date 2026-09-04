@@ -37,9 +37,10 @@ navi asks OpenRouter first when a key is configured, and falls back to a local
 model when there is no key or no network. Prompts leave the machine on the
 remote path; the backend that answered is announced on stderr every run.
 
-Conversation history is kept per directory under `~/.neoai/sessions/`, so a
-follow-up continues where you left off and another project's context never
-leaks in.
+Conversation history is kept per directory under `~/.neoai/sessions/`. A
+prompt on the command line continues it, so a follow-up picks up where you
+left off; bare `navi` starts fresh, and `navi --resume` opens the loop with
+the history. Another project's context never leaks in.
 
 Behaviour is specified in `spec/`, one file per area with numbered
 requirements; change the spec before the code.

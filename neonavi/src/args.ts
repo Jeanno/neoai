@@ -33,3 +33,13 @@ export function systemPrompt(cwd: string, entries: string[] = [], context = ''):
       : []),
   ].join('\n')
 }
+
+/**
+ * A bare `navi` is a fresh start: opening the loop is how you begin something.
+ * A prompt on the command line is how you follow up, so that continues.
+ */
+export function startsFresh(o: { prompt: string | null; fresh: boolean; resume: boolean }): boolean {
+  if (o.fresh) return true
+  if (o.resume) return false
+  return o.prompt === null
+}
