@@ -42,6 +42,23 @@ Five tools. Nothing writes to disk except a shell command the user approved.
 - TL-17: A failing command returns its stderr or error message as the tool
   result so the model can recover; it is never thrown.
 
+## Safety judge
+
+A model call that decides whether a shell command needs the user's approval.
+Built as a pure function first; wiring into run_shell is a separate stage.
+
+- TL-18: `judge(model, command, intent)` returns `safe`, `unsafe` or
+  `unknown`. `intent` is the user's current prompt, so "delete the build dir"
+  makes `rm -rf build` judgeable.
+- TL-19: The model is asked for a one-word verdict. Only a line reading
+  exactly SAFE or UNSAFE (case-insensitive) counts; the last such line wins.
+  Any other output is `unknown`.
+- TL-20: A model error, timeout, or empty reply is `unknown`, never a throw.
+- TL-21: Safe means read-only, or writing only inside the working directory
+  without deleting or overwriting existing files, with no network sends, no
+  privilege escalation, no process kills, and no git history rewriting or
+  pushing. Everything else, including anything the judge cannot tell, is unsafe.
+
 ## Open
 
 - A write/edit tool, gated like run_shell.

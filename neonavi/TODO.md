@@ -15,7 +15,7 @@ allowlist, refusing unsafe commands outright, a separate judge model.
        cleared before any tool echo or answer. Pipe mode prints nothing.
        (`spec/cli.md`)
 2. [x] Render the `navi>` prompt and the typed line bold. (`spec/cli.md`)
-3. [ ] `judge(model, command, intent)` → safe | unsafe | unknown as a pure
+3. [x] `judge(model, command, intent)` → safe | unsafe | unknown as a pure
        function, unit-tested with a fake model; anything unclear is unknown.
        No behaviour change. (`spec/tools.md`)
 4. [ ] Wire the judge into approval: safe runs, unsafe/unknown asks, closed
