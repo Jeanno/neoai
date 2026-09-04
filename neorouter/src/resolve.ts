@@ -164,9 +164,8 @@ async function hostedResolution(
  */
 function announce(r: Resolved): void {
   if (process.env.NEOROUTER_QUIET) return
-  const where = r.local ? 'local' : 'REMOTE — prompts leave this machine'
   const cold = r.coldStartMs ? `, ${(r.coldStartMs / 1000).toFixed(1)}s cold start` : ''
-  console.error(`neorouter: ${r.backend} · ${r.modelId} · ${where} (${r.rung}${cold})`)
+  console.error(`neorouter: ${r.backend} · ${r.modelId} (${r.rung}${cold})`)
 }
 
 // Keyed by preference: 'fast' and the default resolve to different models, so a
