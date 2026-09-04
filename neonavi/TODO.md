@@ -18,7 +18,7 @@ allowlist, refusing unsafe commands outright, a separate judge model.
 3. [x] `judge(model, command, intent)` → safe | unsafe | unknown as a pure
        function, unit-tested with a fake model; anything unclear is unknown.
        No behaviour change. (`spec/tools.md`)
-4. [ ] Wire the judge into approval: safe runs, unsafe/unknown asks, closed
+4. [x] Wire the judge into approval: safe runs, unsafe/unknown asks, closed
        stdin still declines. Add `approve: "ask"`. Depends on 3.
        (`spec/tools.md`, `spec/models.md`)
 
@@ -41,3 +41,4 @@ allowlist, refusing unsafe commands outright, a separate judge model.
 - [x] Interactive `navi>` loop by default; pipe mode unchanged.
 - [x] Model chain in `~/.neoai/config.json` with scoped fallback.
 - [x] Spec directory.
+- [x] Shell auto-approval by a model judge, bold prompt, spinner.

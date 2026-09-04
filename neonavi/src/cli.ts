@@ -5,7 +5,8 @@ import { homedir } from 'node:os'
 import { readdir } from 'node:fs/promises'
 import { promptFrom, systemPrompt } from './args.ts'
 import { parseModelSpec, resolveChain } from './spec.ts'
-import { makeApprover, makeLine } from './approve.ts'
+import { gated, makeApprover, makeLine } from './approve.ts'
+import { judge } from './judge.ts'
 import { makeTools } from './tools.ts'
 import { makeSpinner } from './spinner.ts'
 import { loadSession, saveSession, sessionFile, trim } from './session.ts'
@@ -74,20 +75,32 @@ async function main() {
   const line = makeLine({ input: process.stdin, output: process.stdout })
   const spin = makeSpinner(process.stderr)
   const asker = makeApprover({ line })
-  // The question would otherwise be drawn beside a spinning frame.
-  const approve = async (command: string) => {
-    spin.stop()
-    const ok = await asker.approve(command)
-    spin.start()
-    return ok
-  }
   const llm = auto(chosen.options)
+  // What the user asked this turn: the judge reads the command in its light.
+  let intent = ''
+  const approve = gated({
+    judge: (command) => judge(llm, command, intent),
+    mode: config.approve,
+    onAuto: (command) => {
+      spin.stop()
+      console.error(dim(`· auto-approved: ${command}`))
+      spin.start()
+    },
+    // The question would otherwise be drawn beside a spinning frame.
+    ask: async (command) => {
+      spin.stop()
+      const ok = await asker.approve(command)
+      spin.start()
+      return ok
+    },
+  })
   const system = systemPrompt(cwd, entries, context)
   const tools = makeTools({ approve })
 
   /** One question in, one answer out. Returns whether the model said anything. */
   const turn = async (prompt: string) => {
     messages = [...messages, { role: 'user', content: prompt }]
+    intent = prompt
     spin.start()
     const { text, response } = await generateText({
       model: llm,

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Readable, Writable } from 'node:stream'
-import { makeApprover, makeLine } from '../src/approve.ts'
+import { gated, makeApprover, makeLine } from '../src/approve.ts'
 import { systemPrompt } from '../src/args.ts'
 
 function io(typed: string) {
@@ -96,4 +96,39 @@ test('the line reader answers null once input is gone', async () => {
   assert.equal(await line.ask('> '), null)
   assert.equal(await line.ask('> '), null)
   line.close()
+})
+
+function gate(verdict: 'safe' | 'unsafe' | 'unknown', mode?: string) {
+  const asked: string[] = []
+  const judged: string[] = []
+  const approve = gated({
+    judge: async (c) => (judged.push(c), verdict),
+    ask: async (c) => (asked.push(c), false),
+    mode,
+  })
+  return { approve, asked, judged }
+}
+
+// TL-22
+test('a command judged safe runs without asking', async () => {
+  const g = gate('safe')
+  assert.equal(await g.approve('ls'), true)
+  assert.deepEqual(g.asked, [])
+})
+
+// TL-23
+test('unsafe and unknown verdicts both ask', async () => {
+  for (const v of ['unsafe', 'unknown'] as const) {
+    const g = gate(v)
+    assert.equal(await g.approve('rm -rf x'), false)
+    assert.deepEqual(g.asked, ['rm -rf x'])
+  }
+})
+
+// TL-24
+test('approve: ask skips the judge entirely', async () => {
+  const g = gate('safe', 'ask')
+  await g.approve('ls')
+  assert.deepEqual(g.judged, [])
+  assert.deepEqual(g.asked, ['ls'])
 })

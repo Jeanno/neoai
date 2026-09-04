@@ -70,3 +70,30 @@ export function makeApprover(
     close: () => line.close(),
   }
 }
+
+export type Verdict = 'safe' | 'unsafe' | 'unknown'
+
+/**
+ * Judge first, ask second. Only a clear 'safe' skips the question: 'unknown'
+ * covers a model error or a hedged answer, and neither is consent.
+ */
+export function gated({
+  judge,
+  ask,
+  mode,
+  onAuto,
+}: {
+  judge: (command: string) => Promise<Verdict>
+  ask: (command: string) => Promise<boolean>
+  /** 'ask' never consults the judge. */
+  mode?: string
+  onAuto?: (command: string) => void
+}): Approver['approve'] {
+  return async (command) => {
+    if (mode !== 'ask' && (await judge(command)) === 'safe') {
+      onAuto?.(command)
+      return true
+    }
+    return ask(command)
+  }
+}

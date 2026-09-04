@@ -13,8 +13,12 @@ When stdin is not a terminal (a pipe, a script) navi answers once and exits, so
 it still composes: `echo | navi summarize this` behaves as before.
 
 Tools: `grep`, `glob`, `read_file` (numbered lines, pageable), `list_dir`, and
-`run_shell`, which shows the command and waits for `y` every single time and
-remembers nothing. Nothing writes to disk except a shell command you approved.
+`run_shell`. Before a command runs, the session's model is asked whether it is
+safe — read-only, or writing new files inside the directory, nothing over the
+network, no sudo. Safe commands run and are echoed as auto-approved; anything
+else, or anything the judge cannot tell, shows the command and waits for `y`.
+Nothing is remembered between commands. `"approve": "ask"` in the config asks
+for everything. Nothing writes to disk except a shell command that passed.
 
 Which model answers is set by `model` in `~/.neoai/config.json`, or `--model`
 for one run. A value is an alias — `remote`, `local`, `fast`, `best` — or an

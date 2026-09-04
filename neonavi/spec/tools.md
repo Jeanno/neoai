@@ -31,8 +31,8 @@ Five tools. Nothing writes to disk except a shell command the user approved.
 
 ## run_shell
 
-- TL-13: Every call asks the user first, showing the exact command. Nothing is
-  remembered between calls.
+- TL-13: Every call is judged first (see below); anything not judged safe asks
+  the user, showing the exact command. Nothing is remembered between calls.
 - TL-14: Only a line reading `y` (case-insensitive, trimmed) approves. Any
   other input, or no input at all (closed or redirected stdin), declines.
 - TL-15: A decline returns a message telling the model not to retry and to try
@@ -45,7 +45,14 @@ Five tools. Nothing writes to disk except a shell command the user approved.
 ## Safety judge
 
 A model call that decides whether a shell command needs the user's approval.
-Built as a pure function first; wiring into run_shell is a separate stage.
+
+- TL-22: A command judged `safe` runs without asking. A dim line on stderr
+  says it was auto-approved, so the user still sees every command.
+- TL-23: `unsafe` and `unknown` both fall to the `[y/N]` prompt, so a closed
+  stdin still declines them (TL-14).
+- TL-24: `"approve": "ask"` in `~/.neoai/config.json` skips the judge and
+  asks for everything. Any other value, or none, means judge first.
+- TL-25: The judge uses the session's model. No separate model is configured.
 
 - TL-18: `judge(model, command, intent)` returns `safe`, `unsafe` or
   `unknown`. `intent` is the user's current prompt, so "delete the build dir"
