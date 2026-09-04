@@ -11,7 +11,7 @@ to `run? [y/N]`; the judge sees the command and the current prompt; `approve:
 "ask"` in config restores always-ask. Ruled out: a `--yes` flag, a static
 allowlist, refusing unsafe commands outright, a separate judge model.
 
-1. [ ] Spinner on stderr while a model call is in flight, terminal only,
+1. [x] Spinner on stderr while a model call is in flight, terminal only,
        cleared before any tool echo or answer. Pipe mode prints nothing.
        (`spec/cli.md`)
 2. [ ] Render the `navi>` prompt and the typed line bold. (`spec/cli.md`)

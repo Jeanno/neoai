@@ -36,6 +36,13 @@
   exits 1; in interactive mode the loop continues.
 - CLI-13: History is saved after every turn, empty answer or not.
 
+## Feedback
+
+- CLI-16: While a model call is in flight and stderr is a terminal, a dim
+  spinner animates on stderr. It is erased before any tool echo, approval
+  prompt, or answer, so nothing it drew survives in the output.
+- CLI-17: When stderr is not a terminal the spinner writes nothing at all.
+
 ## Startup
 
 - CLI-14: If no link in the model chain resolves, navi names the chain on

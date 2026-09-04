@@ -7,6 +7,7 @@ import { promptFrom, systemPrompt } from './args.ts'
 import { parseModelSpec, resolveChain } from './spec.ts'
 import { makeApprover, makeLine } from './approve.ts'
 import { makeTools } from './tools.ts'
+import { makeSpinner } from './spinner.ts'
 import { loadSession, saveSession, sessionFile, trim } from './session.ts'
 import { collectContext } from './context.ts'
 import { readConfig } from 'neorouter'
@@ -71,7 +72,15 @@ async function main() {
   if (messages.length) console.error(dim(`· continuing (${messages.length} messages)`))
 
   const line = makeLine({ input: process.stdin, output: process.stdout })
-  const { approve } = makeApprover({ line })
+  const spin = makeSpinner(process.stderr)
+  const asker = makeApprover({ line })
+  // The question would otherwise be drawn beside a spinning frame.
+  const approve = async (command: string) => {
+    spin.stop()
+    const ok = await asker.approve(command)
+    spin.start()
+    return ok
+  }
   const llm = auto(chosen.options)
   const system = systemPrompt(cwd, entries, context)
   const tools = makeTools({ approve })
@@ -79,6 +88,7 @@ async function main() {
   /** One question in, one answer out. Returns whether the model said anything. */
   const turn = async (prompt: string) => {
     messages = [...messages, { role: 'user', content: prompt }]
+    spin.start()
     const { text, response } = await generateText({
       model: llm,
       system,
@@ -87,9 +97,11 @@ async function main() {
       messages,
       // A silent minute is indistinguishable from a hang.
       onStepFinish: ({ toolCalls }) => {
+        spin.stop()
         for (const c of toolCalls) console.error(dim(`· ${c.toolName}(${JSON.stringify(c.input)})`))
+        spin.start()
       },
-    })
+    }).finally(spin.stop)
     // Saved even when the answer came out empty: the tool results are the part
     // worth carrying forward, and a follow-up is how you recover from a bad turn.
     messages = trim([...messages, ...response.messages])
