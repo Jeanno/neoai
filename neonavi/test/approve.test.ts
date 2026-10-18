@@ -37,7 +37,7 @@ test('declines when stdin is closed with no answer', async () => {
 })
 
 test('tells the model where it is running', () => {
-  assert.match(systemPrompt('/Users/jeanno/Projects/neoai'), /\/Users\/jeanno\/Projects\/neoai/)
+  assert.match(systemPrompt('/Users/x/Projects/neoai'), /\/Users\/x\/Projects\/neoai/)
 })
 
 test('tells the model paths are relative to that directory', () => {
