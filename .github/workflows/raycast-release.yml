@@ -1,0 +1,36 @@
+# On a raycast-v* tag, tests and builds the Raycast jack-in and publishes the
+# navi-raycast.tar.gz that jackins/raycast/install.sh downloads.
+name: Raycast release
+
+on:
+  push:
+    tags: ['raycast-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Test
+        run: npm test --workspaces --if-present
+
+      - name: Build
+        run: sh jackins/raycast/scripts/dist.sh "${GITHUB_REF_NAME#raycast-}"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" jackins/raycast/navi-raycast.tar.gz \
+            --title "Navi for Raycast ${GITHUB_REF_NAME#raycast-}" --generate-notes

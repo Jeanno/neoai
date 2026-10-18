@@ -11,6 +11,10 @@ export interface Navi {
   local: boolean
 }
 
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message.replace(/^neorouter: /, '') : String(error)
+}
+
 let pending: Promise<Navi> | undefined
 
 /**

@@ -51,7 +51,17 @@ navi -p "where is shell approval handled"
 
 Not a developer? Follow the [step-by-step guide](jackins/raycast/README.md) instead.
 
-Needs [Raycast](https://raycast.com) 2.x.
+Needs [Raycast](https://raycast.com) 2.x on macOS. One line, no Node, npm or git:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Jeanno/neoai/master/jackins/raycast/install.sh | sh
+```
+
+It downloads the latest prebuilt release into Raycast's extensions folder and registers it the way
+`ray develop` does, so Raycast lists it as a development extension. Run it again to update. To
+remove it, press ⌘K on a Navi command in Raycast → Uninstall Extension.
+
+From a checkout instead:
 
 ```bash
 cd jackins/raycast
@@ -60,6 +70,9 @@ npm run dev
 
 Raycast picks up **Ask Navi** and **Navi Chat** as soon as the build says `ready`. Press ⌃C when
 you're done: the extension stays installed. Run `npm run dev` again after pulling changes.
+
+Releases: push a `raycast-v<version>` tag and CI (`.github/workflows/raycast-release.yml`) tests,
+builds with `jackins/raycast/scripts/dist.sh` and attaches `navi-raycast.tar.gz` to a GitHub release.
 
 The backend that answered is shown in each view. To pin one, set **Model** in the extension's
 preferences (⌘K → Configure Extension) — the same values as `navi --model`.

@@ -21,6 +21,24 @@
       "title": "Navi Chat",
       "description": "Multi-turn chat with saved history.",
       "mode": "view"
+    },
+    {
+      "name": "fix-grammar",
+      "title": "Fix Spelling and Grammar",
+      "description": "Correct the spelling and grammar of the selected text and replace it.",
+      "mode": "no-view"
+    },
+    {
+      "name": "translate-replace",
+      "title": "Translate and Replace",
+      "description": "Translate the selected text into your chosen language and replace it.",
+      "mode": "no-view"
+    },
+    {
+      "name": "summarize",
+      "title": "Summarize",
+      "description": "Summarize the selected text, or the clipboard if nothing is selected.",
+      "mode": "view"
     }
   ],
   "preferences": [
@@ -40,6 +58,14 @@
       "type": "checkbox",
       "required": false,
       "default": false
+    },
+    {
+      "name": "language",
+      "title": "Translate To",
+      "description": "The language Translate and Replace translates into.",
+      "type": "textfield",
+      "required": false,
+      "default": "English"
     }
   ],
   "dependencies": {

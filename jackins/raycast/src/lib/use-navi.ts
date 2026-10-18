@@ -1,11 +1,7 @@
 import { showToast, Toast } from '@raycast/api'
 import { streamText, type ModelMessage } from 'ai'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { resolveNavi } from './model'
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message.replace(/^neorouter: /, '') : String(error)
-}
+import { errorMessage, resolveNavi } from './model'
 
 /**
  * One streamed answer at a time, aborted when the view unmounts. run() resolves
