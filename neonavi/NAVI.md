@@ -13,8 +13,11 @@ it has an answer, then prints it. `exit`, ^C or ^D leave.
 When stdin is not a terminal (a pipe, a script) navi answers once and exits, so
 it still composes: `echo | navi -p "summarize this"` prints one answer.
 
-Tools: `grep`, `glob`, `read_file` (numbered lines, pageable), `list_dir`, and
-`run_shell`. Before a command runs, the session's model is asked whether it is
+Tools: `grep`, `glob`, `read_file` (numbered lines, pageable), `list_dir`,
+`web_search` and `run_shell`. `web_search` needs no key (DuckDuckGo); the query
+is the only thing it sends, and `"web_search": false` in the config removes it.
+
+Before a shell command runs, the session's model is asked whether it is
 safe — read-only, or writing new files inside the directory, nothing over the
 network, no sudo. Safe commands run and are echoed as auto-approved; anything
 else, or anything the judge cannot tell, shows the command and waits for `y`.
@@ -44,6 +47,10 @@ place by the model and the summary is what gets kept. A
 prompt on the command line continues it, so a follow-up picks up where you
 left off; bare `navi` starts fresh, and `navi -r` opens the loop with
 the history. Another project's context never leaks in.
+
+`./install.sh` puts a `navi` launcher in `~/.local/bin` that runs this
+checkout through its own tsx (no Bun needed); piped from curl it clones the
+repo to `~/.local/share/neoai` first. `--uninstall` removes only what it made.
 
 Behaviour is specified in `spec/`, one file per area with numbered
 requirements; change the spec before the code.

@@ -2,9 +2,16 @@
   "name": "neoai",
   "private": true,
   "type": "module",
-  "workspaces": ["neorouter", "neonavi"],
+  "workspaces": [
+    "neorouter",
+    "neonavi",
+    "jackins/*"
+  ],
   "scripts": {
     "test": "npm test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
   }
 }
