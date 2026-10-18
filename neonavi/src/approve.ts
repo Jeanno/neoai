@@ -6,8 +6,11 @@ const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
 
 /** One readline shared by everything that reads stdin: prompts and approvals alike. */
 export interface Line {
-  /** The line typed, or null when input is gone (EOF, ^C, ^D). */
-  ask: (prompt: string) => Promise<string | null>
+  /**
+   * The line typed, or null when input is gone (EOF, ^C, ^D). A secret answer
+   * is not echoed as it is typed.
+   */
+  ask: (prompt: string, opts?: { secret?: boolean }) => Promise<string | null>
   close: () => void
 }
 
@@ -41,14 +44,30 @@ export function makeLine({ input, output }: { input: Readable; output: Writable 
     return rl
   }
   return {
-    ask: async (prompt) => {
+    ask: async (prompt, { secret = false } = {}) => {
       const r = open()
       if (lines.length) return lines.shift()!
       // Input already at EOF: waiting would stall the agent instead of refusing.
       if (closed) return null
       r.setPrompt(prompt)
       r.prompt()
-      return new Promise((resolve) => waiting.push(resolve))
+      if (!secret) return new Promise((resolve) => waiting.push(resolve))
+      // Everything readline draws while the key is typed is dropped, except the
+      // newline that ends it. Muting the stream rather than readline itself
+      // holds across Node versions, whose internals have moved.
+      const write = output.write
+      output.write = ((chunk: unknown, enc?: unknown, cb?: unknown) => {
+        const done = (typeof enc === 'function' ? enc : cb) as (() => void) | undefined
+        if (String(chunk).includes('\n')) return write.call(output, '\n', 'utf8', done)
+        done?.()
+        return true
+      }) as typeof output.write
+      return new Promise((resolve) =>
+        waiting.push((l) => {
+          output.write = write
+          resolve(l)
+        }),
+      )
     },
     close: () => rl?.close(),
   }

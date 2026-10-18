@@ -9,9 +9,10 @@ The spec is the source of truth for what `navi` does. Code and tests follow it.
 | `cli.md` | Invocation, flags, interactive loop, exit codes |
 | `models.md` | Model chain: config, aliases, resolution, fallback |
 | `prompt.md` | What the model is told before every turn |
-| `tools.md` | The five tools, their limits, and shell approval |
+| `tools.md` | The six tools, their limits, and shell approval |
 | `session.md` | Per-directory history |
 | `context.md` | NAVI.md discovery |
+| `setup.md` | `navi setup`: getting a first model working |
 
 ## Requirements
 

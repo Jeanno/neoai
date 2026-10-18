@@ -81,6 +81,22 @@ export async function listModels(server: Server): Promise<RawModel[]> {
 }
 
 /** "7.6B" | "8x7B" | "1.1B" -> parameter count */
+/**
+ * Every chat model on every running local server, for someone choosing one.
+ * A server that fails to list is skipped; embedding models cannot chat.
+ */
+export async function localModels(): Promise<{ backend: string; id: string }[]> {
+  const servers = await reachableServers()
+  const lists = await Promise.all(
+    servers.map((s) =>
+      listModels(s)
+        .then((ms) => ms.map((m) => ({ backend: s.backend, id: m.id })))
+        .catch(() => []),
+    ),
+  )
+  return lists.flat().filter((m) => !/embed/i.test(m.id))
+}
+
 export function parseParams(s: string | undefined | null): number | undefined {
   if (!s) return undefined
   const moe = /(\d+)\s*x\s*([\d.]+)\s*([BM])/i.exec(s)

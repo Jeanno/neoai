@@ -1,5 +1,5 @@
 export interface Entry {
-  where: 'remote' | 'local'
+  where: 'remote' | 'local' | 'free'
   /** Exact model id, when one was named instead of an alias. */
   id?: string
   /** Which local model to prefer when none was named. */
@@ -15,6 +15,8 @@ const ALIASES: Record<string, Entry> = {
   local: { where: 'local', prefer: 'fast' },
   fast: { where: 'local', prefer: 'fast' },
   best: { where: 'local' },
+  // Keyless and public: only ever there because someone named it (MOD-13).
+  free: { where: 'free' },
 }
 
 /**
@@ -29,9 +31,12 @@ export function parseModelSpec(value: string | string[] | undefined): Entry[] {
     .map((s) => s.trim())
     .filter(Boolean)
   if (!parts.length) return DEFAULT
-  return parts.map(
-    (p) => ALIASES[p] ?? (p.includes('/') ? { where: 'remote', id: p } : { where: 'local', id: p }),
-  )
+  return parts.map((p) => {
+    if (ALIASES[p]) return ALIASES[p]
+    // LM Studio names models like `qwen/qwen3-4b`; the prefix keeps them local.
+    if (p.startsWith('local:')) return { where: 'local', id: p.slice('local:'.length) }
+    return p.includes('/') ? { where: 'remote', id: p } : { where: 'local', id: p }
+  })
 }
 
 import { probeBackend, type Scope } from 'neorouter'
@@ -51,11 +56,11 @@ export interface Chosen {
  */
 export async function resolveChain(chain: Entry[]): Promise<Chosen | null> {
   for (const entry of chain) {
-    const remote = entry.where === 'remote'
+    const remote = entry.where !== 'local'
     // Scoped: this link resolves the backend it names or none at all. Without
     // that, a mistyped remote id fell through to the anonymous tier instead of
     // failing so the next link could be tried.
-    const scope = remote ? 'keyed' : 'local'
+    const scope: Scope = entry.where === 'remote' ? 'keyed' : entry.where === 'free' ? 'keyless' : 'local'
     const got = await probeBackend(entry.prefer, remote, entry.id, scope)
     if (got)
       return {

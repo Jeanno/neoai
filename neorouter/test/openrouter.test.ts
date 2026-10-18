@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { catalogIds, contextLength, freeChatModels } from '../src/hosted.ts'
+import { catalogIds, contextLength, freeChatModels, prices } from '../src/hosted.ts'
 
 const catalog = {
   data: [
@@ -86,4 +86,18 @@ test('the context window comes from the catalogue, with a floor when unknown', (
   assert.equal(contextLength(catalog, 'z-ai/glm-5.3-flash'), 1310720)
   assert.equal(contextLength(catalog, 'x/y'), 8192)
   assert.equal(contextLength(null, 'x/y'), 8192)
+})
+
+test('prices are per million tokens, in the order asked, and drop missing ids', () => {
+  const catalog = {
+    data: [
+      { id: 'b/two', pricing: { prompt: '0.000002', completion: '0.00001' } },
+      { id: 'a/one', pricing: { prompt: '0.00000006', completion: '0.00000012' } },
+    ],
+  }
+  assert.deepEqual(prices(catalog, ['a/one', 'gone/model', 'b/two']), [
+    { id: 'a/one', input: 0.06, output: 0.12 },
+    { id: 'b/two', input: 2, output: 10 },
+  ])
+  assert.deepEqual(prices(null, ['a/one']), [])
 })

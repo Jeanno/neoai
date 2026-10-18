@@ -9,9 +9,11 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
   Whitespace is trimmed and empty parts dropped.
 - MOD-2: Unset or empty means `["remote", "local"]`.
 - MOD-3: Aliases: `remote` is the keyed hosted tier; `local` and `fast` are the
-  smallest usable local model; `best` is the largest local model that fits.
+  smallest usable local model; `best` is the largest local model that fits;
+  `free` is the keyless hosted tier.
 - MOD-4: Any other value is an exact model id. An id containing `/` is a hosted
-  (OpenRouter) model; anything else is a local one.
+  (OpenRouter) model; anything else is a local one. `local:<id>` is always a
+  local model, for local ids that contain `/` (LM Studio's `qwen/qwen3-4b`).
 
 ## Resolution
 
@@ -27,6 +29,10 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
   largest context window from the live catalogue.
 - MOD-10: The OpenRouter key is read from `OPENROUTER_API_KEY` first, then
   `keys.openrouter` in the config file.
+
+- MOD-13: `free` is never in the default chain. It is only used when the
+  user, or setup with their consent (SET-7), names it. It is remote: prompts
+  leave the machine.
 
 ## Context
 

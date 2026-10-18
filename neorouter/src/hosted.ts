@@ -78,6 +78,28 @@ export async function hostedHasModel(server: Server, id: string): Promise<boolea
   return catalogIds(await openrouterCatalog()).includes(id)
 }
 
+export interface Priced {
+  id: string
+  /** Dollars per million tokens. */
+  input: number
+  output: number
+}
+
+/** Prices for the ids still in the catalogue, in the order given; the rest are dropped. */
+export function prices(catalog: any, ids: string[]): Priced[] {
+  const models: any[] = Array.isArray(catalog?.data) ? catalog.data : []
+  return ids.flatMap((id) => {
+    const m = models.find((x) => x?.id === id)
+    if (!m) return []
+    const per = (v: unknown) => Math.round(Number(v) * 1e6 * 100) / 100
+    return [{ id, input: per(m.pricing?.prompt), output: per(m.pricing?.completion) }]
+  })
+}
+
+export async function pricedModels(ids: string[]): Promise<Priced[]> {
+  return prices(await openrouterCatalog(), ids)
+}
+
 export async function hostedModels(server?: Server): Promise<string[]> {
   if (server?.backend === 'openrouter') return freeChatModels(await openrouterCatalog())
   try {

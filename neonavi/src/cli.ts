@@ -13,6 +13,7 @@ import { loadSession, saveSession, sessionFile } from './session.ts'
 import { compact, estimateTokens } from './compact.ts'
 import { collectContext } from './context.ts'
 import { readConfig } from 'neorouter'
+import { NEXT_STEP, realDeps, runSetup } from './setup.ts'
 
 const DEFAULT_STEPS = 32
 
@@ -30,11 +31,36 @@ function takeFlag(argv: string[], flag: string, hasValue: boolean) {
   }
 }
 
+/** `navi setup [--check]`: getting a first model working (setup.md). */
+async function setup(argv: string[]) {
+  const check = takeFlag(argv, '--check', false)
+  if (check.rest.length) {
+    console.error(`unexpected: ${check.rest.join(' ')}`)
+    console.error('usage: navi setup [--check]')
+    return 1
+  }
+  // Setup reports the backend itself; the router's own line would say it twice.
+  process.env.NEOROUTER_QUIET = '1'
+  const line = makeLine({ input: process.stdin, output: process.stdout })
+  try {
+    const deps = realDeps({
+      ask: (q) => line.ask(q),
+      askSecret: (q) => line.ask(q, { secret: true }),
+      print: (s) => console.log(s),
+    })
+    // Nobody at a pipe to answer the questions, so only report (SET-3).
+    return await runSetup(deps, { check: check.value !== undefined || process.stdin.isTTY !== true })
+  } finally {
+    line.close()
+  }
+}
+
 /** Typed at the prompt to leave; ^C and ^D work too. */
 const QUIT = new Set(['exit', 'quit', 'q'])
 
 async function main() {
   let argv = process.argv.slice(2)
+  if (argv[0] === 'setup') return setup(argv.slice(1))
   const steps = takeFlag(argv, '--max-steps', true)
   argv = steps.rest
   const resume = takeFlag(argv, '--resume', false)
@@ -53,7 +79,7 @@ async function main() {
   if (stray.length || (!first && !interactive)) {
     if (stray.length) console.error(`unexpected: ${stray.join(' ')}`)
     console.error(
-      'usage: navi [-p "what you want done"] [-r|--resume] [--model remote|local|<id>[,...]] [--max-steps N]',
+      'usage: navi [-p "what you want done"] [-r|--resume] [--model remote|local|free|<id>[,...]] [--max-steps N]\n       navi setup [--check]',
     )
     return 1
   }
@@ -68,6 +94,7 @@ async function main() {
         .map((e) => e.id ?? e.where)
         .join(' → ')}`,
     )
+    console.error(NEXT_STEP)
     return 1
   }
 

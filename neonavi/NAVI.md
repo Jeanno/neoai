@@ -51,6 +51,16 @@ the history. Another project's context never leaks in.
 `./install.sh` puts a `navi` launcher in `~/.local/bin` that runs this
 checkout through its own tsx (no Bun needed); piped from curl it clones the
 repo to `~/.local/share/neoai` first. `--uninstall` removes only what it made.
+It finishes with `navi setup --check`.
+
+`navi setup` shows the primary and fallback models and lets you change
+either. It picks from every model on running local servers, OpenRouter's free
+tier and a short hand-picked list of paid models (`PICKS` in `src/setup.ts`,
+priced live, shown only with a key), and the keyless `free` tier. New sources
+are added from the same list: a local server, an OpenRouter key (checked before
+it is saved), or `free`, which is never in the default chain and only added
+after a warning and an explicit yes. Local picks are saved as `local:<id>`.
+`--check` only reports, for scripts.
 
 Behaviour is specified in `spec/`, one file per area with numbered
 requirements; change the spec before the code.

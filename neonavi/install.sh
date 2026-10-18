@@ -94,6 +94,11 @@ chmod +x "$target"
 "$target" </dev/null 2>&1 | grep -q '^usage: navi' || fail "installed $target, but it did not start; try running it directly"
 
 say "Installed navi → $target"
+# Tells someone with no model yet what to do next, rather than leaving it to
+# their first question to fail. Only reports; never asks (SET-2).
+say ""
+"$target" setup --check </dev/null || true
+say ""
 case ":$PATH:" in
   *":$bin_dir:"*) say "Try it: navi -p \"what is in this directory\"" ;;
   *)

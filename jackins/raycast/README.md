@@ -60,9 +60,10 @@ answered on your Mac.
 
 ## Something not working?
 
-**"Nothing in the model chain could be resolved"**
+**"No model found"**
 Navi couldn't find a model. Open LM Studio, make sure a model is downloaded and
-the server says **Running**, then ask again.
+the server says **Running**, then ask again. If you also use navi in Terminal,
+running `navi setup` there walks you through the other choices.
 
 **Answers are slow**
 The first question after opening LM Studio is slower while the model loads. If

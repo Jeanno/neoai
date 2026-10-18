@@ -31,7 +31,9 @@ async function resolve(): Promise<Navi> {
   const chain = parseModelSpec(override || (await readConfig()).model)
   const chosen = await resolveChain(chain)
   if (!chosen) {
-    throw new Error(`Nothing in the model chain could be resolved: ${chain.map((e) => e.id ?? e.where).join(' → ')}`)
+    throw new Error(
+      `No model found (${chain.map((e) => e.id ?? e.where).join(' → ')}). Open LM Studio and start its server, or run navi setup in Terminal.`,
+    )
   }
   const { prefer, remote, model, scope } = chosen.options
   // Memoised inside neorouter: this is the resolution resolveChain just made.

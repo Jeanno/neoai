@@ -60,7 +60,7 @@ export function rungOrder(remote: boolean): Rung[] {
     : ['reachable', 'launched', 'keyed', 'keyless']
 }
 
-export type Scope = 'keyed' | 'local'
+export type Scope = 'keyed' | 'local' | 'keyless'
 
 /**
  * Which rungs one resolution may use. A caller walking an explicit chain scopes
@@ -71,6 +71,7 @@ export type Scope = 'keyed' | 'local'
 export function rungsFor(scope: Scope | undefined, remote = false): Rung[] {
   if (scope === 'keyed') return ['keyed']
   if (scope === 'local') return ['reachable', 'launched']
+  if (scope === 'keyless') return ['keyless']
   return rungOrder(remote)
 }
 
@@ -205,6 +206,11 @@ export async function probeBackend(
   return resolveBackend(prefer, remote, modelId, scope).catch(() => null)
 }
 
+/**
+ * Forgets every resolution, failures included, so the next probe looks again —
+ * for a caller that has just changed what there is to find (a key saved, a
+ * server started).
+ */
 export function reset(): void {
   pending.clear()
 }

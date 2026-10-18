@@ -29,6 +29,9 @@ allowlist, refusing unsafe commands outright, a separate judge model.
 
 - [x] `web_search`: keyless DuckDuckGo results, echoed, removable with
       `"web_search": false`. (`spec/tools.md`, `spec/prompt.md`)
+- [x] `navi setup`: choose primary and fallback from local, OpenRouter
+      (free + hand-picked paid) and opt-in free models, add sources, and
+      `--check`, run by the installer. (`spec/setup.md`)
 
 ## Later
 

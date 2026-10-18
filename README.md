@@ -37,7 +37,13 @@ From a checkout, `./neonavi/install.sh` does the same with the code you have. Ei
 `navi` command in `~/.local/bin`; run the installer again to update, or pass `--uninstall` to remove it
 (`… | sh -s -- --uninstall`).
 
+The installer ends by checking for a model. If it finds none, run `navi setup`. It shows your
+primary and fallback models and lets you change either. It also lets you add a model on your
+computer (LM Studio or Ollama), an OpenRouter key, or a free public model (opt-in, with a warning
+that prompts leave your machine), and it tests the result.
+
 ```bash
+navi setup
 navi -p "where is shell approval handled"
 ```
 

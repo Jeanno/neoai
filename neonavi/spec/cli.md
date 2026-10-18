@@ -1,11 +1,14 @@
 # CLI
 
     navi [-p <prompt>] [-r|--resume] [--model <spec>] [--max-steps N]
+    navi setup [--check]
 
 ## Prompt
 
 - CLI-1: `-p <text>` is the prompt. Bare words are not a prompt: anything in
   argv that is not a recognised flag is an error, reported with the usage line.
+  The one exception is `setup` as the first argument, which runs setup
+  (`setup.md`) instead of a session.
 - CLI-2: Flags may appear anywhere in argv. `--resume` and its short form `-r`
   are bare; `-p`, `--model` and `--max-steps` take the next argument.
 
@@ -51,7 +54,7 @@
 ## Startup
 
 - CLI-14: If no link in the model chain resolves, navi names the chain on
-  stderr and exits 1 before reading any prompt.
+  stderr, suggests `navi setup`, and exits 1 before reading any prompt.
 - CLI-15: The resolved backend and model are announced once on stderr, with
   REMOTE called out when prompts leave the machine.
 

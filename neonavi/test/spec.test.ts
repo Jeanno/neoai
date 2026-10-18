@@ -59,3 +59,15 @@ test('blank entries are ignored rather than becoming a broken link', () => {
 test('an empty chain falls back to the default rather than resolving nothing', () => {
   assert.deepEqual(parseModelSpec([]), [{ where: 'remote' }, { where: 'local', prefer: 'fast' }])
 })
+
+// MOD-3, MOD-13: the keyless tier has a name, and is only there when named.
+test('free names the keyless tier and is not in the default chain', () => {
+  assert.deepEqual(parseModelSpec('free'), [{ where: 'free' }])
+  assert.deepEqual(parseModelSpec('local, free'), [{ where: 'local', prefer: 'fast' }, { where: 'free' }])
+  assert.ok(!parseModelSpec(undefined).some((e) => e.where === 'free'))
+})
+
+// MOD-4: a local id may contain a slash; the prefix says where it lives.
+test('local: pins a local model even when its id has a slash', () => {
+  assert.deepEqual(parseModelSpec('local:qwen/qwen3-4b'), [{ where: 'local', id: 'qwen/qwen3-4b' }])
+})
