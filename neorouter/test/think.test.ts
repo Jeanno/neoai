@@ -19,8 +19,19 @@ test('sends nothing when thinking is explicitly on', () => {
   assert.equal(reasoningEffort(ollama, true), undefined)
 })
 
-// Other OpenAI-shaped servers reject unknown fields inconsistently; only ollama
-// is measured, so only ollama gets the flag.
-test('does not send the flag to non-ollama backends', () => {
+// Other OpenAI-shaped servers reject unknown fields inconsistently; only
+// measured backends get the flag.
+test('does not send the flag to unmeasured backends', () => {
   assert.equal(reasoningEffort(openaiish, false), undefined)
+})
+
+// Measured on Darkbloom 0.9.22 / Qwen3.8-27B: 3.4s → 0.6s, no </think> in the output.
+const darkbloom = { backend: 'darkbloom', baseURL: 'http://100.64.0.1:8000/v1', auth: 'k' } as const
+
+test('asks darkbloom for no reasoning when thinking is off', () => {
+  assert.equal(reasoningEffort(darkbloom, false), 'none')
+})
+
+test('leaves darkbloom alone when thinking is not turned off', () => {
+  assert.equal(reasoningEffort(darkbloom, undefined), undefined)
 })

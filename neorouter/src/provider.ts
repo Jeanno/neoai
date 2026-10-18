@@ -129,10 +129,14 @@ export function fromChoice(choice: any): LanguageModelV2Content[] {
  * of thinking per token of answer, and in an agent loop it will exhaust its
  * budget mid-thought and return nothing at all. 'none' is the only knob that
  * works here — `think: false` is silently ignored on the OpenAI-shaped endpoint.
- * Only ollama is measured, so only ollama is asked.
+ * Darkbloom 0.9.22 / Qwen3.8-27B honours the same flag (3.4s → 0.6s for a
+ * one-line answer, no </think> in the output). Only measured backends are asked.
  */
+const HONOURS_REASONING_EFFORT = new Set(['darkbloom'])
+
 export function reasoningEffort(server: Server, think: boolean | undefined): 'none' | undefined {
-  return server.native === 'ollama' && think === false ? 'none' : undefined
+  if (think !== false) return undefined
+  return server.native === 'ollama' || HONOURS_REASONING_EFFORT.has(server.backend) ? 'none' : undefined
 }
 
 function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean, think?: boolean) {
@@ -187,13 +191,16 @@ const TRANSIENT = new Set([402, 408, 409, 425, 429, 500, 502, 503, 504])
  * Aborts only while waiting for response headers, then disarms — so a slow
  * generation streams for as long as it likes, but an endpoint that accepts the
  * connection and never answers cannot hang the caller forever. Local servers get
- * no deadline: a cold model load legitimately takes over a minute.
+ * no deadline: a cold model load legitimately takes over a minute. The caller's
+ * own signal (the AI SDK's abortSignal) stays armed for the whole body, so
+ * giving up on an answer also stops the backend generating it.
  */
 async function fetchWithHeaderDeadline(
   url: string,
   payload: unknown,
   ms: number | null,
   auth?: string,
+  caller?: AbortSignal,
 ): Promise<Response> {
   const ctrl = new AbortController()
   const timer = ms == null ? null : setTimeout(() => ctrl.abort(), ms)
@@ -205,7 +212,7 @@ async function fetchWithHeaderDeadline(
         ...(auth && { authorization: `Bearer ${auth}` }),
       },
       body: JSON.stringify(payload),
-      signal: ctrl.signal,
+      signal: caller ? AbortSignal.any([ctrl.signal, caller]) : ctrl.signal,
     })
   } finally {
     if (timer) clearTimeout(timer)
@@ -219,16 +226,19 @@ async function send(
   payload: unknown,
   hosted: boolean,
   auth?: string,
+  caller?: AbortSignal,
   attempt = 0,
 ): Promise<Response> {
   if (process.env.NEOROUTER_DEBUG) console.error('POST', url, JSON.stringify(payload))
   let res: Response
   try {
-    res = await fetchWithHeaderDeadline(url, payload, hosted ? HOSTED_HEADER_TIMEOUT_MS : null, auth)
+    res = await fetchWithHeaderDeadline(url, payload, hosted ? HOSTED_HEADER_TIMEOUT_MS : null, auth, caller)
   } catch (e) {
+    // Cancelled by the caller: retrying would only start the answer they abandoned.
+    if (caller?.aborted) throw e
     if (hosted && attempt < 3) {
       await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt))
-      return send(url, payload, hosted, auth, attempt + 1)
+      return send(url, payload, hosted, auth, caller, attempt + 1)
     }
     throw new Error(`neorouter: ${url} did not respond (${String(e)})`)
   }
@@ -236,7 +246,7 @@ async function send(
   if (TRANSIENT.has(res.status) && attempt < 3) {
     // Seconds, not milliseconds: a fast retry re-enters a queue we just filled.
     await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt))
-    return send(url, payload, hosted, auth, attempt + 1)
+    return send(url, payload, hosted, auth, caller, attempt + 1)
   }
   throw new Error(`neorouter: ${url} responded ${res.status} ${await res.text()}`)
 }
@@ -245,13 +255,13 @@ async function send(
  * Only the anonymous tier needs pacing. OpenRouter is authenticated and takes
  * concurrent requests, so serialising it would cost 3s a call for nothing.
  */
-function post(url: string, payload: unknown, r: Resolved): Promise<Response> {
+function post(url: string, payload: unknown, r: Resolved, caller?: AbortSignal): Promise<Response> {
   const hosted = !r.local
   const auth = r.server.auth
   const paced = hosted && r.backend === 'pollinations'
   return paced
-    ? serialize(() => send(url, payload, true, auth))
-    : send(url, payload, hosted, auth)
+    ? serialize(() => send(url, payload, true, auth, caller))
+    : send(url, payload, hosted, auth, caller)
 }
 
 class AutoModel implements LanguageModelV2 {
@@ -282,7 +292,7 @@ class AutoModel implements LanguageModelV2 {
   async doGenerate(options: LanguageModelV2CallOptions) {
     const r = await this.ready()
     const { payload, warnings } = body(options, r, false, this.think)
-    const res = await post(chatEndpoint(r.server, r.backend), payload, r)
+    const res = await post(chatEndpoint(r.server, r.backend), payload, r, options.abortSignal)
     const json = (await res.json()) as any
     const choice = json.choices?.[0]
     return {
@@ -332,7 +342,7 @@ class AutoModel implements LanguageModelV2 {
     // an authenticated backend streams properly and should not be faked.
     if (r.backend === 'pollinations') return this.simulateStream(options)
     const { payload, warnings } = body(options, r, true, this.think)
-    const res = await post(chatEndpoint(r.server, r.backend), payload, r)
+    const res = await post(chatEndpoint(r.server, r.backend), payload, r, options.abortSignal)
     const id = 'txt-0'
 
     const stream = new ReadableStream<LanguageModelV2StreamPart>({

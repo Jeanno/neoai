@@ -1,3 +1,6 @@
+import { readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { Server } from './types.ts'
 
 const PROBES: (Server & { path: string })[] = [
@@ -8,23 +11,49 @@ const PROBES: (Server & { path: string })[] = [
   { backend: 'jan', baseURL: 'http://127.0.0.1:1337/v1', path: '/models' },
 ]
 
-async function alive(url: string, ms = 500): Promise<boolean> {
+function authHeader(server: Server): Record<string, string> {
+  return server.auth ? { authorization: `Bearer ${server.auth}` } : {}
+}
+
+async function alive(url: string, ms = 500, headers: Record<string, string> = {}): Promise<boolean> {
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(ms) })
+    const r = await fetch(url, { headers, signal: AbortSignal.timeout(ms) })
     return r.ok
   } catch {
     return false
   }
 }
 
+/**
+ * Darkbloom's local mode binds to whatever address it was given (often a
+ * Tailscale IP, not loopback) and wants its own key, so no fixed probe can find
+ * it. It writes both to ~/.darkbloom/local.json; a stale file is harmless
+ * because the server is still probed before it counts.
+ */
+export async function darkbloomServer(home = homedir()): Promise<Server | null> {
+  try {
+    const { base_url, api_key } = JSON.parse(await readFile(join(home, '.darkbloom', 'local.json'), 'utf8'))
+    if (typeof base_url !== 'string' || !base_url) return null
+    return {
+      backend: 'darkbloom',
+      baseURL: base_url.replace(/\/+$/, ''),
+      ...(typeof api_key === 'string' && api_key && { auth: api_key }),
+    }
+  } catch {
+    return null
+  }
+}
+
 /** Rung 1: servers already listening. */
 export async function reachableServers(): Promise<Server[]> {
-  const hits = await Promise.all(
-    PROBES.map(async (p): Promise<Server | null> => {
-      if (!(await alive(p.baseURL + p.path))) return null
-      return { backend: p.backend, baseURL: p.baseURL, ...(p.native && { native: p.native }) }
-    }),
+  const fixed = PROBES.map(async (p): Promise<Server | null> => {
+    if (!(await alive(p.baseURL + p.path))) return null
+    return { backend: p.backend, baseURL: p.baseURL, ...(p.native && { native: p.native }) }
+  })
+  const darkbloom = darkbloomServer().then(async (s) =>
+    s && (await alive(`${s.baseURL}/models`, 500, authHeader(s))) ? s : null,
   )
+  const hits = await Promise.all([...fixed, darkbloom])
   return hits.filter((s) => s !== null)
 }
 
@@ -46,7 +75,7 @@ export async function listModels(server: Server): Promise<RawModel[]> {
       quant: m.details?.quantization_level,
     }))
   }
-  const r = await fetch(`${server.baseURL}/models`, { signal: AbortSignal.timeout(3000) })
+  const r = await fetch(`${server.baseURL}/models`, { headers: authHeader(server), signal: AbortSignal.timeout(3000) })
   const { data = [] } = (await r.json()) as any
   return data.map((m: any) => ({ id: m.id }))
 }

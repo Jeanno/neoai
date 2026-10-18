@@ -5,7 +5,8 @@ so the caller never names a model, a URL, or a key.
 
 Resolution goes down three rungs, in order:
 
-1. **reachable** — a server already listening (ollama, LM Studio, llama.cpp, vLLM, Jan)
+1. **reachable** — a server already listening (ollama, LM Studio, llama.cpp, vLLM, Jan),
+   or Darkbloom's local mode wherever `~/.darkbloom/local.json` says it is, with its key
 2. **launched** — a runtime installed but idle, which it starts itself
 3. **hosted** — a keyless endpoint, used only when there is nothing local
 
