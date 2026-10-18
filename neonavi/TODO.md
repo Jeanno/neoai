@@ -27,6 +27,9 @@ allowlist, refusing unsafe commands outright, a separate judge model.
 - [ ] Cite spec ids from the existing tests so every requirement is traceable.
       (`test/*.test.ts`)
 
+- [x] `web_search`: keyless DuckDuckGo results, echoed, removable with
+      `"web_search": false`. (`spec/tools.md`, `spec/prompt.md`)
+
 ## Later
 
 - [ ] `--model` or `/model` mid-session, without leaving the loop. (`spec/cli.md`)

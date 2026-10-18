@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { readFile, readdir } from 'node:fs/promises'
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
+import { webSearch } from './web.ts'
 
 const run = promisify(exec)
 
@@ -41,8 +42,13 @@ async function rg(args: string[]): Promise<string[]> {
 
 const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
 
-export function makeTools(gate: Gate) {
-  return {
+export interface ToolOptions {
+  /** false removes web_search, so only the model talks to the network (TL-30). */
+  web?: boolean
+}
+
+export function makeTools(gate: Gate, { web = true }: ToolOptions = {}) {
+  const tools = {
     grep: tool({
       description: 'Search file contents for a pattern. Returns file:line:text.',
       inputSchema: z.object({
@@ -125,5 +131,16 @@ export function makeTools(gate: Gate) {
         }
       },
     }),
+
+    web_search: tool({
+      description:
+        'Search the web. Returns numbered results with title, URL and snippet. ' +
+        'Use it for anything that may have changed since your training.',
+      inputSchema: z.object({ query: z.string() }),
+      execute: async ({ query }) => clip(await webSearch(query)),
+    }),
   }
+  // Removed rather than typed optional, so callers keep exact tool types.
+  if (!web) delete (tools as Partial<typeof tools>).web_search
+  return tools
 }

@@ -1,6 +1,7 @@
 # Tools
 
-Five tools. Nothing writes to disk except a shell command the user approved.
+Six tools. Nothing writes to disk except a shell command the user approved.
+Only web_search and the model itself send anything off the machine.
 
 ## Limits
 
@@ -42,6 +43,21 @@ Five tools. Nothing writes to disk except a shell command the user approved.
 - TL-17: A failing command returns its stderr or error message as the tool
   result so the model can recover; it is never thrown.
 
+## web_search
+
+- TL-26: `web_search(query)` returns up to 8 results, each a title, URL and
+  snippet, numbered so the model can cite them.
+- TL-27: It needs no key: results come from DuckDuckGo's HTML endpoint. Ads
+  are dropped and redirect links are unwrapped to the destination URL.
+- TL-28: The query is the only thing sent. It is echoed like every tool call
+  (CLI-10), so a search is never silent; it is not gated by approval, because
+  it reads and writes nothing on the machine.
+- TL-29: No results is a normal result ("no results for …"). A network error,
+  timeout (10s) or blocked request returns a message saying search is
+  unavailable, never a throw, so the model can answer without it.
+- TL-30: `"web_search": false` in `~/.neoai/config.json` removes the tool, for
+  sessions where nothing but the model may leave the machine.
+
 ## Safety judge
 
 A model call that decides whether a shell command needs the user's approval.
@@ -69,4 +85,6 @@ A model call that decides whether a shell command needs the user's approval.
 ## Open
 
 - A write/edit tool, gated like run_shell.
+- A keyed search backend (Brave, Tavily, SearXNG) when DuckDuckGo blocks.
+- A fetch tool to read a result's page, not just its snippet.
 - Per-command allowlist to skip approval.

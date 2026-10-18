@@ -101,8 +101,10 @@ async function main() {
       return ok
     },
   })
-  const system = systemPrompt(cwd, entries, context)
-  const tools = makeTools({ approve })
+  // On unless the config says otherwise; off keeps everything but the model on the machine.
+  const web = config.web_search !== false
+  const system = systemPrompt(cwd, entries, context, web)
+  const tools = makeTools({ approve }, { web })
 
   /** One question in, one answer out. Returns whether the model said anything. */
   const systemTokens = estimateTokens([{ role: 'system', content: system }])
