@@ -72,12 +72,16 @@ export function optionsFor(entry: Entry): Chosen['options'] {
  * Walks the chain and returns the first link that actually resolves (MOD-5).
  * A link fails when its key is missing, its server is unreachable, or its
  * model is not on offer — and then the next one is tried, which is what makes
- * the list a fallback chain rather than a preference.
+ * the list a fallback chain rather than a preference. `launch: false` starts
+ * no local runtime (MOD-18).
  */
-export async function resolveChain(chain: Entry[]): Promise<Chosen | null> {
+export async function resolveChain(chain: Entry[], { launch = true }: { launch?: boolean } = {}): Promise<Chosen | null> {
   for (const [index, entry] of chain.entries()) {
     const options = optionsFor(entry)
-    const got = await probe(options)
+    // Without launching, a local link looks only at running servers (MOD-18).
+    // The options handed back stay the link's own, so the model built from
+    // them may still launch when it is used.
+    const got = await probe(!launch && options.scope === 'local' ? { ...options, scope: 'running' } : options)
     if (got)
       return {
         entry,

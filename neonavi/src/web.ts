@@ -70,3 +70,83 @@ export async function webSearch(query: string, fetcher: typeof fetch = fetch): P
     return `web search is unavailable (${e instanceof Error ? e.message : String(e)}); answer without it`
   }
 }
+
+const FETCH_TIMEOUT_MS = 15_000
+const MAX_BYTES = 2_000_000
+const MAX_REDIRECTS = 5
+const TEXT_TYPES = /^(text\/|application\/(json|xml|[\w.+-]*\+(json|xml)|javascript)\b)/
+
+/** A page must not reach this machine or the local network (TL-33). */
+export function isPrivateHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return true
+  const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h)
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])]
+    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)
+  }
+  if (h.includes(':')) {
+    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(h)
+    if (mapped) return isPrivateHost(mapped[1])
+    return h === '::' || h === '::1' || /^f[cd]/.test(h) || /^fe[89ab]/.test(h)
+  }
+  // A bare number is an IPv4 address in disguise (http://2130706433/).
+  return /^(0x[0-9a-f]+|\d+)$/.test(h)
+}
+
+/** Title, then readable text with block elements as line breaks (TL-32). */
+export function pageText(html: string): string {
+  const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)
+  const body = html
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<(script|style|noscript|svg|template|head)\b[\s\S]*?<\/\1>/gi, '')
+    .replace(/<(br|hr)\b[^>]*>/gi, '\n')
+    .replace(/<\/?(p|div|section|article|main|header|footer|nav|aside|h[1-6]|li|ul|ol|tr|table|pre|blockquote|dt|dd)\b[^>]*>/gi, '\n')
+    // Before splitting: a tag may span lines.
+    .replace(/<[^>]+>/g, '')
+  const lines = body.split('\n').map(text).filter(Boolean)
+  return [...(title ? [`# ${text(title[1])}`, ''] : []), ...lines].join('\n')
+}
+
+async function readCapped(res: Response): Promise<string> {
+  if (!res.body) return ''
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  while (size < MAX_BYTES) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    size += value.length
+  }
+  await reader.cancel().catch(() => {})
+  return new TextDecoder().decode(Buffer.concat(chunks).subarray(0, MAX_BYTES))
+}
+
+/** Never throws, like webSearch: a page that cannot be read is a normal result (TL-34). */
+export async function fetchUrl(url: string, fetcher: typeof fetch = fetch): Promise<string> {
+  try {
+    let target = new URL(url)
+    const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
+    for (let hop = 0; ; hop++) {
+      if (target.protocol !== 'http:' && target.protocol !== 'https:') return `cannot fetch ${target.href}: only http and https`
+      if (isPrivateHost(target.hostname)) return `refused ${target.href}: it is on this machine or the local network`
+      // The URL and nothing else: no cookies, no referrer (TL-34).
+      const res = await fetcher(target.href, { redirect: 'manual', signal, headers: { 'user-agent': 'navi', accept: 'text/html,text/plain;q=0.9,*/*;q=0.5' } })
+      const next = res.status >= 300 && res.status < 400 && res.headers.get('location')
+      if (next) {
+        if (hop === MAX_REDIRECTS) return `cannot fetch ${url}: more than ${MAX_REDIRECTS} redirects`
+        target = new URL(next, target)
+        continue
+      }
+      if (!res.ok) return `cannot fetch ${target.href}: HTTP ${res.status}`
+      const type = (res.headers.get('content-type') ?? 'text/plain').split(';')[0].trim().toLowerCase()
+      if (!TEXT_TYPES.test(type)) return `${target.href} is ${type}, not text; it was not read`
+      const body = await readCapped(res)
+      return type === 'text/html' || type === 'application/xhtml+xml' ? pageText(body) || '(no text on the page)' : body
+    }
+  } catch (e) {
+    return `cannot fetch ${url} (${e instanceof Error ? e.message : String(e)})`
+  }
+}

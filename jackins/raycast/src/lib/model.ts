@@ -4,12 +4,12 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parseModelSpec, resolveChain, type Chosen } from 'neonavi/spec'
 import { auto, readConfig, reset } from 'neorouter'
-import { modelLabel } from './labels'
+import { modelLabel } from 'neonavi/setup'
 
 export interface Navi {
   chosen: Chosen
   model: ReturnType<typeof auto>
-  /** The model as the user would know it (RAY-9), e.g. "qwen3-4b" or "Anthropic · claude-sonnet-5-5". */
+  /** The model as the user would know it (RAY-9, SET-25), e.g. "qwen3-4b" or "claude-sonnet-5-5 on Anthropic". */
   label: string
   /** False when prompts leave the machine. */
   local: boolean

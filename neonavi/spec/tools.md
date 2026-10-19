@@ -1,7 +1,7 @@
 # Tools
 
-Six tools. Nothing writes to disk except a shell command the user approved.
-Only web_search and the model itself send anything off the machine.
+Seven tools. Nothing writes to disk except a shell command the user approved.
+Only web_search, fetch_url and the model itself send anything off the machine.
 
 ## Limits
 
@@ -58,8 +58,26 @@ Only web_search and the model itself send anything off the machine.
 - TL-29: No results is a normal result ("no results for …"). A network error,
   timeout (10s) or blocked request returns a message saying search is
   unavailable, never a throw, so the model can answer without it.
-- TL-30: `"web_search": false` in `~/.neoai/config.json` removes the tool, for
-  sessions where nothing but the model may leave the machine.
+- TL-30: `"web_search": false` in `~/.neoai/config.json` removes web_search
+  and fetch_url, for sessions where nothing but the model may leave the
+  machine.
+
+## fetch_url
+
+- TL-32: `fetch_url(url)` reads one http or https page and returns its text:
+  HTML is reduced to its title and readable text (scripts, styles and markup
+  dropped, block elements kept as line breaks); plain text, Markdown, JSON
+  and XML are returned as they are. Anything else, such as an image or a PDF,
+  returns a message naming its type instead of its bytes.
+- TL-33: It never reaches this machine or the local network: `localhost`,
+  `.local` and `.internal` names, and loopback, private, link-local and
+  unspecified IP addresses are refused, and so is a redirect to one.
+  Redirects are followed at most 5 times.
+- TL-34: The URL is the only thing sent. Like web_search it is echoed and not
+  gated by approval (TL-28). A timeout (15s), an HTTP error or a refused
+  address returns a message, never a throw. At most 2 MB is read; the result
+  is cut as in TL-1.
+- TL-35: `"fetch_url": false` removes only fetch_url.
 
 ## Safety judge
 

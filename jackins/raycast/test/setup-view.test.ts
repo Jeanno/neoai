@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Answering, Choice, ProviderRow, Status } from 'neonavi/setup'
-import { modelLabel, whereLabel } from '../src/lib/labels.ts'
-import { choiceItems, providerAccessory, relabel, slotItems, statusMarkdown } from '../src/lib/setup-view.ts'
+import { modelLabel, NEXT_STEP, type Answering, type Choice, type ProviderRow, type Status } from 'neonavi/setup'
+import { whereLabel } from '../src/lib/labels.ts'
+import { choiceItems, isAbort, providerAccessory, slotItems, statusMarkdown } from '../src/lib/setup-view.ts'
 
 const local: Answering = {
   entry: { where: 'local', prefer: 'fast' },
@@ -12,7 +12,7 @@ const local: Answering = {
   backend: 'lmstudio',
   modelId: 'qwen3-4b',
   local: true,
-  label: 'lmstudio · qwen3-4b',
+  label: 'qwen3-4b',
 }
 
 const remote: Answering = {
@@ -23,7 +23,7 @@ const remote: Answering = {
   backend: 'anthropic',
   modelId: 'claude-sonnet-5-5',
   local: false,
-  label: 'Anthropic · claude-sonnet-5-5',
+  label: 'claude-sonnet-5-5 on Anthropic',
 }
 
 const status = (answering: Answering | null, extra: Partial<Status> = {}): Status => ({
@@ -31,6 +31,7 @@ const status = (answering: Answering | null, extra: Partial<Status> = {}): Statu
   fallback: null,
   later: [],
   answering,
+  onlyRunning: false,
   ...extra,
 })
 
@@ -55,27 +56,26 @@ test('RAY-6: the slots show primary and fallback, marking the one that answers',
   )
 })
 
-test('RAY-9: a local model is named by its id, never the app serving it', () => {
+test("RAY-9: the core's model-first words are shown as they are (SET-25)", () => {
+  // The label the extension shows for every command comes from setup's core.
   assert.equal(modelLabel(local), 'qwen3-4b')
-  assert.equal(relabel(local)?.label, 'qwen3-4b')
-  assert.equal(modelLabel(remote), 'Anthropic · claude-sonnet-5-5')
-  assert.equal(
-    whereLabel({ label: 'Anthropic · claude-sonnet-5-5', local: false }),
-    'Anthropic · claude-sonnet-5-5 (remote)',
-  )
+  assert.equal(modelLabel(remote), 'claude-sonnet-5-5 on Anthropic')
+  assert.equal(whereLabel({ label: remote.label, local: false }), 'claude-sonnet-5-5 on Anthropic (remote)')
+  assert.equal(whereLabel({ label: local.label, local: true }), 'qwen3-4b')
   assert.doesNotMatch(statusMarkdown(status(local)), /lmstudio/)
+  assert.match(statusMarkdown(status(local)), /\*\*qwen3-4b\*\*, the primary \(on this computer\)/)
 })
 
-test('RAY-9: local choices drop the server the core names in their detail', () => {
+test('RAY-6: choices become rows as the core words them', () => {
   const choices: Choice[] = [
-    { value: 'local:qwen3-4b', label: 'qwen3-4b', detail: 'lmstudio', current: false },
+    { value: 'local:qwen3-4b', label: 'qwen3-4b', current: false },
     { value: 'local', label: 'any local model (fastest)', current: true },
   ]
-  assert.deepEqual(choiceItems(choices, { local: true }), [
+  assert.deepEqual(choiceItems(choices), [
     { id: 'local:qwen3-4b', value: 'local:qwen3-4b', title: 'qwen3-4b', subtitle: undefined, current: false },
     { id: 'local', value: 'local', title: 'any local model (fastest)', subtitle: undefined, current: true },
   ])
-  // Provider models keep theirs: a context size.
+  // Provider models keep their detail: a context size.
   assert.equal(
     choiceItems([{ value: 'openai:gpt', label: 'gpt', detail: '128k context', current: false }])[0].subtitle,
     '128k context',
@@ -91,7 +91,7 @@ test('RAY-6: providers say where their key comes from (SET-19)', () => {
 })
 
 test('RAY-6: the status says what answers, then the test reply or error (SET-11)', () => {
-  assert.match(statusMarkdown(status(remote)), /\*\*Anthropic · claude-sonnet-5-5\*\*, the fallback \(REMOTE/)
+  assert.match(statusMarkdown(status(remote)), /\*\*claude-sonnet-5-5 on Anthropic\*\*, the fallback \(REMOTE/)
   assert.match(statusMarkdown(status(local), { state: 'asking' }), /Asking it a test question/)
   assert.match(
     statusMarkdown(status(local), { state: 'done', ok: true, reply: 'Hello!' }),
@@ -103,8 +103,18 @@ test('RAY-6: the status says what answers, then the test reply or error (SET-11)
   )
 })
 
-test('RAY-7: with nothing answering, the status says so and what to do', () => {
+test("RAY-7: with nothing answering, the status says so and the core's next step (SET-27)", () => {
   const out = statusMarkdown(status(null))
   assert.match(out, /can't find a model/)
-  assert.match(out, /Choose a model for the primary slot/)
+  assert.ok(out.includes(NEXT_STEP))
+  assert.doesNotMatch(out, /navi setup/)
+  // Opened without launching anything (SET-24): nothing running is what it says.
+  assert.match(statusMarkdown(status(null, { onlyRunning: true })), /can't find a running model/)
+})
+
+test('RAY-10: a check cancelled by leaving its view is told apart from a failure', () => {
+  assert.ok(isAbort(new DOMException('gone', 'AbortError')))
+  assert.ok(isAbort(AbortSignal.abort().reason))
+  assert.ok(!isAbort(new Error('unreachable')))
+  assert.ok(!isAbort(null))
 })

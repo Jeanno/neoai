@@ -4,7 +4,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import { exec } from 'node:child_process'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { webSearch } from './web.ts'
+import { fetchUrl, webSearch } from './web.ts'
 import { makeSearch } from './search.ts'
 
 const run = promisify(exec)
@@ -29,13 +29,15 @@ function clip(s: string): string {
 export interface ToolOptions {
   /** false removes web_search, so only the model talks to the network (TL-30). */
   web?: boolean
+  /** false removes only fetch_url (TL-35). */
+  fetch?: boolean
   /** Where relative paths and shell commands start; a front end's process may sit elsewhere. */
   cwd?: string
   /** false forces the built-in grep/glob even where rg is installed (TL-31). */
   ripgrep?: boolean
 }
 
-export function makeTools(gate: Gate, { web = true, cwd = process.cwd(), ripgrep }: ToolOptions = {}) {
+export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.cwd(), ripgrep }: ToolOptions = {}) {
   const search = makeSearch({ cwd, ripgrep })
   const at = (path: string) => resolve(cwd, path)
   const tools = {
@@ -132,8 +134,17 @@ export function makeTools(gate: Gate, { web = true, cwd = process.cwd(), ripgrep
       inputSchema: z.object({ query: z.string() }),
       execute: async ({ query }) => clip(await webSearch(query)),
     }),
+
+    fetch_url: tool({
+      description:
+        'Read one web page (http or https) as text. Use it for a URL the user gives ' +
+        'or a search result worth opening.',
+      inputSchema: z.object({ url: z.string() }),
+      execute: async ({ url }) => clip(await fetchUrl(url)),
+    }),
   }
   // Removed rather than typed optional, so callers keep exact tool types.
   if (!web) delete (tools as Partial<typeof tools>).web_search
+  if (!web || !fetch) delete (tools as Partial<typeof tools>).fetch_url
   return tools
 }

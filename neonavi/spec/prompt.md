@@ -18,3 +18,5 @@ Rebuilt at startup and sent with every turn.
 - PRM-9: When web_search is available, says to use it for anything outside
   the directory that may have changed since training — releases, prices,
   news, docs — and to cite the URLs it relied on.
+- PRM-10: When fetch_url is available, says to use it to read a page the user
+  names or a search result worth opening.

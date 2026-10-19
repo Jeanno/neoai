@@ -16,9 +16,21 @@ JSON by hand. Everything it writes goes to `~/.neoai/config.json`.
   the model that would answer, with REMOTE when prompts leave the machine, or
   that nothing answers.
 - SET-2: `navi setup --check` only reports: it exits 0 when a model resolves,
-  and otherwise prints how to get one (naming `navi setup`) and exits 1. It
-  never asks anything.
+  and otherwise prints how to get one (the next step of SET-27, then naming
+  `navi setup`) and exits 1. It never asks anything.
 - SET-3: `navi setup` with a non-terminal stdin behaves as `--check`.
+- SET-24: The first status a front end shows on opening setup only looks at
+  servers already running (MOD-18): opening setup never starts a local
+  runtime. A runtime may be started once the user asks for it: checking Local
+  again (SET-5), picking a model (SET-11) or the test question. `--check`
+  resolves fully, since its exit code says whether navi would answer.
+- SET-25: The model that answers is named model first: a local model by its id
+  (the status adds "on this computer"), a provider or custom model as
+  `<model> on <provider or endpoint name>`. A local server's app is never
+  named (RAY-9).
+- SET-27: When nothing answers, the core words the next step without naming
+  any command; each front end adds how to open setup from it (SET-2 for the
+  terminal, RAY-7 for Raycast).
 
 ## Slots
 
@@ -50,8 +62,8 @@ JSON by hand. Everything it writes goes to `~/.neoai/config.json`.
 
 ## Local
 
-- SET-21: Local lists every model on the running local servers, and "any local
-  model (fastest)".
+- SET-21: Local lists every model on the running local servers, by its id
+  alone (SET-25), and "any local model (fastest)".
 - SET-5: Local also offers help getting a model (LM Studio, Ollama), then
   checks again each time the user asks, until one is found or they go back.
 
@@ -84,6 +96,10 @@ JSON by hand. Everything it writes goes to `~/.neoai/config.json`.
 - SET-11: After a change, setup resolves the chain again, reports it as in
   SET-1 and SET-13, and asks the model that answers a one-line test question,
   showing the reply or the error. Then it shows the slots again.
+- SET-26: Every check setup makes (the status, listing models, checking a key
+  or an endpoint, looking for a local model, the test question) can be
+  cancelled by the front end. A cancelled check saves nothing and reports
+  nothing; Raycast cancels a view's check when the view is left (RAY-10).
 - SET-12: Leaving at any point (EOF or ^C in the terminal, Escape in Raycast)
   writes nothing not already saved. `navi setup` exits 0 when a model answers
   and 1 otherwise.

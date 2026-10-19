@@ -30,6 +30,14 @@ import { parseModelSpec, resolveChain, type Chosen, type Entry } from './spec.ts
 /** 0 is the primary, 1 the fallback (SET-13). */
 export type Slot = 0 | 1
 
+/**
+ * Lets a front end cancel a check in progress (SET-26). A cancelled call
+ * rejects with the signal's reason (an AbortError) and saves nothing.
+ */
+export interface Cancel {
+  signal?: AbortSignal
+}
+
 /** Everything the core touches outside itself, so it can be tested with fakes. */
 export interface CoreDeps {
   /** The config file's contents, {} when absent. Throws when it is not valid JSON. */
@@ -37,18 +45,22 @@ export interface CoreDeps {
   save: (config: Record<string, any>) => Promise<void>
   /** Where provider keys are looked for first (MOD-10). */
   env: Record<string, string | undefined>
-  /** Resolves a chain afresh: what was missing a moment ago may be running now. */
-  resolve: (chain: Entry[]) => Promise<Chosen | null>
-  localModels: () => Promise<{ backend: string; id: string }[]>
-  checkKey: (provider: string, key: string) => Promise<Verdict>
-  fetchModels: (server: { backend: string; baseURL: string; auth?: string }) => Promise<Listing>
+  /**
+   * Resolves a chain afresh: what was missing a moment ago may be running now.
+   * With `launch: false` no local runtime is started (MOD-18).
+   */
+  resolve: (chain: Entry[], o: { launch: boolean }) => Promise<Chosen | null>
+  /** The models on servers already running; never launches. */
+  localModels: (signal?: AbortSignal) => Promise<{ backend: string; id: string }[]>
+  checkKey: (provider: string, key: string, signal?: AbortSignal) => Promise<Verdict>
+  fetchModels: (server: { backend: string; baseURL: string; auth?: string }, signal?: AbortSignal) => Promise<Listing>
   /** Asks the model a one-line question and returns the reply (SET-11). */
-  ask: (options: Chosen['options']) => Promise<string>
+  ask: (options: Chosen['options'], signal?: AbortSignal) => Promise<string>
 }
 
 /** The model that answers now. */
 export interface Answering extends Chosen {
-  /** e.g. "Anthropic · claude-sonnet-5-5", or "lmstudio · qwen3-4b". */
+  /** Model first (SET-25): "qwen3-4b", or "claude-sonnet-5-5 on Anthropic". */
   label: string
 }
 
@@ -64,13 +76,18 @@ export interface Status {
   /** Links after the fallback, kept as they are (SET-17). */
   later: Link[]
   answering: Answering | null
+  /**
+   * True when local links were looked for only on servers already running
+   * (SET-24), so an installed runtime that is not running counted as nothing.
+   */
+  onlyRunning: boolean
 }
 
 /** Something to pick for a slot. `value` is the link saved; null clears the fallback. */
 export interface Choice {
   value: string | null
   label: string
-  /** Secondary text: the local server a model runs on, a context size. */
+  /** Secondary text, such as a context size. Never a local server's app (SET-25). */
   detail?: string
   /** The slot holds this now. */
   current: boolean
@@ -110,8 +127,12 @@ export const LOCAL_HELP = [
   { name: 'Ollama', url: 'https://ollama.com', steps: 'Then download a model in a terminal: ollama pull qwen3:4b' },
 ]
 
-/** What a front end says when nothing answers: the next step, not just the failure. */
-export const NEXT_STEP = 'Run `navi setup` to choose a model, or start LM Studio or Ollama and try again.'
+/**
+ * What a front end says when nothing answers: the next step, not just the
+ * failure. It names no command (SET-27); each front end adds how to open setup.
+ */
+export const NEXT_STEP =
+  'Choose a model on this computer, from a provider with your key, or on your own endpoint; or start LM Studio or Ollama and try again.'
 
 /** The chain's links as written, with the default spelled out (MOD-17). */
 export function links(model: string | string[] | undefined): string[] {
@@ -144,6 +165,15 @@ export function setSlotIn(parts: string[], slot: Slot, value: string | null, cus
 
 const nameOf = (provider: string) => providerById(provider)?.name ?? provider
 
+/**
+ * A resolved model in words, model first (SET-25): a local model by its id
+ * alone, never the app serving it (RAY-9); a provider or custom model with the
+ * provider's or endpoint's name, which the user picked.
+ */
+export function modelLabel(chosen: { backend: string; modelId: string; local: boolean }): string {
+  return chosen.local ? chosen.modelId : `${chosen.modelId} on ${nameOf(chosen.backend)}`
+}
+
 /** What one link means, in words. */
 export function labelFor(part: string, custom: string[] = []): string {
   const [e] = parseModelSpec(part, custom)
@@ -152,12 +182,39 @@ export function labelFor(part: string, custom: string[] = []): string {
   return e.prefer === 'fast' ? 'any local model (fastest)' : 'the largest local model'
 }
 
-/** SET-1, in one sentence. `strong` marks the model's name for a front end that can. */
-export function describe(answering: Answering | null, strong = (s: string) => s): string {
-  if (!answering) return "navi can't find a model to answer with."
+/**
+ * SET-1, in one sentence. `strong` marks the model's name for a front end that
+ * can. With `onlyRunning` (SET-24), nothing found means nothing running.
+ */
+export function describe(
+  answering: Answering | null,
+  strong = (s: string) => s,
+  { onlyRunning = false }: { onlyRunning?: boolean } = {},
+): string {
+  if (!answering) return onlyRunning ? "navi can't find a running model to answer with." : "navi can't find a model to answer with."
   const slot = ['the primary', 'the fallback'][answering.index] ?? `link ${answering.index + 1}`
   const where = answering.local ? 'on this computer' : 'REMOTE: prompts leave this computer'
   return `navi answers with ${strong(answering.label)}, ${slot} (${where}).`
+}
+
+/**
+ * Waits for a check, unless the signal aborts first (SET-26). Some checks
+ * (a resolution shared through neorouter's memo) cannot be stopped midway;
+ * their result is then dropped instead.
+ */
+async function cancellable<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return work
+  signal.throwIfAborted()
+  let stop: () => void = () => {}
+  const aborted = new Promise<never>((_, reject) => {
+    stop = () => reject(signal.reason)
+    signal.addEventListener('abort', stop, { once: true })
+  })
+  try {
+    return await Promise.race([work, aborted])
+  } finally {
+    signal.removeEventListener('abort', stop)
+  }
 }
 
 /** A base URL as typed, made comparable: trimmed, no trailing slash. */
@@ -180,11 +237,7 @@ export function setupCore(d: CoreDeps) {
     return typeof saved === 'string' && saved ? { key: saved, from: 'saved' } : null
   }
 
-  const answeringFor = (chosen: Chosen | null): Answering | null => {
-    if (!chosen) return null
-    const source = chosen.entry.where === 'remote' ? nameOf(chosen.backend) : chosen.backend
-    return { ...chosen, label: `${source} · ${chosen.modelId}` }
-  }
+  const answeringFor = (chosen: Chosen | null): Answering | null => chosen && { ...chosen, label: modelLabel(chosen) }
 
   /** Marks the current pick and drops the primary from the fallback's lists (SET-18). */
   const choicesFor = async (slot: Slot, rows: Omit<Choice, 'current'>[]): Promise<Choice[]> => {
@@ -203,8 +256,10 @@ export function setupCore(d: CoreDeps) {
     prefix: string,
     server: { backend: string; baseURL: string; auth?: string },
     recommended: string[] = [],
+    signal?: AbortSignal,
   ): Promise<ModelList> => {
-    const listing = await d.fetchModels(server)
+    const listing = await cancellable(d.fetchModels(server, signal), signal)
+    signal?.throwIfAborted()
     if (!listing.ok) return listing
     const ids = listing.models.map((m) => m.id)
     const row = (id: string) => {
@@ -219,17 +274,22 @@ export function setupCore(d: CoreDeps) {
     }
   }
 
-  /** The slots and what answers now (SET-1, SET-13). */
-  async function status(): Promise<Status> {
+  /**
+   * The slots and what answers now (SET-1, SET-13). `launch: false` looks only
+   * at servers already running, for the first screen (SET-24).
+   */
+  async function status({ signal, launch = true }: Cancel & { launch?: boolean } = {}): Promise<Status> {
     const config = await d.load()
     const custom = customNames(config)
     const parts = links(config.model)
     const link = (value: string): Link => ({ value, label: labelFor(value, custom) })
+    const chosen = await cancellable(d.resolve(parseModelSpec(parts, custom), { launch }), signal)
     return {
       primary: link(parts[0]),
       fallback: parts[1] ? link(parts[1]) : null,
       later: parts.slice(2).map(link),
-      answering: answeringFor(await d.resolve(parseModelSpec(parts, custom))),
+      answering: answeringFor(chosen),
+      onlyRunning: !launch,
     }
   }
 
@@ -276,12 +336,14 @@ export function setupCore(d: CoreDeps) {
      * when accepted (SET-6). A rejected key, or one that could not be checked,
      * is not saved.
      */
-    async saveKey(provider: string, key: string): Promise<{ ok: true } | Failure> {
+    async saveKey(provider: string, key: string, { signal }: Cancel = {}): Promise<{ ok: true } | Failure> {
       const p = providerById(provider)
       const k = key.trim()
       if (!p) return { ok: false, why: 'invalid', message: `${provider} is not a provider.` }
       if (!k) return { ok: false, why: 'invalid', message: 'No key was entered. Nothing was saved.' }
-      const verdict = await d.checkKey(provider, k)
+      const verdict = await cancellable(d.checkKey(provider, k, signal), signal)
+      // A check cancelled after it was answered still saves nothing (SET-26).
+      signal?.throwIfAborted()
       if (verdict === 'rejected') return { ok: false, why: 'rejected', message: `${p.name} didn't accept that key. Nothing was saved.` }
       if (verdict === 'unreachable')
         return {
@@ -294,22 +356,28 @@ export function setupCore(d: CoreDeps) {
     },
 
     /** A provider's hand-picked models still on offer, then all of them (SET-20). */
-    async providerModels(provider: string, slot: Slot): Promise<ModelList> {
+    async providerModels(provider: string, slot: Slot, { signal }: Cancel = {}): Promise<ModelList> {
       const p = providerById(provider)
       if (!p) return { ok: false, why: 'invalid', message: `${provider} is not a provider.` }
       const key = keyFor(await d.load(), provider)
       if (!key) return { ok: false, why: 'invalid', message: `${p.name} has no key yet.` }
-      const list = await listChoices(slot, p.id, { backend: p.id, baseURL: p.baseURL, auth: key.key }, p.recommended)
+      const list = await listChoices(slot, p.id, { backend: p.id, baseURL: p.baseURL, auth: key.key }, p.recommended, signal)
       if (!list.ok && list.why === 'rejected') return { ...list, message: `${p.name} no longer accepts the saved key.` }
       if (!list.ok) return { ...list, message: `Couldn't get ${p.name}'s models (${list.message}).` }
       return list
     },
 
-    /** Every model on the running local servers, then "any local model" (SET-21). */
-    async localModels(slot: Slot): Promise<Choice[]> {
-      const models = await d.localModels()
+    /**
+     * Every model on the running local servers, by id alone (SET-21, SET-25),
+     * then "any local model". Nothing is launched.
+     */
+    async localModels(slot: Slot, { signal }: Cancel = {}): Promise<Choice[]> {
+      const models = await cancellable(d.localModels(signal), signal)
+      signal?.throwIfAborted()
+      // Two servers offering the same id are one choice: the link names the model, not the server.
+      const ids = [...new Set(models.map((m) => m.id))]
       return choicesFor(slot, [
-        ...models.map((m) => ({ value: `local:${m.id}`, label: m.id, detail: m.backend })),
+        ...ids.map((id) => ({ value: `local:${id}`, label: id })),
         { value: 'local', label: 'any local model (fastest)' },
       ])
     },
@@ -318,8 +386,8 @@ export function setupCore(d: CoreDeps) {
      * Looks for a local model again (SET-5). A probe, not just a listing: it
      * starts an installed runtime that is not running.
      */
-    async recheckLocal(): Promise<Answering | null> {
-      return answeringFor(await d.resolve([{ where: 'local', prefer: 'fast' }]))
+    async recheckLocal({ signal }: Cancel = {}): Promise<Answering | null> {
+      return answeringFor(await cancellable(d.resolve([{ where: 'local', prefer: 'fast' }], { launch: true }), signal))
     },
 
     /** Saved custom endpoints (SET-22). */
@@ -338,7 +406,10 @@ export function setupCore(d: CoreDeps) {
      * `custom.<name>` (SET-22). A URL without its `/v1` is tried with it too.
      * Saving under an existing name replaces that endpoint.
      */
-    async addCustom(input: { name: string; baseURL: string; key?: string }): Promise<{ ok: true; baseURL: string } | Failure> {
+    async addCustom(
+      input: { name: string; baseURL: string; key?: string },
+      { signal }: Cancel = {},
+    ): Promise<{ ok: true; baseURL: string } | Failure> {
       const name = input.name.trim()
       const bad = checkCustomName(name)
       if (bad) return { ok: false, why: 'invalid', message: bad }
@@ -348,7 +419,8 @@ export function setupCore(d: CoreDeps) {
       const tries = /\/v\d+$/.test(url) ? [url] : [url, `${url}/v1`]
       let last: Listing | null = null
       for (const baseURL of tries) {
-        last = await d.fetchModels({ backend: name, baseURL, ...(key && { auth: key }) })
+        last = await cancellable(d.fetchModels({ backend: name, baseURL, ...(key && { auth: key }) }, signal), signal)
+        signal?.throwIfAborted()
         if (last.ok) {
           await update((c) => ({ ...c, custom: { ...c.custom, [name]: { baseURL, ...(key && { key }) } } }))
           return { ok: true, baseURL }
@@ -367,10 +439,11 @@ export function setupCore(d: CoreDeps) {
     },
 
     /** A custom endpoint's models (SET-22). */
-    async customModels(name: string, slot: Slot): Promise<ModelList> {
+    async customModels(name: string, slot: Slot, { signal }: Cancel = {}): Promise<ModelList> {
       const c = customEndpoints(await d.load())[name]
       if (!c) return { ok: false, why: 'invalid', message: `No endpoint is saved as ${name}.` }
-      const list = await listChoices(slot, name, { backend: name, baseURL: c.baseURL, ...(c.key && { auth: c.key }) })
+      const server = { backend: name, baseURL: c.baseURL, ...(c.key && { auth: c.key }) }
+      const list = await listChoices(slot, name, server, [], signal)
       if (!list.ok) return { ...list, message: `Couldn't get ${name}'s models (${list.message}).` }
       return list
     },
@@ -389,11 +462,16 @@ export function setupCore(d: CoreDeps) {
     },
 
     /** A one-line test question to the model that answers (SET-11). */
-    async test(answering: Answering): Promise<{ ok: true; reply: string } | { ok: false; error: string }> {
+    async test(
+      answering: Answering,
+      { signal }: Cancel = {},
+    ): Promise<{ ok: true; reply: string } | { ok: false; error: string }> {
       try {
-        const reply = (await d.ask(answering.options)).trim()
+        const reply = (await cancellable(d.ask(answering.options, signal), signal)).trim()
         return reply ? { ok: true, reply } : { ok: false, error: 'it returned an empty reply' }
       } catch (e) {
+        // Cancelled is not a failure of the model: it is passed on (SET-26).
+        if (signal?.aborted) throw signal.reason
         return { ok: false, error: e instanceof Error ? e.message.replace(/^neorouter: /, '') : String(e) }
       }
     },
@@ -438,19 +516,20 @@ export function realDeps(dir = configDir()): CoreDeps {
     load: () => loadConfig(dir),
     save: (config) => saveConfig(config, dir),
     env: process.env,
-    resolve: async (chain) => {
+    resolve: async (chain, { launch }) => {
       // Failures are memoised too, and setup asks again after things change.
       reset()
-      return resolveChain(chain)
+      return resolveChain(chain, { launch })
     },
-    localModels,
-    checkKey: (provider, key) => checkKey(provider, key),
-    fetchModels: (server) => fetchModels(server),
-    ask: async (options) => {
+    localModels: (signal) => localModels(signal),
+    checkKey: (provider, key, signal) => checkKey(provider, key, fetch, signal),
+    fetchModels: (server, signal) => fetchModels(server, fetch, signal),
+    ask: async (options, signal) => {
+      const timeout = AbortSignal.timeout(120_000)
       const { text } = await generateText({
         model: auto(options),
         prompt: 'Say hello in one short sentence.',
-        abortSignal: AbortSignal.timeout(120_000),
+        abortSignal: signal ? AbortSignal.any([timeout, signal]) : timeout,
       })
       return text
     },

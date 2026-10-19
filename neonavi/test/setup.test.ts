@@ -4,11 +4,14 @@ import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
-import { runSetup, type SetupDeps } from '../src/setup.ts'
+import { CLI_NEXT_STEP, runSetup, type SetupDeps } from '../src/setup.ts'
 import {
+  describe,
   labelFor,
   links,
   loadConfig,
+  modelLabel,
+  NEXT_STEP,
   realDeps,
   saveConfig,
   setSlotIn,
@@ -41,6 +44,8 @@ interface World {
   /** Models on the local servers; `localUp` replaces it on each local recheck. */
   local?: string[]
   localUp?: string[][]
+  /** Models on an installed runtime that is not running: found only by a resolve that may launch. */
+  idle?: string[]
   key?: Verdict
   env?: Record<string, string>
   /** Base URLs that answer a model list, with what they list. */
@@ -53,6 +58,8 @@ interface World {
 function fake(answers: Answer[], w: World = {}) {
   const out: string[] = []
   const saved: Record<string, any>[] = []
+  /** Each resolve, and whether it was allowed to launch. */
+  const resolves: boolean[] = []
   let config = structuredClone(w.config ?? {})
   let local = w.local ?? []
   const localUp = [...(w.localUp ?? [])]
@@ -67,9 +74,10 @@ function fake(answers: Answer[], w: World = {}) {
     if (c) return w.endpoints?.[c.baseURL] ?? null
     return hasKey(name) ? (MODELS[name] ?? []) : null
   }
-  const resolveLink = (e: Entry): Omit<Chosen, 'index'> | null => {
+  const resolveLink = (e: Entry, launch: boolean): Omit<Chosen, 'index'> | null => {
     const base = { entry: e, options: optionsFor(e), contextWindow: 8192 }
     if (e.where === 'local') {
+      if (launch && w.idle && !local.length) local = w.idle
       const id = e.id ?? local[0]
       return id && local.includes(id) ? { ...base, backend: 'lmstudio', modelId: id, local: true } : null
     }
@@ -84,9 +92,10 @@ function fake(answers: Answer[], w: World = {}) {
       saved.push(structuredClone(c))
     },
     env,
-    resolve: async (chain) => {
+    resolve: async (chain, { launch }) => {
+      resolves.push(launch)
       for (const [index, e] of chain.entries()) {
-        const got = resolveLink(e)
+        const got = resolveLink(e, launch)
         if (got) return { ...got, index }
       }
       return null
@@ -113,7 +122,7 @@ function fake(answers: Answer[], w: World = {}) {
     return recheck()
   }
   const d: SetupDeps = { ask: next, askSecret: next, print: (s) => out.push(s), core }
-  return { d, core, out: () => out.join('\n'), saved, config: () => config }
+  return { d, core, out: () => out.join('\n'), saved, config: () => config, resolves }
 }
 
 const KEYED = { keys: { anthropic: 'k' } }
@@ -124,7 +133,7 @@ test('an empty config shows the local model as primary and no fallback', async (
   assert.equal(await runSetup(f.d), 0)
   assert.match(f.out(), /Primary\s+any local model \(fastest\)/)
   assert.match(f.out(), /Fallback\s+none/)
-  assert.match(f.out(), /lmstudio · qwen3-4b, the primary \(on this computer\)/)
+  assert.match(f.out(), /qwen3-4b, the primary \(on this computer\)/)
   assert.equal(f.saved.length, 0)
 })
 
@@ -132,13 +141,14 @@ test('says when the answer is remote, and which slot answers', async () => {
   const f = fake([''], { config: { ...KEYED, model: ['local', 'anthropic:claude-sonnet-5-5'] } })
   await runSetup(f.d)
   assert.match(f.out(), /Fallback\s+claude-sonnet-5-5 on Anthropic/)
-  assert.match(f.out(), /Anthropic · claude-sonnet-5-5, the fallback \(REMOTE/)
+  // SET-25: model first.
+  assert.match(f.out(), /claude-sonnet-5-5 on Anthropic, the fallback \(REMOTE/)
 })
 
 test('reports when nothing answers', async () => {
   const f = fake([''])
   assert.equal(await runSetup(f.d), 1)
-  assert.match(f.out(), /can't find a model/)
+  assert.match(f.out(), /can't find a running model/)
 })
 
 test('shows links after the fallback', async () => {
@@ -158,7 +168,32 @@ test('--check exits 1 with the next step when nothing answers', async () => {
   const f = fake(['1'])
   assert.equal(await runSetup(f.d, { check: true }), 1)
   assert.match(f.out(), /navi setup/)
+  assert.ok(f.out().includes(CLI_NEXT_STEP))
   assert.equal(f.saved.length, 0)
+})
+
+// SET-27: the core's own next step names no command.
+test('the core words the next step without naming a command', () => {
+  assert.doesNotMatch(NEXT_STEP, /navi setup|`/)
+  assert.ok(CLI_NEXT_STEP.startsWith(NEXT_STEP))
+  assert.match(CLI_NEXT_STEP, /run `navi setup`/)
+})
+
+// SET-24, MOD-18
+test('opening setup starts no runtime; picking a model or --check may', async () => {
+  const f = fake([''], { idle: ['qwen3-4b'] })
+  assert.equal(await runSetup(f.d), 1)
+  assert.deepEqual(f.resolves, [false])
+  assert.match(f.out(), /can't find a running model/)
+
+  const g = fake(['1'], { idle: ['qwen3-4b'] })
+  assert.equal(await runSetup(g.d, { check: true }), 0)
+  assert.deepEqual(g.resolves, [true])
+
+  const h = fake(['1', row('Local'), row('any local model'), ''], { idle: ['qwen3-4b'] })
+  assert.equal(await runSetup(h.d), 0)
+  assert.deepEqual(h.resolves, [false, true])
+  assert.match(h.out(), /qwen3-4b, the primary/)
 })
 
 // SET-18
@@ -188,8 +223,10 @@ test('a local model becomes the primary, saved with local:, and is asked a quest
   const f = fake(['1', row('Local'), row('qwen/qwen3-8b'), ''], { local: ['qwen3-4b', 'qwen/qwen3-8b'] })
   assert.equal(await runSetup(f.d), 0)
   assert.deepEqual(f.saved.at(-1)?.model, ['local:qwen/qwen3-8b'])
-  assert.match(f.out(), /qwen\/qwen3-8b  lmstudio/)
-  assert.match(f.out(), /lmstudio · qwen\/qwen3-8b, the primary/)
+  // SET-25: listed and named by the model, never the server's app.
+  assert.match(f.out(), /\d+  qwen\/qwen3-8b$/m)
+  assert.match(f.out(), /qwen\/qwen3-8b, the primary/)
+  assert.doesNotMatch(f.out(), /lmstudio ·|  lmstudio/)
   assert.match(f.out(), /Hello there!/)
 })
 
@@ -215,7 +252,7 @@ test('local help checks again until a model is found, then lists it', async () =
   assert.match(f.out(), /lmstudio\.ai/)
   assert.match(f.out(), /ollama\.com/)
   assert.match(f.out(), /Nothing yet/)
-  assert.match(f.out(), /Found lmstudio · qwen3-4b/)
+  assert.match(f.out(), /Found qwen3-4b\./)
   assert.deepEqual(f.saved.at(-1)?.model, ['local:qwen3-4b'])
 })
 
@@ -322,7 +359,9 @@ test('the core answers with data and never prompts', async () => {
   const f = fake([], { config: KEYED, local: ['a'] })
   const status = await f.core.status()
   assert.equal(status.primary.label, 'any local model (fastest)')
-  assert.equal(status.answering?.label, 'lmstudio · a')
+  assert.equal(status.answering?.label, 'a')
+  assert.equal(status.onlyRunning, false)
+  assert.equal((await f.core.status({ launch: false })).onlyRunning, true)
   assert.deepEqual(
     (await f.core.slotMenu(1)).groups.map((g) => g.id),
     ['providers', 'local', 'custom'],
@@ -338,6 +377,100 @@ test('the core answers with data and never prompts', async () => {
   const set = await f.core.setSlot(1, 'anthropic:claude-sonnet-5-5')
   assert.ok(set.changed)
   assert.equal(set.status.fallback?.label, 'claude-sonnet-5-5 on Anthropic')
+})
+
+// SET-25
+test('a resolved model is named model first', () => {
+  assert.equal(modelLabel({ backend: 'lmstudio', modelId: 'qwen3-4b', local: true }), 'qwen3-4b')
+  assert.equal(modelLabel({ backend: 'anthropic', modelId: 'claude-sonnet-5-5', local: false }), 'claude-sonnet-5-5 on Anthropic')
+  assert.equal(modelLabel({ backend: 'homelab', modelId: 'm', local: false }), 'm on homelab')
+  assert.equal(describe(null, undefined, { onlyRunning: true }), "navi can't find a running model to answer with.")
+})
+
+test('a local model on two servers is one choice', async () => {
+  const core = setupCore({
+    load: async () => ({}),
+    save: async () => {},
+    env: {},
+    resolve: async () => null,
+    localModels: async () => [
+      { backend: 'lmstudio', id: 'a' },
+      { backend: 'ollama', id: 'a' },
+    ],
+    checkKey: async () => 'ok',
+    fetchModels: async () => ({ ok: true, models: [] }),
+    ask: async () => '',
+  })
+  assert.deepEqual(
+    (await core.localModels(0)).map((c) => [c.value, c.label, c.detail]),
+    [
+      ['local:a', 'a', undefined],
+      ['local', 'any local model (fastest)', undefined],
+    ],
+  )
+})
+
+// SET-26: every check can be cancelled; a cancelled one rejects and saves nothing.
+test('cancelling a check rejects it and saves nothing', async () => {
+  let open = () => {}
+  const gate = { promise: new Promise<void>((r) => (open = r)), resolve: () => open() }
+  const saved: Record<string, any>[] = []
+  const seen: (AbortSignal | undefined)[] = []
+  const core = setupCore({
+    load: async () => ({ keys: { anthropic: 'k' }, custom: { box: { baseURL: 'http://box/v1' } } }),
+    save: async (c) => {
+      saved.push(c)
+    },
+    env: {},
+    resolve: () => new Promise(() => {}),
+    localModels: async (signal) => {
+      seen.push(signal)
+      return []
+    },
+    checkKey: async (_p, _k, signal) => {
+      seen.push(signal)
+      await gate.promise
+      return 'ok'
+    },
+    fetchModels: async (_s, signal) => {
+      seen.push(signal)
+      return { ok: true, models: [{ id: 'm' }] }
+    },
+    ask: async (_o, signal) => {
+      seen.push(signal)
+      return new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted'))))
+    },
+  })
+  const answering = { label: 'm' } as any
+  const aborted = AbortSignal.abort()
+  const isAbort = (e: any) => e?.name === 'AbortError'
+  await assert.rejects(core.providerModels('anthropic', 0, { signal: aborted }), isAbort)
+  await assert.rejects(core.customModels('box', 0, { signal: aborted }), isAbort)
+  await assert.rejects(core.localModels(0, { signal: aborted }), isAbort)
+  await assert.rejects(core.addCustom({ name: 'new', baseURL: 'http://new/v1' }, { signal: aborted }), isAbort)
+  await assert.rejects(core.recheckLocal({ signal: aborted }), isAbort)
+
+  // A resolution that never ends is let go when the signal aborts.
+  const ctrl = new AbortController()
+  const pending = core.status({ signal: ctrl.signal, launch: false })
+  ctrl.abort()
+  await assert.rejects(pending, isAbort)
+
+  // A key check cancelled while it is out does not save the key, even when it is accepted.
+  const k = new AbortController()
+  const saving = core.saveKey('groq', 'gsk', { signal: k.signal })
+  k.abort()
+  gate.resolve()
+  await assert.rejects(saving, isAbort)
+
+  // The test question is cancelled, not reported as the model's failure.
+  const t = new AbortController()
+  const asking = core.test(answering, { signal: t.signal })
+  t.abort()
+  await assert.rejects(asking, isAbort)
+
+  assert.equal(saved.length, 0)
+  assert.ok(seen.length && seen.every((s) => s?.aborted))
 })
 
 test('a provider with no key has no models to list', async () => {

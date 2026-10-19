@@ -48,6 +48,10 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
   cannot be reached, or the model is not in the server's model list.
 - MOD-8: A local link fails when no server is reachable or launchable, or the
   pinned id is not installed.
+- MOD-18: A local link can be probed without launching anything: it then
+  looks only at servers already listening (rung 1 of neorouter), and fails
+  when none has the model. Setup's first status uses this (SET-24); a run
+  always may launch.
 - MOD-9: The `remote` alias picks the free OpenRouter chat model with the
   largest context window from the live catalogue.
 - ~~MOD-13: `free` is never in the default chain.~~ The keyless tier is gone.

@@ -1,10 +1,9 @@
-import { describe, type Answering, type Choice, type ProviderRow, type Slot, type Status } from 'neonavi/setup'
-import { modelLabel } from './labels'
+import { describe, NEXT_STEP, type Choice, type ProviderRow, type Slot, type Status } from 'neonavi/setup'
 
 /**
  * What Set Up Navi shows, worked out from what setup's core returns (SET-23).
- * The core decides every choice; this only words it for Raycast, and keeps a
- * local server's app out of the words (RAY-9).
+ * The core decides every choice and words every model (SET-25, RAY-9); this
+ * only lays it out for Raycast.
  */
 
 export interface SlotItem {
@@ -25,21 +24,13 @@ export function slotItems(s: Status): SlotItem[] {
   ]
 }
 
-/** The model that answers, named by its id when it is local (RAY-9). */
-export function relabel(a: Answering | null): Answering | null {
-  return a && { ...a, label: modelLabel(a) }
-}
-
 export type TestState =
   { state: 'asking' } | { state: 'done'; ok: true; reply: string } | { state: 'done'; ok: false; error: string }
 
 /** SET-1 in a sentence, then the test question's reply or error (SET-11). */
 export function statusMarkdown(s: Status, test?: TestState | null): string {
-  const parts = [describe(relabel(s.answering), (x) => `**${x}**`)]
-  if (!s.answering)
-    parts.push(
-      'Choose a model for the primary slot: one on this computer (Local), a provider with your key, or your own endpoint (Custom).',
-    )
+  const parts = [describe(s.answering, (x) => `**${x}**`, s)]
+  if (!s.answering) parts.push(NEXT_STEP)
   if (test?.state === 'asking') parts.push('_Asking it a test question…_')
   else if (test?.state === 'done' && test.ok) parts.push(`**Test reply:** ${test.reply}`)
   else if (test?.state === 'done') parts.push(`**The model didn't answer:** ${test.error}`)
@@ -61,18 +52,20 @@ export interface ChoiceItem {
   current: boolean
 }
 
-/**
- * Choices as list rows. Local models drop the core's detail, which names the
- * server they run on: the user picked a model, not an app (RAY-9).
- */
-export function choiceItems(choices: Choice[], o: { local?: boolean } = {}): ChoiceItem[] {
+/** Choices as list rows. */
+export function choiceItems(choices: Choice[]): ChoiceItem[] {
   return choices.map((c) => ({
     id: c.value ?? 'none',
     value: c.value,
     title: c.label,
-    subtitle: o.local ? undefined : c.detail,
+    subtitle: c.detail,
     current: c.current,
   }))
+}
+
+/** A check cancelled because its view was left (SET-26): nothing to report. */
+export function isAbort(error: unknown): boolean {
+  return (error as { name?: unknown } | null)?.name === 'AbortError'
 }
 
 export const SLOT_NAME = ['Primary', 'Fallback'] as const

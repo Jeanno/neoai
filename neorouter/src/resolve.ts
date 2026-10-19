@@ -61,18 +61,21 @@ export function rungOrder(remote: boolean): Rung[] {
     : ['reachable', 'launched', 'keyed', 'keyless']
 }
 
-export type Scope = 'keyed' | 'local'
+export type Scope = 'keyed' | 'local' | 'running'
 
 /**
  * Which rungs one resolution may use. A caller walking an explicit chain scopes
  * each link, so the chain's order is the only fallback and a link never lands
  * on a backend nobody named. Without a scope the full ordering applies, for
  * callers who just want auto() to find something. No scope reaches the
- * keyless tier: only an unscoped auto() does.
+ * keyless tier: only an unscoped auto() does. 'running' is 'local' without
+ * the launch rung, for a caller that must not start anything just by looking
+ * (MOD-18).
  */
 export function rungsFor(scope: Scope | undefined, remote = false): Rung[] {
   if (scope === 'keyed') return ['keyed']
   if (scope === 'local') return ['reachable', 'launched']
+  if (scope === 'running') return ['reachable']
   return rungOrder(remote)
 }
 

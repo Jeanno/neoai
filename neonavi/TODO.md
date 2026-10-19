@@ -42,8 +42,9 @@ allowlist, refusing unsafe commands outright, a separate judge model.
       key), Local or Custom endpoints, one core shared with Raycast, and
       `--check`, run by the installer. (`spec/setup.md`)
 
-- [ ] `fetch_url`: read a web page as text (HTML stripped, size-capped),
-      echoed like `web_search`, removable in config. (`spec/tools.md`)
+- [x] `fetch_url`: read a web page as text (HTML stripped, size-capped),
+      echoed like `web_search`, never the local network, removable in
+      config. (`spec/tools.md` TL-32 to TL-35)
 - [ ] Image and PDF input: attach files to a turn (CLI path argument,
       Raycast selected Finder files); images go to vision models, PDFs as
       extracted text. (`spec/harness.md`, `spec/cli.md`,

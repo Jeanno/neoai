@@ -8,7 +8,7 @@ import { makeSpinner } from './spinner.ts'
 import { loadSession, saveSession, sessionFile } from './session.ts'
 import { createHarness, DEFAULT_STEPS, type HarnessEvent } from './harness.ts'
 import { readConfig } from 'neorouter'
-import { NEXT_STEP, realDeps, runSetup } from './setup.ts'
+import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
@@ -87,7 +87,7 @@ async function main() {
         .map((e) => (e.provider ? `${e.provider}:${e.id ?? 'free'}` : (e.id ?? e.where)))
         .join(' → ')}`,
     )
-    console.error(NEXT_STEP)
+    console.error(CLI_NEXT_STEP)
     return 1
   }
 

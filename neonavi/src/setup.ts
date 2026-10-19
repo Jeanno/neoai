@@ -12,7 +12,8 @@ import {
   type Status,
 } from './setup-core.ts'
 
-export { NEXT_STEP }
+/** SET-2, SET-27: the core's next step, and how to take it from a terminal. */
+export const CLI_NEXT_STEP = `${NEXT_STEP} To choose one, run \`navi setup\`.`
 
 // Plain when printed into a log, as `--check` is by the installer.
 const styled = (code: string) => (s: string) => (process.stdout.isTTY ? `\x1b[${code}m${s}\x1b[0m` : s)
@@ -92,7 +93,7 @@ function showStatus(d: SetupIO, s: Status) {
   d.print(`\n  Primary   ${s.primary.label}`)
   d.print(`  Fallback  ${s.fallback?.label ?? 'none'}`)
   if (s.later.length) d.print(`  Then      ${s.later.map((l) => l.label).join(', ')}`)
-  d.print(`\n${describe(s.answering, bold)}`)
+  d.print(`\n${describe(s.answering, bold, s)}`)
 }
 
 /** SET-6: asks for a key without echo, checks it, and saves it only when accepted. */
@@ -270,11 +271,13 @@ export async function runSetup(d: SetupDeps, { check = false } = {}): Promise<nu
   }
 
   d.print(dim('Looking for a model…'))
-  let status = await d.core.status()
+  // Opening setup starts no runtime (SET-24); --check resolves fully, since
+  // its exit code says whether navi would answer (SET-2).
+  let status = await d.core.status({ launch: check })
   const code = () => (status.answering ? 0 : 1)
   if (check) {
     d.print(describe(status.answering, bold))
-    if (!status.answering) d.print(NEXT_STEP)
+    if (!status.answering) d.print(CLI_NEXT_STEP)
     return code()
   }
   showStatus(d, status)

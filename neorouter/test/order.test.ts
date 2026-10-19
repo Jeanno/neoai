@@ -38,6 +38,12 @@ test('a local link tries only the machine', () => {
   assert.deepEqual(rungsFor('local'), ['reachable', 'launched'])
 })
 
+// MOD-18: looking must not start a runtime.
+test('a running-only local link never reaches the launch rung', () => {
+  assert.deepEqual(rungsFor('running'), ['reachable'])
+  assert.ok(!rungsFor('running').includes('keyless'))
+})
+
 test('no scope keeps the full ordering for callers without a chain', () => {
   assert.deepEqual(rungsFor(undefined, true), rungOrder(true))
   assert.deepEqual(rungsFor(undefined, false), rungOrder(false))

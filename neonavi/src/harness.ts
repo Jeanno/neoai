@@ -27,6 +27,8 @@ export interface HarnessConfig {
   approve?: string
   /** false removes web_search (TL-30). */
   web_search?: boolean
+  /** false removes only fetch_url (TL-35). */
+  fetch_url?: boolean
 }
 
 export interface HarnessOptions {
@@ -102,9 +104,10 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
   const model = native ? o.model : generatedAsStream(o.model)
   // On unless the config says otherwise; off keeps everything but the model on the machine.
   const web = config.web_search !== false
+  const fetch = web && config.fetch_url !== false
   const entries = await readdir(o.cwd).catch(() => [])
   const context = await collectContext(o.cwd, o.home ?? homedir())
-  const system = systemPrompt(o.cwd, entries, context, web)
+  const system = systemPrompt(o.cwd, entries, context, web, fetch)
   const systemTokens = estimateTokens([{ role: 'system', content: system }])
 
   /** The front end's answer, or a decline if it throws or the turn stops first. */
@@ -160,7 +163,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           onAuto: (c) => emit({ type: 'auto-approved', command: c }),
           ask: (c) => ask(c, toolSignal ?? signal),
         })(command)
-      const tools = makeTools({ approve }, { web, cwd: o.cwd, ripgrep: o.ripgrep })
+      const tools = makeTools({ approve }, { web, fetch, cwd: o.cwd, ripgrep: o.ripgrep })
 
       // Messages of the finished steps; the step in flight only adds its text.
       let finished: ModelMessage[] = []

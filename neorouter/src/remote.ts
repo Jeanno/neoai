@@ -19,6 +19,11 @@ export type Listing =
 
 type Fetch = typeof fetch
 
+/** A timeout, ended early too when the caller's signal aborts. */
+export function within(ms: number, signal?: AbortSignal): AbortSignal {
+  return signal ? AbortSignal.any([AbortSignal.timeout(ms), signal]) : AbortSignal.timeout(ms)
+}
+
 /**
  * The server a provider id or custom endpoint name stands for, or null when it
  * is unknown or is a provider without a key (MOD-7). `auth` is the Bearer token
@@ -94,11 +99,14 @@ function modelsURL(server: Server): string {
   return server.baseURL + (providerById(server.backend)?.models ?? '/models')
 }
 
-/** The server's live model list, or why there is none. */
-export async function fetchModels(server: Server, fetcher: Fetch = fetch): Promise<Listing> {
+/**
+ * The server's live model list, or why there is none. `signal` lets the
+ * caller give up early; a cancelled listing reads as unreachable.
+ */
+export async function fetchModels(server: Server, fetcher: Fetch = fetch, signal?: AbortSignal): Promise<Listing> {
   let res: Response
   try {
-    res = await fetcher(modelsURL(server), { headers: modelHeaders(server), signal: AbortSignal.timeout(10_000) })
+    res = await fetcher(modelsURL(server), { headers: modelHeaders(server), signal: within(10_000, signal) })
   } catch (e) {
     return { ok: false, why: 'unreachable', message: `could not reach ${server.baseURL}` }
   }
@@ -114,16 +122,21 @@ export async function fetchModels(server: Server, fetcher: Fetch = fetch): Promi
  * Whether a provider accepts a key (SET-6), with a call that needs it: a bad
  * key is 'rejected', no answer at all is 'unreachable'.
  */
-export async function checkKey(providerId: string, key: string, fetcher: Fetch = fetch): Promise<Verdict> {
+export async function checkKey(
+  providerId: string,
+  key: string,
+  fetcher: Fetch = fetch,
+  signal?: AbortSignal,
+): Promise<Verdict> {
   const p = providerById(providerId)
   if (!p) return 'rejected'
   const server: Server = { backend: p.id, baseURL: p.baseURL, auth: key }
   if (!p.check) {
-    const listing = await fetchModels(server, fetcher)
+    const listing = await fetchModels(server, fetcher, signal)
     return listing.ok ? 'ok' : listing.why
   }
   try {
-    const res = await fetcher(p.baseURL + p.check, { headers: modelHeaders(server), signal: AbortSignal.timeout(10_000) })
+    const res = await fetcher(p.baseURL + p.check, { headers: modelHeaders(server), signal: within(10_000, signal) })
     return res.ok ? 'ok' : classify(res.status)
   } catch {
     return 'unreachable'

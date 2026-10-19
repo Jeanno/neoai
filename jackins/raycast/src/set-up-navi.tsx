@@ -12,7 +12,7 @@ import {
   Toast,
   useNavigation,
 } from '@raycast/api'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   LOCAL_HELP,
   realDeps,
@@ -26,9 +26,16 @@ import {
   type Slot,
   type Status,
 } from 'neonavi/setup'
-import { modelLabel } from './lib/labels'
 import { errorMessage } from './lib/model'
-import { choiceItems, providerAccessory, slotItems, SLOT_NAME, statusMarkdown, type TestState } from './lib/setup-view'
+import {
+  choiceItems,
+  isAbort,
+  providerAccessory,
+  slotItems,
+  SLOT_NAME,
+  statusMarkdown,
+  type TestState,
+} from './lib/setup-view'
 
 /**
  * Set Up Navi (RAY-6): setup's core (SET-23) as Raycast views. Every choice,
@@ -51,6 +58,29 @@ const GROUP_ICON: Record<Group, Icon> = { providers: Icon.Globe, local: Icon.Mon
 
 const currentMark = (current: boolean) => (current ? [{ icon: Icon.Checkmark, tooltip: 'Current' }] : [])
 
+/** Hands out a signal per check; leaving the view (Escape) aborts them all (RAY-10, SET-26). */
+type Cancel = () => AbortSignal
+
+function useCancel(): Cancel {
+  const started = useRef<AbortController[]>([])
+  useEffect(
+    () => () => {
+      for (const c of started.current.splice(0)) c.abort()
+    },
+    [],
+  )
+  return () => {
+    const c = new AbortController()
+    started.current.push(c)
+    return c.signal
+  }
+}
+
+/** A cancelled check's rejection is expected: its view is gone. Anything else still surfaces. */
+function unlessAborted(error: unknown) {
+  if (!isAbort(error)) throw error
+}
+
 export default function Command(props: LaunchProps<{ launchContext?: { from?: string } }>) {
   return <SetUp from={props.launchContext?.from} />
 }
@@ -61,11 +91,13 @@ export function SetUp({ from }: { from?: string }) {
   const [broken, setBroken] = useState<string>()
   const [test, setTest] = useState<TestState | null>(null)
   const [busy, setBusy] = useState(false)
+  const cancel = useCancel()
 
   useEffect(() => {
     // A file that is not valid JSON is left alone (SET-9).
     core.load().then(
-      () => core.status().then(setStatus),
+      // Only servers already running: opening setup starts nothing (SET-24).
+      () => core.status({ launch: false, signal: cancel() }).then(setStatus, unlessAborted),
       (error) => setBroken(errorMessage(error)),
     )
   }, [])
@@ -79,8 +111,9 @@ export function SetUp({ from }: { from?: string }) {
       if (set.changed) await showToast({ style: Toast.Style.Success, title: 'Saved' })
       if (!set.status.answering) return
       setTest({ state: 'asking' })
-      setTest({ state: 'done', ...(await core.test(set.status.answering)) })
+      setTest({ state: 'done', ...(await core.test(set.status.answering, { signal: cancel() })) })
     } catch (error) {
+      if (isAbort(error)) return
       await showToast({ style: Toast.Style.Failure, title: 'Could not save', message: errorMessage(error) })
     } finally {
       setBusy(false)
@@ -180,10 +213,10 @@ function SlotMenu({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
 }
 
 /** Model choices as rows; picking one passes its link up. */
-function ChoiceRows({ choices, local, onPick }: { choices: Choice[]; local?: boolean; onPick: OnPick }) {
+function ChoiceRows({ choices, onPick }: { choices: Choice[]; onPick: OnPick }) {
   return (
     <>
-      {choiceItems(choices, { local }).map((c) => (
+      {choiceItems(choices).map((c) => (
         <List.Item
           key={c.id}
           title={c.title}
@@ -273,12 +306,21 @@ function KeyForm({ provider: p, onSaved }: { provider: ProviderRow; onSaved: () 
   const { pop } = useNavigation()
   const [error, setError] = useState<string>()
   const [checking, setChecking] = useState(false)
+  const cancel = useCancel()
 
   async function submit({ key }: { key: string }) {
     if (!key.trim()) return setError('Paste a key first.')
     setChecking(true)
     const toast = await showToast({ style: Toast.Style.Animated, title: 'Checking the key…' })
-    const saved = await core.saveKey(p.id, key)
+    let saved: Awaited<ReturnType<SetupCore['saveKey']>>
+    try {
+      saved = await core.saveKey(p.id, key, { signal: cancel() })
+    } catch (error) {
+      // Left before the check finished: nothing was saved (SET-26).
+      if (!isAbort(error)) throw error
+      await toast.hide()
+      return
+    }
     setChecking(false)
     if (!saved.ok) {
       toast.style = Toast.Style.Failure
@@ -324,9 +366,10 @@ function ProviderModels({ slot, provider: p, onPick }: { slot: Slot; provider: P
     onPick(v)
   }
   const [list, setList] = useState<ModelList>()
+  const cancel = useCancel()
   const load = () => {
     setList(undefined)
-    core.providerModels(p.id, slot).then(setList)
+    core.providerModels(p.id, slot, { signal: cancel() }).then(setList, unlessAborted)
   }
 
   useEffect(() => {
@@ -383,7 +426,7 @@ function ProviderModels({ slot, provider: p, onPick }: { slot: Slot; provider: P
   )
 }
 
-/** SET-21: the models on running local servers, by id (RAY-9), with help and Check Again (SET-5). */
+/** SET-21: the models on running local servers, by id (SET-25), with help and Check Again (SET-5). */
 function Local({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
   const { pop } = useNavigation()
   const pick: OnPick = (v) => {
@@ -391,9 +434,10 @@ function Local({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
     onPick(v)
   }
   const [choices, setChoices] = useState<Choice[]>()
+  const cancel = useCancel()
   const load = () => {
     setChoices(undefined)
-    core.localModels(slot).then(setChoices)
+    core.localModels(slot, { signal: cancel() }).then(setChoices, unlessAborted)
   }
 
   useEffect(() => {
@@ -402,13 +446,13 @@ function Local({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
 
   const running = choices?.some((c) => c.value !== 'local')
   const help = <LocalHelp onFound={load} />
-  const checkAgain = <CheckAgain onFound={load} />
+  const checkAgain = <CheckAgain cancel={cancel} onFound={load} />
 
   return (
     <List navigationTitle="Local" isLoading={!choices}>
       {choices && (
         <List.Section title={running ? 'On This Computer' : 'On This Computer (nothing running)'}>
-          {choiceItems(choices, { local: true }).map((c) => (
+          {choiceItems(choices).map((c) => (
             <List.Item
               key={c.id}
               title={c.title}
@@ -440,14 +484,24 @@ function Local({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
   )
 }
 
-/** Looks for a local model again: a probe, which also starts an installed runtime (SET-5). */
-function CheckAgain({ onFound }: { onFound: (found: boolean) => void }) {
+/**
+ * Looks for a local model again: a probe, which also starts an installed
+ * runtime (SET-5). `cancel` is the view's, so leaving it stops the look (RAY-10).
+ */
+function CheckAgain({ cancel, onFound }: { cancel: Cancel; onFound: (found: boolean) => void }) {
   async function check() {
     const toast = await showToast({ style: Toast.Style.Animated, title: 'Looking for a local model…' })
-    const found = await core.recheckLocal()
+    let found: Awaited<ReturnType<SetupCore['recheckLocal']>>
+    try {
+      found = await core.recheckLocal({ signal: cancel() })
+    } catch (error) {
+      if (!isAbort(error)) throw error
+      await toast.hide()
+      return
+    }
     if (found) {
       toast.style = Toast.Style.Success
-      toast.title = `Found ${modelLabel(found)}`
+      toast.title = `Found ${found.label}`
     } else {
       toast.style = Toast.Style.Failure
       toast.title = 'Nothing yet'
@@ -474,6 +528,7 @@ const HELP = [
 
 function LocalHelp({ onFound }: { onFound: () => void }) {
   const { pop } = useNavigation()
+  const cancel = useCancel()
   return (
     <Detail
       navigationTitle="Help Getting a Model"
@@ -481,6 +536,7 @@ function LocalHelp({ onFound }: { onFound: () => void }) {
       actions={
         <ActionPanel>
           <CheckAgain
+            cancel={cancel}
             onFound={(found) => {
               if (!found) return
               pop()
@@ -556,9 +612,10 @@ function Custom({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
 function CustomModels({ slot, name, onPick }: { slot: Slot; name: string; onPick: OnPick }) {
   const { pop } = useNavigation()
   const [list, setList] = useState<ModelList>()
+  const cancel = useCancel()
   const load = () => {
     setList(undefined)
-    core.customModels(name, slot).then(setList)
+    core.customModels(name, slot, { signal: cancel() }).then(setList, unlessAborted)
   }
 
   useEffect(() => {
@@ -600,13 +657,22 @@ function AddEndpoint({ onSaved }: { onSaved: (name: string) => void }) {
   const { pop } = useNavigation()
   const [nameError, setNameError] = useState<string>()
   const [checking, setChecking] = useState(false)
+  const cancel = useCancel()
 
   async function submit(v: { name: string; baseURL: string; key: string }) {
     const bad = core.checkCustomName(v.name)
     if (bad) return setNameError(bad)
     setChecking(true)
     const toast = await showToast({ style: Toast.Style.Animated, title: 'Checking the endpoint…' })
-    const added = await core.addCustom({ name: v.name, baseURL: v.baseURL, key: v.key })
+    let added: Awaited<ReturnType<SetupCore['addCustom']>>
+    try {
+      added = await core.addCustom({ name: v.name, baseURL: v.baseURL, key: v.key }, { signal: cancel() })
+    } catch (error) {
+      // Left before the check finished: nothing was saved (SET-26).
+      if (!isAbort(error)) throw error
+      await toast.hide()
+      return
+    }
     setChecking(false)
     if (!added.ok) {
       toast.style = Toast.Style.Failure

@@ -15,7 +15,7 @@ export function promptFrom(argv: string[]): { prompt: string | null; stray: stri
  * "list the dir" resolving to a directory from an earlier turn instead of here.
  * The listing is included so looking around is free and guessing has no excuse.
  */
-export function systemPrompt(cwd: string, entries: string[] = [], context = '', web = false): string {
+export function systemPrompt(cwd: string, entries: string[] = [], context = '', web = false, fetch = false): string {
   const here = entries.length ? entries.join(', ') : '(empty)'
   return [
     'You are navi, a command-line assistant.',
@@ -34,6 +34,7 @@ export function systemPrompt(cwd: string, entries: string[] = [], context = '', 
           'releases, prices, news, docs — use web_search, and cite the URLs you relied on.',
         ]
       : []),
+    ...(fetch ? ['To read a page the user names, or a search result worth opening, use fetch_url.'] : []),
     'When you have the answer, state it plainly. Do not narrate your tool use.',
     ...(context
       ? ['', 'What this project is, from its own NAVI.md files:', context]

@@ -35,7 +35,10 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
 - RAY-9: Nothing the extension shows names a product the user did not choose.
   Detected local servers appear by their models, not their app; a provider's
   name appears only in Providers and once the user has picked one of its
-  models.
+  models. The words come from setup's core (SET-25); the extension does not
+  relabel them.
+- RAY-10: Leaving a Set Up Navi view (Escape) cancels the check it started
+  (SET-26), and opening Set Up Navi starts no local runtime (SET-24).
 
 ## Open
 

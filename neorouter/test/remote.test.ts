@@ -142,3 +142,19 @@ test('a model list says why it is missing', async () => {
   const down = await fetchModels(server, offline)
   assert.ok(!down.ok && down.why === 'unreachable')
 })
+
+// SET-26: the caller's signal reaches the request, so a cancelled check stops.
+test('a listing and a key check pass the caller signal to the request', async () => {
+  const ctrl = new AbortController()
+  const seen: AbortSignal[] = []
+  const fetcher = (async (_url: string, init?: RequestInit) => {
+    seen.push(init!.signal!)
+    if (init!.signal!.aborted) throw init!.signal!.reason
+    return new Response('{"data":[]}', { status: 200 })
+  }) as typeof fetch
+  ctrl.abort()
+  const listing = await fetchModels({ backend: 'box', baseURL: 'http://h/v1' }, fetcher, ctrl.signal)
+  assert.ok(!listing.ok && listing.why === 'unreachable')
+  assert.equal(await checkKey('openrouter', 'k', fetcher, ctrl.signal), 'unreachable')
+  assert.ok(seen.length === 2 && seen.every((s) => s.aborted))
+})
