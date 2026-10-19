@@ -8,7 +8,6 @@ import {
   Keyboard,
   LaunchProps,
   List,
-  popToRoot,
   showToast,
   Toast,
   useNavigation,
@@ -72,8 +71,6 @@ export function SetUp({ from }: { from?: string }) {
   }, [])
 
   async function picked(slot: Slot, value: string | null) {
-    // One step back to the slots, however deep the pick was made.
-    await popToRoot({ clearSearchBar: true })
     setBusy(true)
     setTest(null)
     try {
@@ -130,7 +127,11 @@ export function SetUp({ from }: { from?: string }) {
 
 /** SET-18: Providers, Local or Custom; the fallback also offers none. */
 function SlotMenu({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
-  const pick = onPick
+  const { pop } = useNavigation()
+  const pick: OnPick = (v) => {
+    pop()
+    onPick(v)
+  }
   const [menu, setMenu] = useState<Awaited<ReturnType<SetupCore['slotMenu']>>>()
 
   useEffect(() => {
@@ -202,17 +203,25 @@ function ChoiceRows({ choices, local, onPick }: { choices: Choice[]; local?: boo
 
 /** A long list, searchable with Raycast's own search bar. */
 function AllModels({ title, choices, onPick }: { title: string; choices: Choice[]; onPick: OnPick }) {
+  const { pop } = useNavigation()
+  const pick: OnPick = (v) => {
+    pop()
+    onPick(v)
+  }
   return (
     <List navigationTitle={title} searchBarPlaceholder="Search models…">
-      <ChoiceRows choices={choices} onPick={onPick} />
+      <ChoiceRows choices={choices} onPick={pick} />
     </List>
   )
 }
 
 /** SET-19 */
 function Providers({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
-  const { push } = useNavigation()
-  const pick = onPick
+  const { pop, push } = useNavigation()
+  const pick: OnPick = (v) => {
+    pop()
+    onPick(v)
+  }
   const [rows, setRows] = useState<ProviderRow[]>()
   const reload = () => core.providers().then(setRows)
 
@@ -309,7 +318,11 @@ function KeyForm({ provider: p, onSaved }: { provider: ProviderRow; onSaved: () 
 
 /** SET-20: the hand-picked models still on offer, then "All models…". */
 function ProviderModels({ slot, provider: p, onPick }: { slot: Slot; provider: ProviderRow; onPick: OnPick }) {
-  const pick = onPick
+  const { pop } = useNavigation()
+  const pick: OnPick = (v) => {
+    pop()
+    onPick(v)
+  }
   const [list, setList] = useState<ModelList>()
   const load = () => {
     setList(undefined)
@@ -372,7 +385,11 @@ function ProviderModels({ slot, provider: p, onPick }: { slot: Slot; provider: P
 
 /** SET-21: the models on running local servers, by id (RAY-9), with help and Check Again (SET-5). */
 function Local({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
-  const pick = onPick
+  const { pop } = useNavigation()
+  const pick: OnPick = (v) => {
+    pop()
+    onPick(v)
+  }
   const [choices, setChoices] = useState<Choice[]>()
   const load = () => {
     setChoices(undefined)
@@ -481,8 +498,11 @@ function LocalHelp({ onFound }: { onFound: () => void }) {
 
 /** SET-22: saved endpoints, and adding one. */
 function Custom({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
-  const { push } = useNavigation()
-  const pick = onPick
+  const { pop, push } = useNavigation()
+  const pick: OnPick = (v) => {
+    pop()
+    onPick(v)
+  }
   const [rows, setRows] = useState<CustomRow[]>()
   const reload = () => core.customs().then(setRows)
 
@@ -534,6 +554,7 @@ function Custom({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
 }
 
 function CustomModels({ slot, name, onPick }: { slot: Slot; name: string; onPick: OnPick }) {
+  const { pop } = useNavigation()
   const [list, setList] = useState<ModelList>()
   const load = () => {
     setList(undefined)
@@ -561,7 +582,15 @@ function CustomModels({ slot, name, onPick }: { slot: Slot; name: string; onPick
 
   return (
     <List navigationTitle={name} isLoading={!list} searchBarPlaceholder="Search models…">
-      {list?.ok && <ChoiceRows choices={list.all} onPick={onPick} />}
+      {list?.ok && (
+        <ChoiceRows
+          choices={list.all}
+          onPick={(v) => {
+            pop()
+            onPick(v)
+          }}
+        />
+      )}
     </List>
   )
 }
