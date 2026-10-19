@@ -3,8 +3,8 @@
 Run language models locally with no configuration.
 
 - **[neorouter](neorouter/NAVI.md)** — an [AI SDK](https://ai-sdk.dev) provider that finds a model to talk to by
-  itself: a server already running (Ollama, LM Studio, llama.cpp, vLLM, Jan), a runtime it can launch, or a hosted
-  fallback. You never name a model, a URL, or a key.
+  itself: a server already running (Ollama, LM Studio, llama.cpp, vLLM, Jan) or a runtime it can launch, or the
+  hosted provider you chose.
 - **[neonavi](neonavi/NAVI.md)** — `navi`, a command-line agent built on top of it, with file-search tools and
   model-judged shell approval.
 - **[jack-ins](jackins/NAVI.md)** — navi jacked into the apps you already use, starting with
@@ -12,12 +12,12 @@ Run language models locally with no configuration.
 
 ## Install
 
-You need Node 22+ and something for navi to talk to. Any one of these works,
-and none needs configuring:
+You need Node 22+ and something for navi to talk to. Any one of these works:
 
-- a local server: [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), llama.cpp, vLLM or Jan
-- [Darkbloom](https://darkbloom.dev) in local mode (`darkbloom start --local`)
-- an [OpenRouter](https://openrouter.ai) key in `OPENROUTER_API_KEY` or `~/.neoai/config.json`
+- a local server, found by itself: [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), llama.cpp, vLLM or Jan
+- a key for OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, DeepSeek, Mistral or xAI, in its usual
+  environment variable or added with `navi setup`
+- any OpenAI-compatible server, such as one on another machine, added with `navi setup`
 
 ```bash
 git clone https://github.com/Jeanno/neoai.git
@@ -38,9 +38,9 @@ From a checkout, `./neonavi/install.sh` does the same with the code you have. Ei
 (`… | sh -s -- --uninstall`).
 
 The installer ends by checking for a model. If it finds none, run `navi setup`. It shows your
-primary and fallback models and lets you change either. It also lets you add a model on your
-computer (LM Studio or Ollama), an OpenRouter key, or a free public model (opt-in, with a warning
-that prompts leave your machine), and it tests the result.
+primary and fallback models and lets you change either, from a provider (it asks for a key and
+checks it), a model on your computer (with help getting LM Studio or Ollama going) or a custom
+endpoint, and it tests the result. Until you choose, nothing leaves your machine.
 
 ```bash
 navi setup

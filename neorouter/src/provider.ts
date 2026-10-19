@@ -5,9 +5,10 @@ import type {
   LanguageModelV2CallWarning,
   LanguageModelV2FinishReason,
   LanguageModelV2StreamPart,
+  LanguageModelV2Usage,
 } from '@ai-sdk/provider'
 import type { Resolved } from './resolve.ts'
-import { resolveBackend, type Scope } from './resolve.ts'
+import { probeBackend, resolveBackend, type Scope } from './resolve.ts'
 import { shutdown } from './launch.ts'
 import { serialize } from './hosted.ts'
 import type { Prefer, Server } from './types.ts'
@@ -129,14 +130,13 @@ export function fromChoice(choice: any): LanguageModelV2Content[] {
  * of thinking per token of answer, and in an agent loop it will exhaust its
  * budget mid-thought and return nothing at all. 'none' is the only knob that
  * works here — `think: false` is silently ignored on the OpenAI-shaped endpoint.
- * Darkbloom 0.9.22 / Qwen3.8-27B honours the same flag (3.4s → 0.6s for a
- * one-line answer, no </think> in the output). Only measured backends are asked.
+ * Ollama and custom endpoints are asked: a custom endpoint is usually a
+ * self-hosted open model (Darkbloom serving Qwen thinks ~15s per answer
+ * otherwise). One that rejects the field is retried without it (see send).
  */
-const HONOURS_REASONING_EFFORT = new Set(['darkbloom'])
-
 export function reasoningEffort(server: Server, think: boolean | undefined): 'none' | undefined {
   if (think !== false) return undefined
-  return server.native === 'ollama' || HONOURS_REASONING_EFFORT.has(server.backend) ? 'none' : undefined
+  return server.native === 'ollama' || server.custom ? 'none' : undefined
 }
 
 function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean, think?: boolean) {
@@ -248,7 +248,15 @@ async function send(
     await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt))
     return send(url, payload, hosted, auth, caller, attempt + 1)
   }
-  throw new Error(`neorouter: ${url} responded ${res.status} ${await res.text()}`)
+  const text = await res.text()
+  // A strict server may refuse a field it does not know; reasoning_effort is
+  // only ever a hint, so ask once more without it.
+  const p = payload as { reasoning_effort?: string }
+  if (res.status === 400 && p?.reasoning_effort && /reasoning/i.test(text)) {
+    const { reasoning_effort: _, ...rest } = p
+    return send(url, rest, hosted, auth, caller, attempt)
+  }
+  throw new Error(`neorouter: ${url} responded ${res.status} ${text}`)
 }
 
 /**
@@ -267,6 +275,8 @@ function post(url: string, payload: unknown, r: Resolved, caller?: AbortSignal):
 class AutoModel implements LanguageModelV2 {
   readonly specificationVersion = 'v2' as const
   readonly supportedUrls = {}
+  /** Read by navi's harness: tool calls arrive in the stream, so it need not fake one. */
+  readonly streamsToolCalls = true
   private resolution: Resolved | null = null
 
   constructor(
@@ -275,6 +285,7 @@ class AutoModel implements LanguageModelV2 {
     private readonly remote?: boolean,
     private readonly pinned?: string,
     private readonly scope?: Scope,
+    private readonly target?: string,
   ) {}
 
   get provider() {
@@ -286,7 +297,7 @@ class AutoModel implements LanguageModelV2 {
   }
 
   private async ready(): Promise<Resolved> {
-    return (this.resolution ??= await resolveBackend(this.prefer, this.remote, this.pinned, this.scope))
+    return (this.resolution ??= await resolveBackend(this.prefer, this.remote, this.pinned, this.scope, this.target))
   }
 
   async doGenerate(options: LanguageModelV2CallOptions) {
@@ -343,53 +354,79 @@ class AutoModel implements LanguageModelV2 {
     if (r.backend === 'pollinations') return this.simulateStream(options)
     const { payload, warnings } = body(options, r, true, this.think)
     const res = await post(chatEndpoint(r.server, r.backend), payload, r, options.abortSignal)
-    const id = 'txt-0'
-
+    const parts = sseParts(res.body as AsyncIterable<Uint8Array>, metadata(r))
     const stream = new ReadableStream<LanguageModelV2StreamPart>({
       async start(controller) {
         controller.enqueue({ type: 'stream-start', warnings })
         controller.enqueue({ type: 'response-metadata', modelId: r.modelId })
-        controller.enqueue({ type: 'text-start', id })
-
-        let finishReason: LanguageModelV2FinishReason = 'stop'
-        let usage = { inputTokens: undefined, outputTokens: undefined, totalTokens: undefined }
-        let buffer = ''
-
-        for await (const chunk of res.body as any) {
-          buffer += Buffer.from(chunk).toString('utf8')
-          const lines = buffer.split('\n')
-          buffer = lines.pop() ?? ''
-          for (const line of lines) {
-            if (!line.startsWith('data:')) continue
-            const data = line.slice(5).trim()
-            if (!data || data === '[DONE]') continue
-            let json: any
-            try {
-              json = JSON.parse(data)
-            } catch {
-              continue
-            }
-            const choice = json.choices?.[0]
-            const delta = choice?.delta?.content
-            if (delta) controller.enqueue({ type: 'text-delta', id, delta })
-            if (choice?.finish_reason) finishReason = FINISH[choice.finish_reason] ?? 'unknown'
-            if (json.usage)
-              usage = {
-                inputTokens: json.usage.prompt_tokens,
-                outputTokens: json.usage.completion_tokens,
-                totalTokens: json.usage.total_tokens,
-              }
-          }
-        }
-
-        controller.enqueue({ type: 'text-end', id })
-        controller.enqueue({ type: 'finish', finishReason, usage, providerMetadata: metadata(r) })
+        for await (const part of parts) controller.enqueue(part)
         controller.close()
       },
     })
 
     return { stream }
   }
+}
+
+/**
+ * An OpenAI-style server-sent event stream as AI SDK stream parts: text as it
+ * arrives, then any tool calls, then the finish.
+ */
+export async function* sseParts(
+  body: AsyncIterable<Uint8Array>,
+  providerMetadata?: ReturnType<typeof metadata>,
+): AsyncGenerator<LanguageModelV2StreamPart> {
+  const id = 'txt-0'
+  yield { type: 'text-start', id }
+  let finishReason: LanguageModelV2FinishReason = 'stop'
+  let usage: LanguageModelV2Usage = {
+    inputTokens: undefined,
+    outputTokens: undefined,
+    totalTokens: undefined,
+  }
+  let buffer = ''
+  // Tool calls arrive as fragments keyed by index: the id and name once, the
+  // JSON arguments in pieces. They are only complete at the end.
+  const calls = new Map<number, { id: string; name: string; args: string }>()
+  for await (const chunk of body) {
+    buffer += Buffer.from(chunk).toString('utf8')
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      if (!line.startsWith('data:')) continue
+      const data = line.slice(5).trim()
+      if (!data || data === '[DONE]') continue
+      let json: any
+      try {
+        json = JSON.parse(data)
+      } catch {
+        continue
+      }
+      const choice = json.choices?.[0]
+      const delta = choice?.delta?.content
+      if (delta) yield { type: 'text-delta', id, delta }
+      for (const t of choice?.delta?.tool_calls ?? []) {
+        const call = calls.get(t.index ?? 0) ?? { id: '', name: '', args: '' }
+        if (t.id) call.id = t.id
+        if (t.function?.name) call.name += t.function.name
+        if (t.function?.arguments) call.args += t.function.arguments
+        calls.set(t.index ?? 0, call)
+      }
+      if (choice?.finish_reason) finishReason = FINISH[choice.finish_reason] ?? 'unknown'
+      if (json.usage)
+        usage = {
+          inputTokens: json.usage.prompt_tokens,
+          outputTokens: json.usage.completion_tokens,
+          totalTokens: json.usage.total_tokens,
+        }
+    }
+  }
+  yield { type: 'text-end', id }
+  for (const [i, c] of calls)
+    yield { type: 'tool-call', toolCallId: c.id || `call-${i}`, toolName: c.name, input: c.args || '{}' }
+  // Some servers end a tool-calling turn with 'stop'; the SDK only runs tools on 'tool-calls'.
+  if (calls.size) finishReason = 'tool-calls'
+  yield { type: 'finish', finishReason, usage, providerMetadata }
 }
 
 export interface AutoOptions {
@@ -403,10 +440,23 @@ export interface AutoOptions {
   model?: string
   /** Restrict resolution to one class of backend, for chain callers. */
   scope?: Scope
+  /**
+   * A provider id or custom endpoint name: resolve to that server and nothing
+   * else. With `model`, that model must be in its list.
+   */
+  provider?: string
 }
 
 export function auto(options: AutoOptions = {}): LanguageModelV2 {
-  return new AutoModel(options.prefer, options.think, options.remote, options.model, options.scope)
+  return new AutoModel(options.prefer, options.think, options.remote, options.model, options.scope, options.provider)
+}
+
+/**
+ * What auto(options) resolves to, or null when it cannot — without making a
+ * call. Memoised with it, so the model then built costs no second lookup.
+ */
+export function probe(options: AutoOptions = {}) {
+  return probeBackend(options.prefer, options.remote, options.model, options.scope, options.provider)
 }
 
 auto.shutdown = shutdown

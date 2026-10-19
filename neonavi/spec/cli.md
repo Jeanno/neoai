@@ -30,7 +30,7 @@
 
 ## Turns
 
-- CLI-9: One turn is one `generateText` call with tools, stopping after
+- CLI-9: One turn is one harness turn (HAR-2) with tools, stopping after
   `--max-steps` steps (default 32). A step is one model response.
 - CLI-10: Each tool call is echoed to stderr, dimmed, as it happens.
 - CLI-11: The answer goes to stdout. Everything else — backend announcement,

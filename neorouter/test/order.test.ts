@@ -48,9 +48,8 @@ test('no link reaches the anonymous tier unless it was asked for by name', () =>
   assert.ok(!rungsFor('local').includes('keyless'))
 })
 
-// The free tier is opt-in (navi MOD-13): naming it resolves only it, never the
-// keyed endpoint or the machine.
-test('a keyless-scoped link resolves only the keyless tier', () => {
-  assert.deepEqual(rungsFor('keyless'), ['keyless'])
-  assert.deepEqual(rungsFor('keyless', true), ['keyless'])
+// navi has no keyless tier (MOD-6): no scope a chain can name reaches it.
+test('no scope reaches the keyless tier', () => {
+  assert.deepEqual(rungsFor('keyed'), ['keyed'])
+  assert.deepEqual(rungsFor('local'), ['reachable', 'launched'])
 })

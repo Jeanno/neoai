@@ -1,21 +1,14 @@
 #!/usr/bin/env bun
-import { generateText, stepCountIs, type ModelMessage } from 'ai'
 import { auto } from 'neorouter'
 import { homedir } from 'node:os'
-import { readdir } from 'node:fs/promises'
-import { promptFrom, startsFresh, systemPrompt } from './args.ts'
+import { promptFrom, startsFresh } from './args.ts'
 import { parseModelSpec, resolveChain } from './spec.ts'
-import { gated, makeApprover, makeLine } from './approve.ts'
-import { judge } from './judge.ts'
-import { makeTools } from './tools.ts'
+import { makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
 import { loadSession, saveSession, sessionFile } from './session.ts'
-import { compact, estimateTokens } from './compact.ts'
-import { collectContext } from './context.ts'
+import { createHarness, DEFAULT_STEPS, type HarnessEvent } from './harness.ts'
 import { readConfig } from 'neorouter'
 import { NEXT_STEP, realDeps, runSetup } from './setup.ts'
-
-const DEFAULT_STEPS = 32
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
@@ -79,19 +72,19 @@ async function main() {
   if (stray.length || (!first && !interactive)) {
     if (stray.length) console.error(`unexpected: ${stray.join(' ')}`)
     console.error(
-      'usage: navi [-p "what you want done"] [-r|--resume] [--model remote|local|free|<id>[,...]] [--max-steps N]\n       navi setup [--check]',
+      'usage: navi [-p "what you want done"] [-r|--resume] [--model local|best|<provider>:<model>[,...]] [--max-steps N]\n       navi setup [--check]',
     )
     return 1
   }
 
   // --model overrides the config file for one run; both take the same values.
   const config = await readConfig()
-  const chain = parseModelSpec(model.value ?? config.model)
+  const chain = parseModelSpec(model.value ?? config.model, Object.keys(config.custom ?? {}))
   const chosen = await resolveChain(chain)
   if (!chosen) {
     console.error(
       `nothing in the model chain could be resolved: ${chain
-        .map((e) => e.id ?? e.where)
+        .map((e) => (e.provider ? `${e.provider}:${e.id ?? 'free'}` : (e.id ?? e.where)))
         .join(' → ')}`,
     )
     console.error(NEXT_STEP)
@@ -99,72 +92,81 @@ async function main() {
   }
 
   const cwd = process.cwd()
-  const entries = await readdir(cwd).catch(() => [])
-  const context = await collectContext(cwd)
   const file = sessionFile(cwd, homedir())
   const anew = startsFresh({ prompt: first, resume: resuming })
-  let messages: ModelMessage[] = anew ? [] : await loadSession(file)
-  if (messages.length) console.error(dim(`· continuing (${messages.length} messages)`))
+  const stored = anew ? [] : await loadSession(file)
+  if (stored.length) console.error(dim(`· continuing (${stored.length} messages)`))
 
   const line = makeLine({ input: process.stdin, output: process.stdout })
   const spin = makeSpinner(process.stderr)
   const asker = makeApprover({ line })
-  const llm = auto(chosen.options)
-  // What the user asked this turn: the judge reads the command in its light.
-  let intent = ''
-  const approve = gated({
-    judge: (command) => judge(llm, command, intent),
-    mode: config.approve,
-    onAuto: (command) => {
-      spin.stop()
-      console.error(dim(`· auto-approved: ${command}`))
-      spin.start()
-    },
+  // On a terminal the answer is written as it arrives; a pipe gets exactly the
+  // final answer, as before streaming.
+  const streaming = process.stdout.isTTY === true
+  // Streamed text not yet ended by a newline: anything else drawn now would
+  // land on the end of it.
+  let midLine = false
+  const endLine = () => {
+    if (midLine) process.stdout.write('\n')
+    midLine = false
+  }
+  const harness = await createHarness({
+    model: auto(chosen.options),
+    contextWindow: chosen.contextWindow,
+    cwd,
+    config,
+    maxSteps,
     // The question would otherwise be drawn beside a spinning frame.
-    ask: async (command) => {
+    approve: async (command) => {
       spin.stop()
+      endLine()
       const ok = await asker.approve(command)
       spin.start()
       return ok
     },
   })
-  // On unless the config says otherwise; off keeps everything but the model on the machine.
-  const web = config.web_search !== false
-  const system = systemPrompt(cwd, entries, context, web)
-  const tools = makeTools({ approve }, { web })
+  const session = harness.session(stored)
+
+  /** A note on stderr, never over a spinner frame or the end of streamed text. */
+  const note = (s: string) => {
+    endLine()
+    console.error(dim(s))
+  }
 
   /** One question in, one answer out. Returns whether the model said anything. */
-  const systemTokens = estimateTokens([{ role: 'system', content: system }])
   const turn = async (prompt: string) => {
-    intent = prompt
+    let done: Extract<HarnessEvent, { type: 'done' }> | undefined
     spin.start()
-    const packed = await compact(llm, messages, { contextWindow: chosen.contextWindow, extraTokens: systemTokens })
-    if (packed.compacted) {
+    try {
+      for await (const e of session.turn(prompt)) {
+        if (e.type === 'done') done = e
+        else if (e.type === 'text') {
+          // Unstreamed text waits for the end; the spinner keeps going meanwhile.
+          if (!streaming || !e.text) continue
+          // Never restarted while text is streaming: the frame would draw over it.
+          spin.stop()
+          process.stdout.write(e.text)
+          midLine = !e.text.endsWith('\n')
+        } else {
+          spin.stop()
+          if (e.type === 'compacted') note(`· compacted ${e.messages} messages`)
+          else if (e.type === 'tool-call') note(`· ${e.name}(${JSON.stringify(e.input)})`)
+          else if (e.type === 'auto-approved') note(`· auto-approved: ${e.command}`)
+          else if (e.type === 'error') note(`error: ${e.error instanceof Error ? e.error.message : String(e.error)}`)
+          // The model or a tool is busy again.
+          endLine()
+          spin.start()
+        }
+      }
+    } finally {
       spin.stop()
-      console.error(dim(`· compacted ${packed.compacted} messages`))
-      spin.start()
     }
-    messages = [...packed.messages, { role: 'user', content: prompt }]
-    const { text, response } = await generateText({
-      model: llm,
-      system,
-      tools,
-      stopWhen: stepCountIs(maxSteps),
-      messages,
-      // A silent minute is indistinguishable from a hang.
-      onStepFinish: ({ toolCalls, finishReason }) => {
-        spin.stop()
-        for (const c of toolCalls) console.error(dim(`· ${c.toolName}(${JSON.stringify(c.input)})`))
-        // The last step is followed by the answer, not another call.
-        if (finishReason === 'tool-calls') spin.start()
-      },
-    }).finally(spin.stop)
+    endLine()
     // Saved even when the answer came out empty: the tool results are the part
     // worth carrying forward, and a follow-up is how you recover from a bad turn.
-    messages = [...messages, ...response.messages]
-    await saveSession(file, messages)
-    if (text.trim()) {
-      console.log(text)
+    await saveSession(file, done!.history)
+    if (!done!.empty) {
+      if (!streaming) console.log(done!.text)
       return true
     }
     console.error(dim('the model returned no answer; ask again'))

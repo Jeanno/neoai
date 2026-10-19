@@ -7,42 +7,62 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
 
 - MOD-1: A spec is a string or list of strings. A string is split on commas.
   Whitespace is trimmed and empty parts dropped.
-- MOD-2: Unset or empty means `["remote", "local"]`.
-- MOD-3: Aliases: `remote` is the keyed hosted tier; `local` and `fast` are the
-  smallest usable local model; `best` is the largest local model that fits;
-  `free` is the keyless hosted tier.
-- MOD-4: Any other value is an exact model id. An id containing `/` is a hosted
-  (OpenRouter) model; anything else is a local one. `local:<id>` is always a
-  local model, for local ids that contain `/` (LM Studio's `qwen/qwen3-4b`).
+- ~~MOD-2: Unset or empty means `["remote", "local"]`.~~ Replaced by MOD-17.
+- MOD-17: Unset or empty means `["local"]`: nothing leaves the machine until a
+  provider or custom endpoint is chosen.
+- MOD-3: Aliases: `local` and `fast` are the smallest usable local model;
+  `best` is the largest local model that fits; `remote` is OpenRouter's free
+  model with the largest context (MOD-9), kept for configs written before
+  providers.
+- MOD-4: `<provider>:<model>` names a model at a provider (MOD-14) or a custom
+  endpoint (MOD-15), e.g. `anthropic:claude-sonnet-5-5`. `local:<id>` is
+  always a local model, for local ids that contain `/` (LM Studio's
+  `qwen/qwen3-4b`). A bare id containing `/` is `openrouter:<id>`; any other
+  bare id is a local model.
+
+## Providers
+
+- MOD-14: The providers are OpenAI (`openai`), Anthropic (`anthropic`), Google
+  Gemini (`google`), OpenRouter (`openrouter`), Groq (`groq`), DeepSeek
+  (`deepseek`), Mistral (`mistral`) and xAI (`xai`), each reached through its
+  OpenAI-compatible API. Adding one is one entry in a list in code.
+- MOD-10: A provider's key is read from its usual environment variable first
+  (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
+  `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `DEEPSEEK_API_KEY`, `MISTRAL_API_KEY`,
+  `XAI_API_KEY`), then `keys.<provider>` in the config file.
+- MOD-15: A custom endpoint is any OpenAI-compatible server, saved as
+  `custom.<name>: { "baseURL": "...", "key": "..." }` (the key is optional).
+  A name may not be a provider id or `local`.
+- MOD-16: Local discovery only probes the standard local servers (Ollama, LM
+  Studio, llama.cpp, vLLM, Jan) and launchable runtimes. Anything else, such as
+  a server on another machine, is a custom endpoint.
 
 ## Resolution
 
 - MOD-5: The list is a fallback chain, tried in order. The first link that
   resolves is used for the whole run.
-- MOD-6: Each link is scoped to the tier it names: a remote link never falls to
-  a local model or the keyless tier, and a local link never goes remote.
-- MOD-7: A remote link fails when there is no OpenRouter key, no network, or
-  the pinned id is not in the OpenRouter catalogue.
+- MOD-6: Each link is scoped to what it names: a provider or custom link never
+  falls to another provider or to a local model, and a local link never leaves
+  the machine. There is no keyless tier.
+- MOD-7: A provider or custom link fails when its key is missing, the server
+  cannot be reached, or the model is not in the server's model list.
 - MOD-8: A local link fails when no server is reachable or launchable, or the
   pinned id is not installed.
 - MOD-9: The `remote` alias picks the free OpenRouter chat model with the
   largest context window from the live catalogue.
-- MOD-10: The OpenRouter key is read from `OPENROUTER_API_KEY` first, then
-  `keys.openrouter` in the config file.
-
-- MOD-13: `free` is never in the default chain. It is only used when the
-  user, or setup with their consent (SET-7), names it. It is remote: prompts
-  leave the machine.
+- ~~MOD-13: `free` is never in the default chain.~~ The keyless tier is gone.
 
 ## Context
 
-- MOD-12: A hosted model's context window is read from the OpenRouter
-  catalogue; 8192 is assumed when it is unknown.
+- MOD-12: A hosted model's context window is read from the provider's model
+  list when it says (OpenRouter does); 8192 is assumed otherwise.
 
 ## Reasoning
 
-- MOD-11: navi asks local reasoning models not to think (they exhaust the step
-  budget otherwise). Hosted models are left as they are; reasoning is kept on.
+- MOD-11: navi asks local reasoning models and custom endpoints not to think
+  (they exhaust the step budget otherwise, and are slow). A custom endpoint
+  that rejects the request is asked again without it. Provider models are left
+  as they are; reasoning is kept on.
 
 ## Open
 

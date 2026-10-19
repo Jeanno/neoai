@@ -1,35 +1,46 @@
 import { Action, ActionPanel, Detail, getPreferenceValues, Icon, Keyboard, LaunchProps, List } from '@raycast/api'
+import type { ModelMessage } from 'ai'
 import { useEffect, useState } from 'react'
+import { ApprovalSection, NoModel } from './common'
 import { Conversation } from './conversation'
-import { newChat } from './lib/history'
-import { splitThinking, toMarkdown } from './lib/think'
+import { newChat, withoutThinking } from './lib/chats'
+import { whereLabel } from './lib/labels'
+import { answerOf, turnMarkdown } from './lib/turn'
 import { useNavi } from './lib/use-navi'
 
 function Answer({ question }: { question: string }) {
   const { showReasoning } = getPreferenceValues<Preferences>()
-  const { text, streaming, label, run, stop } = useNavi()
-  const ask = () => run([{ role: 'user', content: question }])
+  const { navi, turn, streaming, approval, run, stop, recheck } = useNavi()
+  const [history, setHistory] = useState<ModelMessage[]>()
+  const ask = async () => {
+    setHistory(undefined)
+    setHistory((await run(question))?.history)
+  }
 
   // No run-once guard: React's dev-mode remount aborts the first request, so it must be sent again.
+  // Asked again after Set Up Navi finds a model.
   useEffect(() => {
-    ask()
-  }, [])
+    if (navi) ask()
+  }, [navi])
 
-  const answer = splitThinking(text).answer
+  if (navi === null) return <NoModel onDone={recheck} />
+
+  const answer = answerOf(turn)
 
   return (
     <Detail
       navigationTitle={question}
-      isLoading={streaming}
-      markdown={toMarkdown(text, streaming, showReasoning)}
+      isLoading={streaming && !approval}
+      markdown={turnMarkdown(turn, { streaming, showReasoning, approval: approval?.command })}
       metadata={
         <Detail.Metadata>
           <Detail.Metadata.Label title="Question" text={question} />
-          <Detail.Metadata.Label title="Model" text={label ?? 'resolving…'} />
+          <Detail.Metadata.Label title="Model" text={navi ? whereLabel(navi) : 'resolving…'} />
         </Detail.Metadata>
       }
       actions={
         <ActionPanel>
+          {approval && <ApprovalSection approval={approval} />}
           {answer && <Action.CopyToClipboard title="Copy Answer" content={answer} />}
           {answer && <Action.Paste title="Paste Answer" content={answer} />}
           {streaming && (
@@ -40,22 +51,15 @@ function Answer({ question }: { question: string }) {
               onAction={stop}
             />
           )}
-          {!streaming && answer && (
+          {!streaming && history && (
             <Action.Push
               title="Continue in Chat"
               icon={Icon.SpeechBubble}
               shortcut={{ modifiers: ['cmd'], key: 'j' }}
-              target={
-                <Conversation
-                  initialChat={newChat([
-                    { role: 'user', content: question },
-                    { role: 'assistant', content: answer },
-                  ])}
-                />
-              }
+              target={<Conversation initialChat={newChat(withoutThinking(history))} />}
             />
           )}
-          {!streaming && (
+          {!streaming && navi && (
             <Action
               title="Regenerate"
               icon={Icon.ArrowClockwise}

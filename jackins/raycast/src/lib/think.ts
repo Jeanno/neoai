@@ -18,12 +18,3 @@ export function splitThinking(text: string): { reasoning: string; answer: string
   if (/^\s*<think>/.test(text)) return { reasoning: text.replace(/^\s*<think>/, '').trim(), answer: '' }
   return { reasoning: '', answer: text }
 }
-
-export function toMarkdown(text: string, streaming: boolean, showReasoning: boolean): string {
-  const { reasoning, answer } = splitThinking(text)
-  const parts: string[] = []
-  if (reasoning && showReasoning) parts.push(reasoning.replace(/^/gm, '> '))
-  if (answer) parts.push(answer)
-  else if (reasoning && streaming) parts.push('_Thinking…_')
-  return parts.join('\n\n') || '…'
-}

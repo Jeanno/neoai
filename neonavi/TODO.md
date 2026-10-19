@@ -22,16 +22,32 @@ allowlist, refusing unsafe commands outright, a separate judge model.
        stdin still declines. Add `approve: "ask"`. Depends on 3.
        (`spec/tools.md`, `spec/models.md`)
 
-- [ ] Stream the answer as it is generated instead of printing it at the end.
-      A reasoning model is silent for 5–10s per step today. (`spec/cli.md`)
+- [x] Stream the answer as it is generated instead of printing it at the end.
+      neorouter's `doStream` now carries tool calls, so text arrives as it
+      is generated on a terminal; pipes still get exactly the answer.
+      (`spec/cli.md`, `src/harness.ts`)
 - [ ] Cite spec ids from the existing tests so every requirement is traceable.
       (`test/*.test.ts`)
 
 - [x] `web_search`: keyless DuckDuckGo results, echoed, removable with
       `"web_search": false`. (`spec/tools.md`, `spec/prompt.md`)
-- [x] `navi setup`: choose primary and fallback from local, OpenRouter
-      (free + hand-picked paid) and opt-in free models, add sources, and
+- [x] The harness as a library, `neonavi/harness`, with the CLI rebuilt on
+      it, for the Raycast jack-in. (`spec/harness.md`)
+- [x] The Raycast jack-in on the harness and the setup core: Ask Navi, Navi
+      Chat and Summarize with tools and approval, and Set Up Navi.
+      (`jackins/raycast/spec.md`)
+- [x] grep/glob without ripgrep: a built-in search honouring `.gitignore`
+      when rg is not installed. (`spec/tools.md` TL-31)
+- [x] `navi setup`: primary and fallback from Providers (eight, with a
+      key), Local or Custom endpoints, one core shared with Raycast, and
       `--check`, run by the installer. (`spec/setup.md`)
+
+- [ ] `fetch_url`: read a web page as text (HTML stripped, size-capped),
+      echoed like `web_search`, removable in config. (`spec/tools.md`)
+- [ ] Image and PDF input: attach files to a turn (CLI path argument,
+      Raycast selected Finder files); images go to vision models, PDFs as
+      extracted text. (`spec/harness.md`, `spec/cli.md`,
+      `jackins/raycast/spec.md`)
 
 ## Later
 

@@ -2,14 +2,19 @@ import { tool } from 'ai'
 import { z } from 'zod'
 import { readFile, readdir } from 'node:fs/promises'
 import { exec } from 'node:child_process'
+import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { webSearch } from './web.ts'
+import { makeSearch } from './search.ts'
 
 const run = promisify(exec)
 
 export interface Gate {
-  /** Returns true to let the command run. Asked once per call, never cached. */
-  approve: (command: string) => Promise<boolean>
+  /**
+   * Returns true to let the command run. Asked once per call, never cached.
+   * The signal aborts when the turn is stopped, which should decline.
+   */
+  approve: (command: string, signal?: AbortSignal) => Promise<boolean>
 }
 
 const MAX_OUTPUT = 8000
@@ -21,33 +26,18 @@ function clip(s: string): string {
   return s.length > MAX_OUTPUT ? `${s.slice(0, MAX_OUTPUT)}\n…[truncated]` : s
 }
 
-/**
- * ripgrep, not grep: it honors .gitignore and skips hidden files, so a search
- * in a JS project returns the answer instead of thousands of node_modules hits.
- */
-async function rg(args: string[]): Promise<string[]> {
-  // .gitignore covers these in a real project, but not in a directory that has
-  // no .gitignore — and dependency hits are never the answer either way.
-  const never = ['-g', '!node_modules', '-g', '!.git']
-  try {
-    const cmd = ['rg', ...never, ...args].map(quote).join(' ')
-    const { stdout } = await run(cmd, { maxBuffer: 1 << 24 })
-    return stdout.split('\n').filter(Boolean)
-  } catch (e: any) {
-    // rg exits 1 with no output when nothing matched; that is not an error.
-    if (e.code === 1 && !e.stderr) return []
-    throw e
-  }
-}
-
-const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
-
 export interface ToolOptions {
   /** false removes web_search, so only the model talks to the network (TL-30). */
   web?: boolean
+  /** Where relative paths and shell commands start; a front end's process may sit elsewhere. */
+  cwd?: string
+  /** false forces the built-in grep/glob even where rg is installed (TL-31). */
+  ripgrep?: boolean
 }
 
-export function makeTools(gate: Gate, { web = true }: ToolOptions = {}) {
+export function makeTools(gate: Gate, { web = true, cwd = process.cwd(), ripgrep }: ToolOptions = {}) {
+  const search = makeSearch({ cwd, ripgrep })
+  const at = (path: string) => resolve(cwd, path)
   const tools = {
     grep: tool({
       description: 'Search file contents for a pattern. Returns file:line:text.',
@@ -56,9 +46,9 @@ export function makeTools(gate: Gate, { web = true }: ToolOptions = {}) {
         path: z.string().optional(),
       }),
       execute: async ({ pattern, path }) => {
-        const hits = await rg(['--line-number', '--with-filename', pattern, path ?? '.'])
+        const hits = await search.grep(pattern, path ?? '.')
         if (!hits.length) return `no matches for ${pattern}`
-        const shown = hits.slice(0, MAX_MATCHES).join('\n')
+        const shown = clip(hits.slice(0, MAX_MATCHES).join('\n'))
         return hits.length > MAX_MATCHES
           ? `${shown}\n…[${hits.length - MAX_MATCHES} more matches not shown]`
           : shown
@@ -72,9 +62,12 @@ export function makeTools(gate: Gate, { web = true }: ToolOptions = {}) {
         path: z.string().optional(),
       }),
       execute: async ({ pattern, path }) => {
-        const files = await rg(['--files', '-g', pattern, path ?? '.'])
+        const files = await search.files(pattern, path ?? '.')
         if (!files.length) return `no files matching ${pattern}`
-        return clip(files.slice(0, MAX_MATCHES).join('\n'))
+        const shown = clip(files.slice(0, MAX_MATCHES).join('\n'))
+        return files.length > MAX_MATCHES
+          ? `${shown}\n…[${files.length - MAX_MATCHES} more files not shown]`
+          : shown
       },
     }),
 
@@ -88,7 +81,7 @@ export function makeTools(gate: Gate, { web = true }: ToolOptions = {}) {
         limit: z.number().optional().describe('how many lines to return'),
       }),
       execute: async ({ path, offset = 1, limit = MAX_LINES }) => {
-        const lines = (await readFile(path, 'utf8')).split('\n')
+        const lines = (await readFile(at(path), 'utf8')).split('\n')
         const start = Math.max(1, offset)
         const slice = lines.slice(start - 1, start - 1 + limit)
         // Numbered so the model can cite a line. Cut on a line boundary whether
@@ -113,17 +106,17 @@ export function makeTools(gate: Gate, { web = true }: ToolOptions = {}) {
     list_dir: tool({
       description: 'List the entries in a directory.',
       inputSchema: z.object({ path: z.string() }),
-      execute: async ({ path }) => clip((await readdir(path)).join('\n')),
+      execute: async ({ path }) => clip((await readdir(at(path))).join('\n')),
     }),
 
     run_shell: tool({
       description: 'Run a shell command. The user is asked to approve it first.',
       inputSchema: z.object({ command: z.string() }),
-      execute: async ({ command }) => {
-        if (!(await gate.approve(command)))
+      execute: async ({ command }, { abortSignal }) => {
+        if (!(await gate.approve(command, abortSignal)))
           return `The user declined to run: ${command}. Do not retry it; try another approach.`
         try {
-          const { stdout, stderr } = await run(command, { timeout: 120_000 })
+          const { stdout, stderr } = await run(command, { cwd, timeout: 120_000, signal: abortSignal })
           return clip(stdout || stderr || '(no output)')
         } catch (e: any) {
           // The model needs to see the failure to recover from it.

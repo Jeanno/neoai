@@ -2,7 +2,7 @@
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "navi-raycast",
   "title": "Navi",
-  "description": "Ask navi from Raycast. Finds a model by itself — a local server, Darkbloom, or OpenRouter — the same way navi does, with no URL or key to set.",
+  "description": "Ask navi from Raycast. Uses the same models as navi: one on this computer, or a provider or endpoint chosen in Set Up Navi.",
   "icon": "icon.png",
   "author": "jeanno",
   "license": "MIT",
@@ -39,17 +39,15 @@
       "title": "Summarize",
       "description": "Summarize the selected text, or the clipboard if nothing is selected.",
       "mode": "view"
+    },
+    {
+      "name": "set-up-navi",
+      "title": "Set Up Navi",
+      "description": "Choose the models navi answers with: on this computer, a provider, or your own endpoint.",
+      "mode": "view"
     }
   ],
   "preferences": [
-    {
-      "name": "model",
-      "title": "Model",
-      "description": "Same values as navi --model: remote, local, fast, best, an exact id, or a comma-separated chain. Empty uses `model` in ~/.neoai/config.json.",
-      "type": "textfield",
-      "required": false,
-      "placeholder": "from ~/.neoai/config.json"
-    },
     {
       "name": "showReasoning",
       "title": "Reasoning",

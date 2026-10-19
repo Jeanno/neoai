@@ -1,6 +1,9 @@
 {
   "keys": {
-    "openrouter": "sk-or-..."
+    "anthropic": "sk-ant-..."
   },
-  "model": ["remote", "local"]
+  "custom": {
+    "homelab": { "baseURL": "http://my-server:8000/v1", "key": "..." }
+  },
+  "model": ["anthropic:claude-sonnet-5-5", "local"]
 }

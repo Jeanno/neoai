@@ -1,7 +1,8 @@
 # Navi for Raycast
 
-Ask an AI from anywhere on your Mac. Navi runs on a model on your own computer,
-so your questions stay private and it costs nothing.
+Ask an AI from anywhere on your Mac. Navi can run on a model on your own
+computer, so your questions stay private, or on a provider you choose with
+your own key.
 
 ## 1. Install Raycast
 
@@ -28,8 +29,21 @@ extension. That's expected. To update Navi later, run the same line again.
 
 ## 3. Give Navi a model to use
 
-Navi needs an AI model to answer with. The easiest way to get one is LM Studio,
-a free app that runs models on your Mac.
+Navi needs an AI model to answer with. Open Raycast, type **Set Up Navi** and
+press **Return**. It shows the model Navi uses now (the **Primary**) and a
+**Fallback** to try when the primary can't answer. Choose one and press
+**Return** to change it, then pick from:
+
+- **Local** — a model on your Mac. Nothing leaves your computer.
+- **Providers** — a hosted model, using your own key from that provider. Set Up
+  Navi links to the page where you create the key, and checks it before saving.
+- **Custom** — your own server, if it speaks the OpenAI API.
+
+After each change Navi asks the model a short test question and shows the
+reply, so you know it works. The choice is shared with `navi` in Terminal.
+
+**A model on your Mac.** The easiest way to get one is LM Studio, a free app
+that runs models on your Mac.
 
 1. Go to [lmstudio.ai](https://lmstudio.ai), download LM Studio, and drag it
    into **Applications**.
@@ -38,13 +52,15 @@ a free app that runs models on your Mac.
    is a good start.
 3. Open the **Developer** tab and switch the server on, so the status reads
    **Running**.
-
-Navi finds LM Studio by itself. There is nothing to type in or set up.
+4. Open **Set Up Navi**. Until you choose otherwise, the primary is any model
+   on your Mac, so it should now say which one answers. To pick a particular
+   model, choose **Primary**, then **Local**; if yours isn't listed yet, press
+   **⌘ R** to check again.
 
 LM Studio has to be open with its server running whenever you use Navi. In
 LM Studio's settings you can have it start when you log in.
 
-> Already use Ollama, Darkbloom or another local AI app? Navi finds those too.
+> Already use Ollama or another local AI app? Navi finds those too.
 
 ## 4. Ask something
 
@@ -62,8 +78,16 @@ LM Studio's settings you can have it start when you log in.
 - **Summarize** — select some text, or copy it, then open Raycast and type
   **Summarize**. Navi shows a short summary you can copy or paste.
 
-These can take a few seconds while the model on your Mac works; a small
-message at the bottom of the screen shows Navi is busy.
+These can take a few seconds while the model works; a small message at the
+bottom of the screen shows Navi is busy.
+
+**Ask Navi**, **Navi Chat** and **Summarize** can look things up while they
+answer: search the web, look through files, or run a command, working in a
+folder of its own (`~/.navi-raycast`). Each step shows as a short line above
+the answer. Before Navi runs a command
+that could change something, it stops and shows you the command: choose
+**Run Command** to let it, or **Don't Run** (**⌘ D**). Leaving the answer or
+stopping it also means don't run.
 
 While an answer or summary is showing:
 
@@ -75,8 +99,8 @@ While an answer or summary is showing:
 | **⌘ ⇧ .**  | Stop the answer                    |
 
 Ask Navi and Summarize show which model replied beside the answer, under
-**Model**. If it says **(remote)**, your text was sent over the internet rather
-than handled on your Mac.
+**Model**. If it says **(remote)**, your text was sent to the provider you
+chose rather than handled on your Mac.
 
 **Tips**
 
@@ -91,10 +115,11 @@ than handled on your Mac.
 
 ## Something not working?
 
-**"No model found"**
-Navi couldn't find a model. Open LM Studio, make sure a model is downloaded and
-the server says **Running**, then ask again. If you also use navi in Terminal,
-running `navi setup` there walks you through the other choices.
+**"Navi has no model to answer with"**
+None of the models chosen in Set Up Navi answered. Press **Return** to open
+**Set Up Navi** and choose another, or, for a model on your Mac, open LM
+Studio, make sure a model is downloaded and the server says **Running**, then
+ask again.
 
 **Answers are slow**
 The first question after opening LM Studio is slower while the model loads. If

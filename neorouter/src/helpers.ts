@@ -3,7 +3,8 @@ import { auto } from './provider.ts'
 import { detectHardware } from './hardware.ts'
 import { reachableServers, listModels } from './discover.ts'
 import { launchable } from './launch.ts'
-import { hostedServers, hostedModels } from './hosted.ts'
+import { hostedServers } from './hosted.ts'
+import { remoteServers } from './remote.ts'
 import { resolveBackend } from './resolve.ts'
 
 export async function generate(prompt: string): Promise<string> {
@@ -17,11 +18,13 @@ export function stream(prompt: string): AsyncIterable<string> {
 
 /** Diagnostics. Never required to make a call — this answers "why this model?". */
 export async function inspect() {
-  const [hardware, reachable, hosted] = await Promise.all([
+  const [hardware, reachable, remote, keyless] = await Promise.all([
     detectHardware(),
     reachableServers(),
+    remoteServers(),
     hostedServers(),
   ])
+  const hosted = [...remote, ...keyless]
   return {
     hardware,
     reachable: await Promise.all(

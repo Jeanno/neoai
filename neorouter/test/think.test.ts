@@ -25,13 +25,9 @@ test('does not send the flag to unmeasured backends', () => {
   assert.equal(reasoningEffort(openaiish, false), undefined)
 })
 
-// Measured on Darkbloom 0.9.22 / Qwen3.8-27B: 3.4s → 0.6s, no </think> in the output.
-const darkbloom = { backend: 'darkbloom', baseURL: 'http://100.64.0.1:8000/v1', auth: 'k' } as const
-
-test('asks darkbloom for no reasoning when thinking is off', () => {
-  assert.equal(reasoningEffort(darkbloom, false), 'none')
-})
-
-test('leaves darkbloom alone when thinking is not turned off', () => {
-  assert.equal(reasoningEffort(darkbloom, undefined), undefined)
+// The backend name is no evidence of what a server honours; being custom is (MOD-11).
+test('a server is asked by being custom, not by its name', () => {
+  assert.equal(reasoningEffort({ backend: 'darkbloom', baseURL: 'http://127.0.0.1:9000/v1', auth: 'k' }, false), undefined)
+  assert.equal(reasoningEffort({ backend: 'box', baseURL: 'http://127.0.0.1:9000/v1', custom: true }, false), 'none')
+  assert.equal(reasoningEffort({ backend: 'box', baseURL: 'http://127.0.0.1:9000/v1', custom: true }, undefined), undefined)
 })

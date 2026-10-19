@@ -18,12 +18,9 @@ find it:
 
 | Jack-in | Package | Status |
 |---|---|---|
-| [`raycast/`](raycast/NAVI.md) | `navi-raycast` | Ask Navi, Navi Chat |
+| [`raycast/`](raycast/NAVI.md) | `navi-raycast` | Ask Navi, Navi Chat, Set Up Navi |
 
 ## Open
 
-- The harness is still CLI-shaped; jack-ins reuse the model chain but not
-  sessions, compaction or tools. Splitting `neonavi` into a library and a CLI
-  would make the terminal one jack-in among many.
 - Candidates: an MCP server and an OpenAI-compatible HTTP server (each opens
   navi to many apps at once), VS Code, Shortcuts, git hooks, chat bots.

@@ -1,72 +1,92 @@
+import { probe, providerById, type AutoOptions } from 'neorouter'
+
 export interface Entry {
-  where: 'remote' | 'local' | 'free'
+  /** 'remote' is a provider or custom endpoint; prompts leave the machine. */
+  where: 'remote' | 'local'
+  /** The provider id or custom endpoint name, for a remote link. */
+  provider?: string
   /** Exact model id, when one was named instead of an alias. */
   id?: string
   /** Which local model to prefer when none was named. */
   prefer?: 'fast'
 }
 
-/** Your machine is the reliable floor, so it goes last. */
-const DEFAULT: Entry[] = [{ where: 'remote' }, { where: 'local', prefer: 'fast' }]
+/** Nothing leaves the machine until someone chooses a provider (MOD-17). */
+const DEFAULT: Entry[] = [{ where: 'local', prefer: 'fast' }]
 
 /** A fallback should answer quickly, so bare 'local' is the quick model. */
 const ALIASES: Record<string, Entry> = {
-  remote: { where: 'remote' },
+  // Kept for configs written before providers (MOD-3).
+  remote: { where: 'remote', provider: 'openrouter' },
   local: { where: 'local', prefer: 'fast' },
   fast: { where: 'local', prefer: 'fast' },
   best: { where: 'local' },
-  // Keyless and public: only ever there because someone named it (MOD-13).
-  free: { where: 'free' },
 }
 
 /**
  * One field holds either an alias, an exact model id, or an ordered list of
- * them — the list *is* the fallback chain, which is how OpenRouter models the
- * same problem. An id containing a slash is a hosted model; anything else names
- * a local one.
+ * them — the list *is* the fallback chain (MOD-1, MOD-4). `<name>:<model>`
+ * names a provider, or a custom endpoint from `custom` (whose names are passed
+ * in, since Ollama tags such as `qwen3:4b` look the same). A bare id with a
+ * slash is OpenRouter's; anything else is a local model.
  */
-export function parseModelSpec(value: string | string[] | undefined): Entry[] {
+export function parseModelSpec(value: string | string[] | undefined, custom: string[] = []): Entry[] {
   if (value === undefined) return DEFAULT
   const parts = (Array.isArray(value) ? value : value.split(','))
     .map((s) => s.trim())
     .filter(Boolean)
   if (!parts.length) return DEFAULT
-  return parts.map((p) => {
+  return parts.map((p): Entry => {
     if (ALIASES[p]) return ALIASES[p]
     // LM Studio names models like `qwen/qwen3-4b`; the prefix keeps them local.
     if (p.startsWith('local:')) return { where: 'local', id: p.slice('local:'.length) }
-    return p.includes('/') ? { where: 'remote', id: p } : { where: 'local', id: p }
+    const at = p.indexOf(':')
+    const name = at > 0 ? p.slice(0, at) : ''
+    if (name && p.length > at + 1 && (providerById(name) || custom.includes(name)))
+      return { where: 'remote', provider: name, id: p.slice(at + 1) }
+    return p.includes('/') ? { where: 'remote', provider: 'openrouter', id: p } : { where: 'local', id: p }
   })
 }
 
-import { probeBackend, type Scope } from 'neorouter'
-
 export interface Chosen {
   entry: Entry
-  options: { prefer?: 'fast'; think: boolean; remote: boolean; model?: string; scope: Scope }
+  /** Which link answered: 0 is the primary, 1 the fallback. */
+  index: number
+  options: Pick<AutoOptions, 'prefer' | 'model' | 'scope' | 'provider'> & { think: boolean }
   /** What the resolved backend can hold, in tokens. */
   contextWindow: number
+  backend: string
+  modelId: string
+  /** False when prompts leave the machine. */
+  local: boolean
+}
+
+/** What auto() is given for one link: scoped to the backend it names (MOD-6). */
+export function optionsFor(entry: Entry): Chosen['options'] {
+  // navi asks local reasoning models not to think (MOD-11).
+  if (entry.where === 'local') return { prefer: entry.prefer, think: false, model: entry.id, scope: 'local' }
+  return { think: false, model: entry.id, provider: entry.provider }
 }
 
 /**
- * Walks the chain and returns the first link that actually resolves. A link
- * fails when its key is missing, its network is down, or its pinned model is
- * not installed — and then the next one is tried, which is what makes the list
- * a fallback chain rather than a preference.
+ * Walks the chain and returns the first link that actually resolves (MOD-5).
+ * A link fails when its key is missing, its server is unreachable, or its
+ * model is not on offer — and then the next one is tried, which is what makes
+ * the list a fallback chain rather than a preference.
  */
 export async function resolveChain(chain: Entry[]): Promise<Chosen | null> {
-  for (const entry of chain) {
-    const remote = entry.where !== 'local'
-    // Scoped: this link resolves the backend it names or none at all. Without
-    // that, a mistyped remote id fell through to the anonymous tier instead of
-    // failing so the next link could be tried.
-    const scope: Scope = entry.where === 'remote' ? 'keyed' : entry.where === 'free' ? 'keyless' : 'local'
-    const got = await probeBackend(entry.prefer, remote, entry.id, scope)
+  for (const [index, entry] of chain.entries()) {
+    const options = optionsFor(entry)
+    const got = await probe(options)
     if (got)
       return {
         entry,
-        options: { prefer: entry.prefer, think: false, remote, model: entry.id, scope },
+        index,
+        options,
         contextWindow: got.contextWindow,
+        backend: got.backend,
+        modelId: got.modelId,
+        local: got.local,
       }
   }
   return null

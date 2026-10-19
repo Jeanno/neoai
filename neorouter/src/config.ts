@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { PROVIDERS } from './providers.ts'
 
 export const APP = '.neoai'
 
@@ -17,9 +18,11 @@ export function sessionsDir(home = homedir()) {
   return join(configDir(home), 'sessions')
 }
 
-/** Provider name -> the variable people already export for it. */
-const ENV_FOR: Record<string, string> = {
-  openrouter: 'OPENROUTER_API_KEY',
+/** Provider id -> the variable people already export for it (MOD-10). */
+const ENV_FOR: Record<string, string> = Object.fromEntries(PROVIDERS.map((p) => [p.id, p.env]))
+
+export function envFor(provider: string): string | undefined {
+  return ENV_FOR[provider]
 }
 
 /**
@@ -52,4 +55,22 @@ export async function readConfig(dir = configDir()): Promise<Record<string, any>
   } catch {
     return {}
   }
+}
+
+/** A custom OpenAI-compatible endpoint, as saved under `custom.<name>` (MOD-15). */
+export interface Custom {
+  baseURL: string
+  key?: string
+}
+
+/** The well-formed custom endpoints in a config object, by name. */
+export function customEndpoints(config: Record<string, any>): Record<string, Custom> {
+  const out: Record<string, Custom> = {}
+  const all = config?.custom
+  if (!all || typeof all !== 'object') return out
+  for (const [name, c] of Object.entries<any>(all)) {
+    if (typeof c?.baseURL !== 'string' || !c.baseURL) continue
+    out[name] = { baseURL: c.baseURL.replace(/\/+$/, ''), ...(typeof c.key === 'string' && c.key && { key: c.key }) }
+  }
+  return out
 }

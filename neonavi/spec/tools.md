@@ -12,7 +12,10 @@ Only web_search and the model itself send anything off the machine.
 
 ## grep / glob
 
-- TL-4: Both use ripgrep, so `.gitignore` and hidden files are honoured.
+- ~~TL-4: Both use ripgrep.~~ Replaced by TL-31.
+- TL-31: Both honour `.gitignore` and skip hidden files. They use ripgrep when
+  it is installed and a built-in search otherwise, with the same results, so
+  neither needs anything installed.
 - TL-5: `node_modules` and `.git` are always excluded, gitignore or not.
 - TL-6: grep returns `file:line:text`. glob returns one path per line.
 - TL-7: No match is a normal result ("no matches for …"), not an error.

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": { "navi": "./src/cli.ts" },
-  "exports": { "./spec": "./src/spec.ts" },
+  "exports": { "./spec": "./src/spec.ts", "./harness": "./src/harness.ts", "./setup": "./src/setup-core.ts" },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts"

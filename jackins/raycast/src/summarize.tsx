@@ -9,8 +9,10 @@ import {
   Keyboard,
 } from '@raycast/api'
 import { useEffect, useState } from 'react'
+import { ApprovalSection, NoModel } from './common'
+import { whereLabel } from './lib/labels'
 import { summarizePrompt } from './lib/rewrite'
-import { splitThinking, toMarkdown } from './lib/think'
+import { answerOf, turnMarkdown } from './lib/turn'
 import { useNavi } from './lib/use-navi'
 
 type Source = { text: string; from: 'Selected text' | 'Clipboard' }
@@ -28,36 +30,38 @@ async function readSource(): Promise<Source | null> {
 
 function Summary({ source }: { source: Source }) {
   const { showReasoning } = getPreferenceValues<Preferences>()
-  const { text, streaming, label, run, stop } = useNavi()
+  const { navi, turn, streaming, approval, run, stop, recheck } = useNavi()
   const summarize = () => {
+    // The harness brings its own system prompt (RAY-1), so the instructions travel with the text.
     const { system, prompt } = summarizePrompt(source.text)
-    run([
-      { role: 'system', content: system },
-      { role: 'user', content: prompt },
-    ])
+    run(`${system}\n\n${prompt}`)
   }
 
   // No run-once guard: React's dev-mode remount aborts the first request, so it must be sent again.
+  // Run again after Set Up Navi finds a model.
   useEffect(() => {
-    summarize()
-  }, [])
+    if (navi) summarize()
+  }, [navi])
 
-  const summary = splitThinking(text).answer
+  if (navi === null) return <NoModel onDone={recheck} />
+
+  const summary = answerOf(turn)
 
   return (
     <Detail
       navigationTitle="Summary"
-      isLoading={streaming}
-      markdown={toMarkdown(text, streaming, showReasoning)}
+      isLoading={streaming && !approval}
+      markdown={turnMarkdown(turn, { streaming, showReasoning, approval: approval?.command })}
       metadata={
         <Detail.Metadata>
           <Detail.Metadata.Label title="Source" text={source.from} />
           <Detail.Metadata.Label title="Length" text={`${source.text.trim().split(/\s+/).length} words`} />
-          <Detail.Metadata.Label title="Model" text={label ?? 'resolving…'} />
+          <Detail.Metadata.Label title="Model" text={navi ? whereLabel(navi) : 'resolving…'} />
         </Detail.Metadata>
       }
       actions={
         <ActionPanel>
+          {approval && <ApprovalSection approval={approval} />}
           {summary && <Action.CopyToClipboard title="Copy Summary" content={summary} />}
           {summary && <Action.Paste title="Paste Summary" content={summary} />}
           {streaming && (
@@ -68,7 +72,7 @@ function Summary({ source }: { source: Source }) {
               onAction={stop}
             />
           )}
-          {!streaming && (
+          {!streaming && navi && (
             <Action
               title="Regenerate"
               icon={Icon.ArrowClockwise}

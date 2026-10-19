@@ -1,6 +1,7 @@
 import { Action, ActionPanel, Alert, confirmAlert, Icon, List } from '@raycast/api'
 import { useCallback, useEffect, useState } from 'react'
 import { Conversation } from './conversation'
+import { turns } from './lib/chats'
 import { Chat, clearChats, deleteChat, loadChats } from './lib/history'
 
 export default function Command() {
@@ -38,7 +39,7 @@ export default function Command() {
             key={chat.id}
             title={chat.title}
             icon={Icon.SpeechBubble}
-            accessories={[{ text: `${Math.ceil(chat.messages.length / 2)} turns` }, { date: new Date(chat.updatedAt) }]}
+            accessories={[{ text: `${turns(chat.history)} turns` }, { date: new Date(chat.updatedAt) }]}
             actions={
               <ActionPanel>
                 <Action.Push

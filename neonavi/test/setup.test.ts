@@ -4,9 +4,20 @@ import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
-import { labelFor, links, realDeps, runSetup, setSlot, type Found, type SetupDeps } from '../src/setup.ts'
+import { runSetup, type SetupDeps } from '../src/setup.ts'
+import {
+  labelFor,
+  links,
+  loadConfig,
+  realDeps,
+  saveConfig,
+  setSlotIn,
+  setupCore,
+  type CoreDeps,
+} from '../src/setup-core.ts'
 import { makeLine } from '../src/approve.ts'
-import type { Entry } from '../src/spec.ts'
+import { optionsFor, type Chosen, type Entry } from '../src/spec.ts'
+import type { Verdict } from 'neorouter'
 
 /** A scripted answer: literal text, or computed from what has been printed so far. */
 type Answer = string | null | ((out: string) => string)
@@ -18,231 +29,347 @@ const row = (label: string) => (out: string) => {
   return hits.at(-1)![1]
 }
 
-const CATALOG = [
-  { id: 'anthropic/claude-sonnet-5.5', input: 2, output: 10 },
-  { id: 'deepseek/deepseek-v4.1-flash', input: 0.06, output: 0.12 },
-]
+/** What each provider lists. */
+const MODELS: Record<string, string[]> = {
+  anthropic: ['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-old-1'],
+  openrouter: ['deepseek/deepseek-v4.1-flash', 'some/free-model'],
+  groq: ['openai/gpt-oss-120b'],
+}
 
-/**
- * A scripted user and a fake world: which local models run (`local`, replaced
- * by the next of `localUp` each time setup probes for a local model), whether
- * there is an OpenRouter key, and what the OpenRouter catalogue prices.
- */
-function fake(
-  answers: Answer[],
-  opts: { config?: Record<string, any>; local?: string[]; localUp?: string[][]; key?: 'ok' | 'rejected' | 'unreachable' } = {},
-) {
+interface World {
+  config?: Record<string, any>
+  /** Models on the local servers; `localUp` replaces it on each local recheck. */
+  local?: string[]
+  localUp?: string[][]
+  key?: Verdict
+  env?: Record<string, string>
+  /** Base URLs that answer a model list, with what they list. */
+  endpoints?: Record<string, string[]>
+  /** The test question fails with this. */
+  askError?: string
+}
+
+/** A fake world behind the real core, and a scripted user in front of the CLI. */
+function fake(answers: Answer[], w: World = {}) {
   const out: string[] = []
   const saved: Record<string, any>[] = []
-  let config = opts.config ?? {}
-  let local = opts.local ?? []
-  const localUp = [...(opts.localUp ?? [])]
+  let config = structuredClone(w.config ?? {})
+  let local = w.local ?? []
+  const localUp = [...(w.localUp ?? [])]
+  const env = w.env ?? {}
   const next = async () => {
     const a = answers.length ? answers.shift()! : null
     return typeof a === 'function' ? a(out.join('\n')) : a
   }
-  const resolveLink = (e: Entry): Omit<Found, 'index'> | null => {
+  const hasKey = (p: string) => !!config.keys?.[p] || Object.keys(env).some((k) => k.startsWith(p.toUpperCase()))
+  const listFor = (name: string): string[] | null => {
+    const c = config.custom?.[name]
+    if (c) return w.endpoints?.[c.baseURL] ?? null
+    return hasKey(name) ? (MODELS[name] ?? []) : null
+  }
+  const resolveLink = (e: Entry): Omit<Chosen, 'index'> | null => {
+    const base = { entry: e, options: optionsFor(e), contextWindow: 8192 }
     if (e.where === 'local') {
       const id = e.id ?? local[0]
-      return id && local.includes(id) ? { label: `lmstudio · ${id}`, local: true } : null
+      return id && local.includes(id) ? { ...base, backend: 'lmstudio', modelId: id, local: true } : null
     }
-    if (e.where === 'remote') {
-      if (!config.keys?.openrouter) return null
-      if (e.id && !CATALOG.some((m) => m.id === e.id)) return null
-      return { label: `openrouter · ${e.id ?? 'some/free-model'}`, local: false }
-    }
-    return { label: 'pollinations · openai', local: false }
+    const list = listFor(e.provider!)
+    const id = e.id ?? (e.provider === 'openrouter' ? 'some/free-model' : undefined)
+    return list && id && list.includes(id) ? { ...base, backend: e.provider!, modelId: id, local: false } : null
   }
-  const deps: SetupDeps = {
-    ask: next,
-    askSecret: next,
-    print: (s) => out.push(s),
-    probe: async (chain) => {
-      if (chain.length === 1 && chain[0].where === 'local' && localUp.length) local = localUp.shift()!
+  const deps: CoreDeps = {
+    load: async () => structuredClone(config),
+    save: async (c) => {
+      config = structuredClone(c)
+      saved.push(structuredClone(c))
+    },
+    env,
+    resolve: async (chain) => {
       for (const [index, e] of chain.entries()) {
-        const f = resolveLink(e)
-        if (f) return { ...f, index }
+        const got = resolveLink(e)
+        if (got) return { ...got, index }
       }
       return null
     },
     localModels: async () => local.map((id) => ({ backend: 'lmstudio', id })),
-    pricedModels: async (ids) => CATALOG.filter((m) => ids.includes(m.id)),
-    validateKey: async () => opts.key ?? 'ok',
-    load: async () => config,
-    save: async (c) => {
-      config = c
-      saved.push(structuredClone(c))
+    checkKey: async () => w.key ?? 'ok',
+    fetchModels: async (server) => {
+      const known = MODELS[server.backend]
+      const listed = known && !config.custom?.[server.backend] ? known : w.endpoints?.[server.baseURL]
+      if (!listed) return { ok: false, why: 'unreachable', message: `could not reach ${server.baseURL}` }
+      if (server.auth === 'wrong') return { ok: false, why: 'rejected', message: `${server.baseURL} answered 401` }
+      return { ok: true, models: listed.map((id) => ({ id })) }
     },
-    tryModel: async () => 'Hello there!',
+    ask: async () => {
+      if (w.askError) throw new Error(w.askError)
+      return 'Hello there!'
+    },
   }
-  return { deps, out: () => out.join('\n'), saved }
+  const core = setupCore(deps)
+  // Rechecking for a local model is when a server can appear.
+  const recheck = core.recheckLocal
+  core.recheckLocal = async () => {
+    if (localUp.length) local = localUp.shift()!
+    return recheck()
+  }
+  const d: SetupDeps = { ask: next, askSecret: next, print: (s) => out.push(s), core }
+  return { d, core, out: () => out.join('\n'), saved, config: () => config }
 }
 
-const KEYED = { keys: { openrouter: 'k' } }
+const KEYED = { keys: { anthropic: 'k' } }
 
-// SET-1, SET-13
-test('shows both slots and which one answers', async () => {
+// SET-1, SET-13, MOD-17
+test('an empty config shows the local model as primary and no fallback', async () => {
   const f = fake([''], { local: ['qwen3-4b'] })
-  assert.equal(await runSetup(f.deps), 0)
-  assert.match(f.out(), /Primary\s+any free OpenRouter model/)
-  assert.match(f.out(), /Fallback\s+any local model \(fastest\)/)
-  assert.match(f.out(), /lmstudio · qwen3-4b, the fallback \(on this computer\)/)
+  assert.equal(await runSetup(f.d), 0)
+  assert.match(f.out(), /Primary\s+any local model \(fastest\)/)
+  assert.match(f.out(), /Fallback\s+none/)
+  assert.match(f.out(), /lmstudio · qwen3-4b, the primary \(on this computer\)/)
   assert.equal(f.saved.length, 0)
 })
 
-test('says when the answer is remote', async () => {
-  const f = fake([''], { config: KEYED })
-  await runSetup(f.deps)
-  assert.match(f.out(), /the primary \(REMOTE/)
+test('says when the answer is remote, and which slot answers', async () => {
+  const f = fake([''], { config: { ...KEYED, model: ['local', 'anthropic:claude-sonnet-5-5'] } })
+  await runSetup(f.d)
+  assert.match(f.out(), /Fallback\s+claude-sonnet-5-5 on Anthropic/)
+  assert.match(f.out(), /Anthropic · claude-sonnet-5-5, the fallback \(REMOTE/)
 })
 
 test('reports when nothing answers', async () => {
   const f = fake([''])
-  assert.equal(await runSetup(f.deps), 1)
+  assert.equal(await runSetup(f.d), 1)
   assert.match(f.out(), /can't find a model/)
 })
 
 test('shows links after the fallback', async () => {
-  const f = fake([''], { config: { model: ['local', 'remote', 'free'] } })
-  await runSetup(f.deps)
-  assert.match(f.out(), /Then\s+the free public model/)
+  const f = fake([''], { config: { model: ['local', 'best', 'x/y'] } })
+  await runSetup(f.d)
+  assert.match(f.out(), /Then\s+x\/y on OpenRouter/)
 })
 
 // SET-2
 test('--check exits 0 when a model answers and asks nothing', async () => {
   const f = fake(['1'], { local: ['qwen3-4b'] })
-  assert.equal(await runSetup(f.deps, { check: true }), 0)
+  assert.equal(await runSetup(f.d, { check: true }), 0)
   assert.doesNotMatch(f.out(), /Primary/)
 })
 
 test('--check exits 1 with the next step when nothing answers', async () => {
   const f = fake(['1'])
-  assert.equal(await runSetup(f.deps, { check: true }), 1)
+  assert.equal(await runSetup(f.d, { check: true }), 1)
   assert.match(f.out(), /navi setup/)
   assert.equal(f.saved.length, 0)
 })
 
-// SET-14, SET-17, SET-11
-test('a specific local model becomes the primary, saved with local:', async () => {
-  const f = fake(['1', row('lmstudio · qwen/qwen3-8b'), ''], { local: ['qwen3-4b', 'qwen/qwen3-8b'] })
-  assert.equal(await runSetup(f.deps), 0)
-  assert.deepEqual(f.saved.at(-1)?.model, ['local:qwen/qwen3-8b', 'local'])
+// SET-18
+test('a slot offers Providers, Local and Custom; the fallback also none', async () => {
+  const f = fake(['1', '', '2', ''])
+  await runSetup(f.d)
+  const [primary, fallback] = f.out().split('Choose the fallback')
+  assert.match(primary, /Providers[\s\S]*Local[\s\S]*Custom/)
+  assert.doesNotMatch(primary, /\d+  none/)
+  assert.match(fallback, /\d+  none/)
+})
+
+test('the fallback can be none, and never lists the primary', async () => {
+  const f = fake(['2', row('Local'), ''], { config: { model: ['local:a', 'local'] }, local: ['a', 'b'] })
+  await runSetup(f.d)
+  const listing = f.out().slice(f.out().lastIndexOf('On this computer'))
+  assert.doesNotMatch(listing, /\d+  a\b/)
+  assert.match(listing, /\d+  b/)
+
+  const g = fake(['2', row('none'), ''], { config: { model: ['local:a', 'local'] }, local: ['a'] })
+  assert.equal(await runSetup(g.d), 0)
+  assert.deepEqual(g.saved.at(-1)?.model, ['local:a'])
+})
+
+// SET-21, SET-17, SET-11
+test('a local model becomes the primary, saved with local:, and is asked a question', async () => {
+  const f = fake(['1', row('Local'), row('qwen/qwen3-8b'), ''], { local: ['qwen3-4b', 'qwen/qwen3-8b'] })
+  assert.equal(await runSetup(f.d), 0)
+  assert.deepEqual(f.saved.at(-1)?.model, ['local:qwen/qwen3-8b'])
+  assert.match(f.out(), /qwen\/qwen3-8b  lmstudio/)
   assert.match(f.out(), /lmstudio · qwen\/qwen3-8b, the primary/)
   assert.match(f.out(), /Hello there!/)
 })
 
-test('the fallback can be none, and never lists the primary', async () => {
-  const f = fake(['2', row('none'), ''], { config: { model: ['local:a', 'local'] }, local: ['a', 'b'] })
-  assert.equal(await runSetup(f.deps), 0)
-  assert.deepEqual(f.saved.at(-1)?.model, ['local:a'])
-  const listing = f.out().slice(f.out().indexOf('Choose a fallback'))
-  assert.doesNotMatch(listing, /\d+  lmstudio · a\b/)
-  assert.match(listing, /\d+  lmstudio · b/)
-})
-
 test('the current pick is marked', async () => {
-  const f = fake(['1', '', ''], { config: { model: ['local:a'] }, local: ['a', 'b'] })
-  await runSetup(f.deps)
-  assert.match(f.out(), /lmstudio · a.*\(current\)/)
+  const f = fake(['1', row('Local'), '', '', ''], { config: { model: ['local:a'] }, local: ['a', 'b'] })
+  await runSetup(f.d)
+  assert.match(f.out(), /\d+  a.*\(current\)/)
 })
 
-// SET-15
-test('hand-picked OpenRouter models show with a key, cheapest first, priced', async () => {
-  const f = fake(['1', row('deepseek/deepseek-v4.1-flash'), ''], { config: KEYED })
-  assert.equal(await runSetup(f.deps), 0)
-  const out = f.out()
-  assert.ok(out.indexOf('deepseek/deepseek-v4.1-flash') < out.indexOf('anthropic/claude-sonnet-5.5'))
-  assert.match(out, /deepseek\/deepseek-v4\.1-flash  \$0\.06 \/ \$0\.12/)
-  assert.match(out, /bill your key/)
-  assert.equal(f.saved.at(-1)?.model[0], 'deepseek/deepseek-v4.1-flash')
+// SET-11
+test('a test question that fails shows the error', async () => {
+  const f = fake(['1', row('Local'), row('a'), ''], { local: ['a'], askError: 'it timed out' })
+  await runSetup(f.d)
+  assert.match(f.out(), /The model didn't answer: it timed out/)
 })
 
-test('without a key no OpenRouter models are offered', async () => {
-  const f = fake(['1', '', ''])
-  await runSetup(f.deps)
-  assert.doesNotMatch(f.out(), /deepseek|any free model/)
-})
-
-// SET-16, SET-5
-test('adding a local model lists it in the same picker', async () => {
-  const f = fake(['1', row('+ a local model'), '', '', row('lmstudio · qwen3-4b'), ''], {
+// SET-5
+test('local help checks again until a model is found, then lists it', async () => {
+  const f = fake(['1', row('Local'), row('Help getting a model'), '', '', row('qwen3-4b'), ''], {
     localUp: [[], ['qwen3-4b']],
   })
-  assert.equal(await runSetup(f.deps), 0)
+  assert.equal(await runSetup(f.d), 0)
   assert.match(f.out(), /lmstudio\.ai/)
+  assert.match(f.out(), /ollama\.com/)
   assert.match(f.out(), /Nothing yet/)
-  assert.deepEqual(f.saved.at(-1)?.model, ['local:qwen3-4b', 'local'])
+  assert.match(f.out(), /Found lmstudio · qwen3-4b/)
+  assert.deepEqual(f.saved.at(-1)?.model, ['local:qwen3-4b'])
 })
 
-test('going back from the local guide saves nothing', async () => {
-  const f = fake(['1', row('+ a local model'), 'b', '', ''])
-  assert.equal(await runSetup(f.deps), 1)
+test('going back from local help saves nothing', async () => {
+  const f = fake(['1', row('Local'), row('Help getting a model'), 'b', '', '', ''])
+  assert.equal(await runSetup(f.d), 1)
   assert.equal(f.saved.length, 0)
 })
 
-// SET-16, SET-6
-test('a valid key is saved and its models appear in the picker', async () => {
-  const f = fake(['1', row('+ an OpenRouter key'), 'sk-or-good', row('anthropic/claude-sonnet-5.5'), ''])
-  assert.equal(await runSetup(f.deps), 0)
-  assert.equal(f.saved[0].keys.openrouter, 'sk-or-good')
-  assert.deepEqual(f.saved.at(-1)?.model, ['anthropic/claude-sonnet-5.5', 'local'])
+// SET-19
+test('providers are listed by name, marking those with a key', async () => {
+  const f = fake(['1', row('Providers'), '', '', ''], { config: KEYED, env: { GROQ_API_KEY: 'g' } })
+  await runSetup(f.d)
+  for (const name of ['OpenAI', 'Anthropic', 'Google Gemini', 'OpenRouter', 'Groq', 'DeepSeek', 'Mistral', 'xAI'])
+    assert.match(f.out(), new RegExp(`\\d+  ${name}`))
+  assert.match(f.out(), /Anthropic  key saved/)
+  assert.match(f.out(), /Groq  key from GROQ_API_KEY/)
+  assert.doesNotMatch(f.out(), /OpenAI  key/)
+})
+
+// SET-6, SET-20
+test('a provider without a key asks for one, checks it, saves it, then lists models', async () => {
+  const f = fake(['1', row('Providers'), row('Anthropic'), 'sk-ant-good', row('claude-haiku-5-5'), ''])
+  assert.equal(await runSetup(f.d), 0)
+  assert.match(f.out(), /platform\.claude\.com\/settings\/keys/)
+  assert.equal(f.saved[0].keys.anthropic, 'sk-ant-good')
+  assert.deepEqual(f.saved.at(-1)?.model, ['anthropic:claude-haiku-5-5'])
+  assert.match(f.out(), /REMOTE/)
 })
 
 test('a rejected key is not saved', async () => {
-  const f = fake(['1', row('+ an OpenRouter key'), 'sk-or-bad', '', ''], { key: 'rejected' })
-  assert.equal(await runSetup(f.deps), 1)
+  const f = fake(['1', row('Providers'), row('OpenRouter'), 'sk-or-bad', '', '', ''], { key: 'rejected' })
+  assert.equal(await runSetup(f.d), 1)
   assert.equal(f.saved.length, 0)
-  assert.match(f.out(), /didn't accept/)
+  assert.match(f.out(), /OpenRouter didn't accept that key\. Nothing was saved/)
 })
 
-test('a key that cannot be checked is not saved', async () => {
-  const f = fake(['1', row('+ an OpenRouter key'), 'sk-or-maybe', '', ''], { key: 'unreachable' })
-  assert.equal(await runSetup(f.deps), 1)
+test('a key that cannot be checked is not saved, and setup says why', async () => {
+  const f = fake(['1', row('Providers'), row('OpenRouter'), 'sk-or-maybe', '', '', ''], { key: 'unreachable' })
+  assert.equal(await runSetup(f.d), 1)
   assert.equal(f.saved.length, 0)
   assert.match(f.out(), /Couldn't reach OpenRouter/)
 })
 
-// SET-16, SET-7
-test('the free model needs an explicit yes after the warning', async () => {
-  const f = fake(['2', row('+ the free public model'), '', '', ''])
-  assert.equal(await runSetup(f.deps), 1)
+test('a provider with a key can have it replaced', async () => {
+  const f = fake(['1', row('Providers'), row('Anthropic'), row('Replace the key'), 'sk-ant-new', '', '', '', ''], {
+    config: KEYED,
+  })
+  await runSetup(f.d)
+  assert.equal(f.saved.at(-1)?.keys.anthropic, 'sk-ant-new')
+})
+
+// SET-20
+test('hand-picked models the provider still offers come first, then all models', async () => {
+  const f = fake(['1', row('Providers'), row('Anthropic'), row('All models…'), row('claude-old-1'), ''], { config: KEYED })
+  assert.equal(await runSetup(f.d), 0)
+  const picks = f.out().slice(f.out().indexOf('Anthropic:'), f.out().indexOf('All Anthropic models:'))
+  assert.match(picks, /claude-sonnet-5-5/)
+  // In the code's list but not the provider's: not shown.
+  assert.doesNotMatch(picks, /claude-opus-5-5|claude-old-1/)
+  assert.deepEqual(f.saved.at(-1)?.model, ['anthropic:claude-old-1'])
+})
+
+// SET-22, MOD-15
+test('a custom endpoint is checked, saved under custom.<name>, and its models listed', async () => {
+  const f = fake(
+    ['2', row('Custom'), row('Add an endpoint'), 'homelab', 'http://box:8000/', '', row('qwen3-27b'), ''],
+    { local: ['a'], endpoints: { 'http://box:8000/v1': ['qwen3-27b'] } },
+  )
+  assert.equal(await runSetup(f.d), 0)
+  // Tried as typed, then with /v1.
+  assert.deepEqual(f.config().custom, { homelab: { baseURL: 'http://box:8000/v1' } })
+  assert.deepEqual(f.saved.at(-1)?.model, ['local', 'homelab:qwen3-27b'])
+  assert.match(f.out(), /Fallback\s+qwen3-27b on homelab/)
+})
+
+test('a saved endpoint lists its models', async () => {
+  const f = fake(['1', row('Custom'), row('homelab'), row('m2'), ''], {
+    config: { custom: { homelab: { baseURL: 'http://box/v1', key: 's' } } },
+    endpoints: { 'http://box/v1': ['m1', 'm2'] },
+  })
+  assert.equal(await runSetup(f.d), 0)
+  assert.match(f.out(), /homelab  http:\/\/box\/v1/)
+  assert.deepEqual(f.saved.at(-1)?.model, ['homelab:m2'])
+})
+
+test('an endpoint that does not answer is not saved', async () => {
+  const f = fake(['1', row('Custom'), row('Add an endpoint'), 'homelab', 'http://nowhere/v1', '', '', '', ''])
+  await runSetup(f.d)
   assert.equal(f.saved.length, 0)
-  assert.match(f.out(), /Don't use it for anything private/)
+  assert.match(f.out(), /Couldn't list models at http:\/\/nowhere\/v1\. Nothing was saved/)
 })
 
-test('yes to the free model picks it for the slot', async () => {
-  const f = fake(['2', row('+ the free public model'), 'y', ''])
-  assert.equal(await runSetup(f.deps), 0)
-  assert.deepEqual(f.saved.at(-1)?.model, ['remote', 'free'])
+test('a custom name may not be a provider id or local', async () => {
+  const f = fake(['1', row('Custom'), row('Add an endpoint'), 'openai', 'local', '', '', '', ''])
+  await runSetup(f.d)
+  assert.match(f.out(), /openai is taken by OpenAI/)
+  assert.match(f.out(), /local is taken by local models/)
+  assert.equal(f.saved.length, 0)
 })
 
-test('the free model is listed once the chain uses it', async () => {
-  const f = fake(['1', '', ''], { config: { model: ['local', 'free'] } })
-  await runSetup(f.deps)
-  assert.match(f.out(), /\d+  the free public model/)
+// SET-23: the core alone, as a front end such as Raycast calls it.
+test('the core answers with data and never prompts', async () => {
+  const f = fake([], { config: KEYED, local: ['a'] })
+  const status = await f.core.status()
+  assert.equal(status.primary.label, 'any local model (fastest)')
+  assert.equal(status.answering?.label, 'lmstudio · a')
+  assert.deepEqual(
+    (await f.core.slotMenu(1)).groups.map((g) => g.id),
+    ['providers', 'local', 'custom'],
+  )
+  assert.equal((await f.core.slotMenu(0)).none, null)
+  const models = await f.core.providerModels('anthropic', 0)
+  assert.ok(models.ok)
+  assert.deepEqual(
+    models.recommended.map((c) => c.value),
+    ['anthropic:claude-sonnet-5-5', 'anthropic:claude-haiku-5-5'],
+  )
+  assert.equal((await f.core.saveKey('anthropic', '  ')).ok, false)
+  const set = await f.core.setSlot(1, 'anthropic:claude-sonnet-5-5')
+  assert.ok(set.changed)
+  assert.equal(set.status.fallback?.label, 'claude-sonnet-5-5 on Anthropic')
+})
+
+test('a provider with no key has no models to list', async () => {
+  const f = fake([])
+  const list = await f.core.providerModels('mistral', 0)
+  assert.ok(!list.ok && /no key/.test(list.message))
 })
 
 // SET-17
 test('setting a slot keeps later links', () => {
-  assert.deepEqual(setSlot(['a', 'b', 'c'], 0, 'x'), ['x', 'b', 'c'])
-  assert.deepEqual(setSlot(['a', 'b', 'c'], 1, 'x'), ['a', 'x', 'c'])
-  assert.deepEqual(setSlot(['a'], 1, 'x'), ['a', 'x'])
+  assert.deepEqual(setSlotIn(['a', 'b', 'c'], 0, 'x'), ['x', 'b', 'c'])
+  assert.deepEqual(setSlotIn(['a', 'b', 'c'], 1, 'x'), ['a', 'x', 'c'])
+  assert.deepEqual(setSlotIn(['a'], 1, 'x'), ['a', 'x'])
 })
 
 test('clearing the fallback, or a primary equal to it, drops it', () => {
-  assert.deepEqual(setSlot(['a', 'b'], 1, null), ['a'])
-  assert.deepEqual(setSlot(['a', 'b'], 0, 'b'), ['b'])
-  assert.deepEqual(setSlot(['a', 'qwen3:4b'], 0, 'local:qwen3:4b'), ['local:qwen3:4b'])
+  assert.deepEqual(setSlotIn(['a', 'b'], 1, null), ['a'])
+  assert.deepEqual(setSlotIn(['a', 'b'], 0, 'b'), ['b'])
+  assert.deepEqual(setSlotIn(['a', 'qwen3:4b'], 0, 'local:qwen3:4b'), ['local:qwen3:4b'])
+  assert.deepEqual(setSlotIn(['local', 'x/y'], 0, 'openrouter:x/y'), ['openrouter:x/y'])
 })
 
 test('an unset chain is the default, spelled out', () => {
-  assert.deepEqual(links(undefined), ['remote', 'local'])
+  assert.deepEqual(links(undefined), ['local'])
   assert.deepEqual(links('best, x/y'), ['best', 'x/y'])
 })
 
 test('each link reads as words', () => {
   assert.equal(labelFor('remote'), 'any free OpenRouter model')
   assert.equal(labelFor('x/y'), 'x/y on OpenRouter')
+  assert.equal(labelFor('google:gemini-3.8-flash'), 'gemini-3.8-flash on Google Gemini')
+  assert.equal(labelFor('box:m', ['box']), 'm on box')
   assert.equal(labelFor('local:qwen/qwen3-4b'), 'qwen/qwen3-4b on this computer')
   assert.equal(labelFor('best'), 'the largest local model')
 })
@@ -250,29 +377,41 @@ test('each link reads as words', () => {
 // SET-12
 test('EOF leaves without writing', async () => {
   const f = fake([null])
-  assert.equal(await runSetup(f.deps), 1)
+  assert.equal(await runSetup(f.d), 1)
   assert.equal(f.saved.length, 0)
 })
 
-const quiet = { ask: async () => null, askSecret: async () => null, print: () => {} }
+test('EOF while typing a key leaves without writing', async () => {
+  const f = fake(['1', row('Providers'), row('OpenAI'), null])
+  assert.equal(await runSetup(f.d), 1)
+  assert.equal(f.saved.length, 0)
+})
 
 // SET-9, SET-10
 test('saving keeps other fields and writes mode 0600', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'navi-setup-'))
   await writeFile(join(dir, 'config.json'), JSON.stringify({ approve: 'judge', keys: { other: 'x' } }))
-  const d = realDeps(quiet, dir)
-  const config = await d.load()
-  await d.save({ ...config, keys: { ...config.keys, openrouter: 'k' } })
+  const config = await loadConfig(dir)
+  await saveConfig({ ...config, keys: { ...config.keys, openrouter: 'k' } }, dir)
   const back = JSON.parse(await readFile(join(dir, 'config.json'), 'utf8'))
   assert.deepEqual(back, { approve: 'judge', keys: { other: 'x', openrouter: 'k' } })
   assert.equal((await stat(join(dir, 'config.json'))).mode & 0o777, 0o600)
+})
+
+test('the core changes only the fields it sets', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'navi-setup-'))
+  await writeFile(join(dir, 'config.json'), JSON.stringify({ approve: 'ask', web_search: false, model: ['best'] }))
+  const core = setupCore({ ...realDeps(dir), checkKey: async () => 'ok' })
+  assert.ok((await core.saveKey('groq', 'gsk-1')).ok)
+  const back = JSON.parse(await readFile(join(dir, 'config.json'), 'utf8'))
+  assert.deepEqual(back, { approve: 'ask', web_search: false, model: ['best'], keys: { groq: 'gsk-1' } })
 })
 
 test('a config that is not JSON stops setup without overwriting it', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'navi-setup-'))
   await writeFile(join(dir, 'config.json'), '{ not json')
   const out: string[] = []
-  const d = { ...realDeps(quiet, dir), print: (s: string) => out.push(s) }
+  const d: SetupDeps = { ask: async () => null, askSecret: async () => null, print: (s) => out.push(s), core: setupCore(realDeps(dir)) }
   assert.equal(await runSetup(d), 1)
   assert.match(out.join('\n'), /not valid JSON/)
   assert.equal(await readFile(join(dir, 'config.json'), 'utf8'), '{ not json')
@@ -280,7 +419,7 @@ test('a config that is not JSON stops setup without overwriting it', async () =>
 
 test('a missing config loads as empty', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'navi-setup-'))
-  assert.deepEqual(await realDeps(quiet, dir).load(), {})
+  assert.deepEqual(await loadConfig(dir), {})
 })
 
 // SET-6: the key is read without echo.

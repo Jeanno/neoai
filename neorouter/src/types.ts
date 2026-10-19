@@ -19,6 +19,8 @@ export interface Server {
   baseURL: string
   /** Ollama needs its native API for model sizes; everything else is OpenAI-shaped. */
   native?: 'ollama'
+  /** A custom endpoint the user added: usually a self-hosted open model. */
+  custom?: true
 }
 
 export interface Candidate {

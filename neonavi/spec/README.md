@@ -7,12 +7,13 @@ The spec is the source of truth for what `navi` does. Code and tests follow it.
 | File | Covers |
 |---|---|
 | `cli.md` | Invocation, flags, interactive loop, exit codes |
-| `models.md` | Model chain: config, aliases, resolution, fallback |
+| `models.md` | Model chain: providers, custom endpoints, local, fallback |
 | `prompt.md` | What the model is told before every turn |
 | `tools.md` | The six tools, their limits, and shell approval |
 | `session.md` | Per-directory history |
 | `context.md` | NAVI.md discovery |
-| `setup.md` | `navi setup`: getting a first model working |
+| `setup.md` | Setup: choosing models, shared by `navi setup` and Raycast |
+| `harness.md` | The harness as a library for front ends |
 
 ## Requirements
 

@@ -1,11 +1,15 @@
-import { getPreferenceValues } from '@raycast/api'
-import type { LanguageModel } from 'ai'
-import { parseModelSpec, resolveChain } from 'neonavi/spec'
-import { auto, probeBackend, readConfig } from 'neorouter'
+import './quiet'
+import { mkdir } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { parseModelSpec, resolveChain, type Chosen } from 'neonavi/spec'
+import { auto, readConfig, reset } from 'neorouter'
+import { modelLabel } from './labels'
 
 export interface Navi {
-  llm: LanguageModel
-  /** Which backend and model answered, e.g. "darkbloom · Qwen3.8-27B". */
+  chosen: Chosen
+  model: ReturnType<typeof auto>
+  /** The model as the user would know it (RAY-9), e.g. "qwen3-4b" or "Anthropic · claude-sonnet-5-5". */
   label: string
   /** False when prompts leave the machine. */
   local: boolean
@@ -15,36 +19,48 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message.replace(/^neorouter: /, '') : String(error)
 }
 
-let pending: Promise<Navi> | undefined
+let pending: Promise<Navi | null> | undefined
 
 /**
- * The chain navi walks, from the Model preference or else `model` in
- * ~/.neoai/config.json. Resolved once per command; a failure is not cached, so
- * starting a server and asking again works.
+ * The chain navi walks, from `model` in ~/.neoai/config.json (RAY-8), or null
+ * when nothing in it answers (RAY-7). Resolved once per command; neither null
+ * nor a failure is kept, so starting a server or finishing Set Up Navi and
+ * asking again works.
  */
-export function resolveNavi(): Promise<Navi> {
-  pending ??= resolve().catch((error) => {
-    pending = undefined
-    throw error
-  })
+export function resolveNavi(): Promise<Navi | null> {
+  pending ??= resolve().then(
+    (navi) => {
+      if (!navi) pending = undefined
+      return navi
+    },
+    (error) => {
+      pending = undefined
+      throw error
+    },
+  )
   return pending
 }
 
-async function resolve(): Promise<Navi> {
-  const override = getPreferenceValues<Preferences>().model?.trim()
-  const chain = parseModelSpec(override || (await readConfig()).model)
-  const chosen = await resolveChain(chain)
-  if (!chosen) {
-    throw new Error(
-      `No model found (${chain.map((e) => e.id ?? e.where).join(' → ')}). Open LM Studio and start its server, or run navi setup in Terminal.`,
-    )
-  }
-  const { prefer, remote, model, scope } = chosen.options
-  // Memoised inside neorouter: this is the resolution resolveChain just made.
-  const r = await probeBackend(prefer, remote, model, scope)
-  return {
-    llm: auto(chosen.options),
-    label: r ? `${r.backend} · ${r.modelId}` : 'navi',
-    local: r?.local ?? true,
-  }
+/** Forgets every resolution, here and in neorouter, after setup changed something. */
+export function forgetNavi(): void {
+  pending = undefined
+  reset()
+}
+
+async function resolve(): Promise<Navi | null> {
+  const config = await readConfig()
+  const chosen = await resolveChain(parseModelSpec(config.model, Object.keys(config.custom ?? {})))
+  if (!chosen) return null
+  return { chosen, model: auto(chosen.options), label: modelLabel(chosen), local: chosen.local }
+}
+
+/**
+ * Where the harness works (RAY-1): Raycast has no project, and the judge's
+ * "writes only inside the working directory" then keeps unasked writes out of
+ * the home folder.
+ */
+export async function naviHome(): Promise<string> {
+  const dir = join(homedir(), '.navi-raycast')
+  await mkdir(dir, { recursive: true })
+  return dir
 }

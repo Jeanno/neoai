@@ -3,7 +3,8 @@ import { detectHardware } from './hardware.ts'
 import { reachableServers } from './discover.ts'
 import { rank, contextWindow, evaluate, pick } from './select.ts'
 import { launchable, launch } from './launch.ts'
-import { hostedServers, hostedModels, hostedHasModel, hostedContextWindow } from './hosted.ts'
+import { hostedServers, hostedModels } from './hosted.ts'
+import { fetchModels, remoteServer, roomiestFree } from './remote.ts'
 
 export interface Resolved extends Resolution {
   server: Server
@@ -60,18 +61,18 @@ export function rungOrder(remote: boolean): Rung[] {
     : ['reachable', 'launched', 'keyed', 'keyless']
 }
 
-export type Scope = 'keyed' | 'local' | 'keyless'
+export type Scope = 'keyed' | 'local'
 
 /**
  * Which rungs one resolution may use. A caller walking an explicit chain scopes
  * each link, so the chain's order is the only fallback and a link never lands
  * on a backend nobody named. Without a scope the full ordering applies, for
- * callers who just want auto() to find something.
+ * callers who just want auto() to find something. No scope reaches the
+ * keyless tier: only an unscoped auto() does.
  */
 export function rungsFor(scope: Scope | undefined, remote = false): Rung[] {
   if (scope === 'keyed') return ['keyed']
   if (scope === 'local') return ['reachable', 'launched']
-  if (scope === 'keyless') return ['keyless']
   return rungOrder(remote)
 }
 
@@ -80,7 +81,14 @@ async function resolveOnce(
   remote = false,
   modelId?: string,
   scope?: Scope,
+  provider?: string,
 ): Promise<Resolved> {
+  // A provider or custom endpoint is its own scope (MOD-6): that server or nothing.
+  if (provider) {
+    const got = await remoteResolution(provider, modelId)
+    if (got) return got
+    throw new Error(`neorouter: ${provider}${modelId ? ` has no ${modelId}` : ''}, or has no key, or cannot be reached.`)
+  }
   const rejected: { id: string; why: string }[] = []
   // Debug escape hatch for exercising a rung that would otherwise never win.
   const only = process.env.NEOROUTER_ONLY_RUNG
@@ -105,16 +113,13 @@ async function resolveOnce(
     return null
   }
 
-  const tryHosted = (keyed: boolean) => async (): Promise<Resolved | null> => {
-    if (only && only !== 'hosted') return null
-    return hostedResolution(rejected, keyed, modelId)
-  }
+  const hostedOnly = (fn: () => Promise<Resolved | null>) => async () => (only && only !== 'hosted' ? null : fn())
 
   const attempt = {
     reachable: tryReachable,
     launched: tryLaunched,
-    keyed: tryHosted(true),
-    keyless: tryHosted(false),
+    keyed: hostedOnly(() => remoteResolution('openrouter', modelId, rejected)),
+    keyless: hostedOnly(() => keylessResolution(rejected, modelId)),
   }
   for (const rung of rungsFor(scope, remote)) {
     const got = await attempt[rung]()
@@ -126,38 +131,55 @@ async function resolveOnce(
   )
 }
 
-async function hostedResolution(
+/**
+ * A provider or custom endpoint (MOD-7): it fails without a key, without an
+ * answer, or when the pinned model is not in its live list. Unpinned, only
+ * OpenRouter has a pick: its roomiest free model (MOD-9).
+ */
+export async function remoteResolution(
+  name: string,
+  modelId?: string,
+  rejected: { id: string; why: string }[] = [],
+): Promise<Resolved | null> {
+  const server = await remoteServer(name)
+  if (!server) return null
+  const listing = await fetchModels(server)
+  if (!listing.ok) return null
+  const id = modelId ?? (name === 'openrouter' ? roomiestFree(listing.models)[0] : undefined)
+  const model = id ? listing.models.find((m) => m.id === id) : undefined
+  if (!model) return null
+  return {
+    rung: 'hosted',
+    backend: server.backend,
+    baseURL: server.baseURL,
+    modelId: model.id,
+    local: false,
+    contextWindow: model.contextWindow ?? 8192,
+    reason: modelId ? `pinned at ${name}` : 'no model named; the free OpenRouter model with the largest context',
+    rejected,
+    server,
+  }
+}
+
+async function keylessResolution(
   rejected: { id: string; why: string }[],
-  keyed: boolean,
   modelId?: string,
 ): Promise<Resolved | null> {
-  const all = await hostedServers()
-  const [hosted] = all.filter((s) => !!s.auth === keyed)
-  if (hosted) {
-    const models = await hostedModels(hosted)
-    // A pinned hosted model must actually be on offer. Without this check a
-    // typo resolves happily and the chain never falls through to the next link.
-    if (modelId) {
-      if (!modelId.includes('/')) return null
-      if (!(await hostedHasModel(hosted, modelId))) return null
-    }
-    const id = modelId ?? models[0] ?? 'openai'
-    return {
-      rung: 'hosted',
-      backend: hosted.backend,
-      baseURL: hosted.baseURL,
-      modelId: id,
-      local: false,
-      contextWindow: await hostedContextWindow(hosted, id),
-      reason:
-        hosted.backend === 'openrouter'
-          ? 'no usable local model; fell through to a free model on OpenRouter'
-          : 'no usable local model; fell through to a keyless hosted endpoint',
-      rejected,
-      server: hosted,
-    }
+  const [hosted] = await hostedServers()
+  // A pinned id belongs to a named backend; the anonymous tier serves none.
+  if (!hosted || modelId) return null
+  const models = await hostedModels()
+  return {
+    rung: 'hosted',
+    backend: hosted.backend,
+    baseURL: hosted.baseURL,
+    modelId: models[0] ?? 'openai',
+    local: false,
+    contextWindow: 8192,
+    reason: 'no usable local model; fell through to a keyless hosted endpoint',
+    rejected,
+    server: hosted,
   }
-  return null
 }
 
 /**
@@ -180,11 +202,12 @@ export function resolveBackend(
   remote = false,
   modelId?: string,
   scope?: Scope,
+  provider?: string,
 ): Promise<Resolved> {
-  const key = `${prefer ?? 'default'}:${remote}:${modelId ?? ''}:${scope ?? ''}`
+  const key = `${prefer ?? 'default'}:${remote}:${modelId ?? ''}:${scope ?? ''}:${provider ?? ''}`
   let p = pending.get(key)
   if (!p) {
-    p = resolveOnce(prefer, remote, modelId, scope).then((r) => {
+    p = resolveOnce(prefer, remote, modelId, scope, provider).then((r) => {
       announce(r)
       return r
     })
@@ -202,8 +225,9 @@ export async function probeBackend(
   remote = false,
   modelId?: string,
   scope?: Scope,
+  provider?: string,
 ): Promise<Resolved | null> {
-  return resolveBackend(prefer, remote, modelId, scope).catch(() => null)
+  return resolveBackend(prefer, remote, modelId, scope, provider).catch(() => null)
 }
 
 /**

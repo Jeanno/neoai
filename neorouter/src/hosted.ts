@@ -1,10 +1,10 @@
 import type { Server } from './types.ts'
-import { readKey } from './config.ts'
 
 /**
  * Keyless endpoints. This tier is inherently unstable — anything free and
- * unauthenticated rate-limits hard and can disappear — so it is last, and the
- * resolution always reports local:false so callers can tell.
+ * unauthenticated rate-limits hard and can disappear — so it is last, reached
+ * only by an unscoped auto(), and the resolution always reports local:false so
+ * callers can tell. navi never uses it (MOD-6).
  */
 const HOSTED: (Server & { probe: string })[] = [
   {
@@ -14,21 +14,7 @@ const HOSTED: (Server & { probe: string })[] = [
   },
 ]
 
-const OPENROUTER = 'https://openrouter.ai/api/v1'
-
-/**
- * Above the keyless tier when a key is present: it streams, it does not need
- * pacing, and its free models are far beyond anything anonymous. Absent a key
- * the rung simply does not exist, so nothing has to be configured to get the
- * old behaviour.
- */
-async function openrouter(): Promise<Server | null> {
-  const key = await readKey('openrouter')
-  return key ? { backend: 'openrouter', baseURL: OPENROUTER, auth: key } : null
-}
-
 export async function hostedServers(): Promise<Server[]> {
-  const keyed = await openrouter()
   const hits = await Promise.all(
     HOSTED.map(async (h) => {
       try {
@@ -39,69 +25,10 @@ export async function hostedServers(): Promise<Server[]> {
       }
     }),
   )
-  return [...(keyed ? [keyed] : []), ...hits.filter((s): s is Server => s !== null)]
+  return hits.filter((s): s is Server => s !== null)
 }
 
-// Fetched once per process: resolution asks for it up to three times.
-let catalog: Promise<any> | null = null
-function openrouterCatalog(): Promise<any> {
-  return (catalog ??= (async () => {
-    try {
-      const r = await fetch(`${OPENROUTER}/models`, { signal: AbortSignal.timeout(8000) })
-      return await r.json()
-    } catch {
-      return null
-    }
-  })())
-}
-
-/** What the catalogue says a model can hold, or the conservative default. */
-export function contextLength(catalog: any, id: string, fallback = 8192): number {
-  const models = catalog?.data
-  const hit = Array.isArray(models) ? models.find((m: any) => m?.id === id) : null
-  const n = Number(hit?.context_length)
-  return Number.isFinite(n) && n > 0 ? n : fallback
-}
-
-export async function hostedContextWindow(server: Server, id: string): Promise<number> {
-  if (server.backend !== 'openrouter') return 8192
-  return contextLength(await openrouterCatalog(), id)
-}
-
-/**
- * Whether a pinned model is really on offer. Checked against the whole
- * catalogue, not the free subset, so pinning a paid model is allowed — but a
- * typo fails the link instead of resolving and blowing up at request time.
- */
-export async function hostedHasModel(server: Server, id: string): Promise<boolean> {
-  if (server.backend !== 'openrouter') return true
-  return catalogIds(await openrouterCatalog()).includes(id)
-}
-
-export interface Priced {
-  id: string
-  /** Dollars per million tokens. */
-  input: number
-  output: number
-}
-
-/** Prices for the ids still in the catalogue, in the order given; the rest are dropped. */
-export function prices(catalog: any, ids: string[]): Priced[] {
-  const models: any[] = Array.isArray(catalog?.data) ? catalog.data : []
-  return ids.flatMap((id) => {
-    const m = models.find((x) => x?.id === id)
-    if (!m) return []
-    const per = (v: unknown) => Math.round(Number(v) * 1e6 * 100) / 100
-    return [{ id, input: per(m.pricing?.prompt), output: per(m.pricing?.completion) }]
-  })
-}
-
-export async function pricedModels(ids: string[]): Promise<Priced[]> {
-  return prices(await openrouterCatalog(), ids)
-}
-
-export async function hostedModels(server?: Server): Promise<string[]> {
-  if (server?.backend === 'openrouter') return freeChatModels(await openrouterCatalog())
+export async function hostedModels(): Promise<string[]> {
   try {
     const r = await fetch('https://text.pollinations.ai/models', {
       signal: AbortSignal.timeout(4000),
@@ -137,30 +64,4 @@ export function serialize<T>(fn: () => Promise<T>): Promise<T> {
   const next = tail.then(run, run)
   tail = next.catch(() => {})
   return next
-}
-
-/**
- * Free ids come and go, so the choice is made from the live catalogue rather
- * than hardcoded. Selects on what a model *outputs*: several free models accept
- * images or video and answer in text, and requiring an exact 'text->text'
- * modality would drop the strongest of them.
- */
-/** Every id on offer, free or paid: what a pinned model is checked against. */
-export function catalogIds(catalog: any): string[] {
-  const models = catalog?.data
-  return Array.isArray(models) ? models.map((m: any) => m?.id).filter(Boolean) : []
-}
-
-export function freeChatModels(catalog: any): string[] {
-  const models = catalog?.data
-  if (!Array.isArray(models)) return []
-  return models
-    .filter(
-      (m: any) =>
-        m?.pricing?.prompt === '0' &&
-        m?.pricing?.completion === '0' &&
-        String(m?.architecture?.modality ?? '').endsWith('->text'),
-    )
-    .sort((a: any, b: any) => (b.context_length ?? 0) - (a.context_length ?? 0))
-    .map((m: any) => m.id)
 }
