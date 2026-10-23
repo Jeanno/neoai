@@ -27,7 +27,7 @@ add the requirement there first.
 
 - [x] `write_file` and `edit_file`, each change shown as a diff; a new file
       here is made without asking, any other change asks. (TL-36 to TL-40)
-- [ ] `--model` or `/model` mid-session, without leaving the loop. (`spec/cli.md`)
+- [x] `/model` mid-session, without leaving the loop, and `/help`. (CLI-19 to CLI-21)
 - [ ] Image and PDF input: attach files to a turn (CLI path argument,
       Raycast selected Finder files); images go to vision models, PDFs as
       extracted text. (`spec/harness.md`, `spec/cli.md`,

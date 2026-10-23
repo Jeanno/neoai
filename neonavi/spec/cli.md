@@ -22,7 +22,8 @@
 - CLI-5: With no `-p` prompt and a non-terminal stdin, navi prints usage to
   stderr and exits 1.
 - CLI-6: With no `-p` prompt and a terminal stdin, navi starts a new session
-  (SES-3), prints a one-line hint on how to leave, then opens the prompt.
+  (SES-3), prints a one-line hint naming `/help` and how to leave, then opens
+  the prompt.
 - CLI-7: `exit`, `quit`, `q` (case-insensitive), ^C at the prompt, or EOF all
   leave with exit 0. Blank lines are ignored.
 - CLI-8: The interactive prompt and shell approval share one stdin reader, so
@@ -39,6 +40,17 @@
   exits 1; in interactive mode the loop continues.
 - CLI-13: History is saved after every turn, empty answer or not.
 
+## Commands
+
+- CLI-19: At the `navi>` prompt, a line that is exactly `/model`, or starts
+  with `/model ` or `/help`, is a command, not a prompt.
+- CLI-20: `/model` prints the model answering, as SET-1 words it, and the
+  saved chain. `/model <spec>` takes what `--model` takes and switches to it
+  for the rest of the session, keeping the conversation; nothing is saved.
+  When nothing in it answers, each link's reason is printed (MOD-21) and the
+  current model stays.
+- CLI-21: `/help` lists the commands and how to leave.
+
 ## Feedback
 
 - CLI-16: While a model call is in flight and stderr is a terminal, a dim
@@ -53,12 +65,9 @@
 
 ## Startup
 
-- CLI-14: If no link in the model chain resolves, navi names the chain on
-  stderr, suggests `navi setup`, and exits 1 before reading any prompt.
+- CLI-14: If no link in the model chain resolves, navi lists each link on
+  stderr with why it failed (MOD-21), suggests `navi setup`, and exits 1
+  before reading any prompt.
 - CLI-15: The resolved backend and model are announced once on stderr, with
   REMOTE called out when prompts leave the machine.
 
-## Open
-
-- Streaming output within a turn.
-- A way to change the model mid-session.

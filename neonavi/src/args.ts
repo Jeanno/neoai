@@ -63,3 +63,12 @@ export function systemPrompt(
 export function startsFresh(o: { prompt: string | null; resume: boolean }): boolean {
   return o.prompt === null && !o.resume
 }
+
+export type Command = { name: 'model'; spec: string } | { name: 'help' }
+
+/** A line at the `navi>` prompt that is a command rather than a prompt (CLI-19). */
+export function commandFrom(line: string): Command | null {
+  if (line === '/model' || line.startsWith('/model ')) return { name: 'model', spec: line.slice('/model'.length).trim() }
+  if (line === '/help') return { name: 'help' }
+  return null
+}

@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promptFrom, startsFresh } from '../src/args.ts'
+import * as args from '../src/args.ts'
 import { makeTools } from '../src/tools.ts'
 
 async function fixture() {
@@ -93,4 +94,14 @@ test('every shell command is asked about separately', async () => {
   await tools.run_shell.execute!({ command: 'echo one' } as any, {} as any)
 
   assert.deepEqual(asked, ['echo one', 'echo one'])
+})
+
+// CLI-19, CLI-21
+test('only /model and /help at the prompt are commands', () => {
+  const { commandFrom } = args
+  assert.deepEqual(commandFrom('/model'), { name: 'model', spec: '' })
+  assert.deepEqual(commandFrom('/model anthropic:claude-sonnet-5-5, local'), { name: 'model', spec: 'anthropic:claude-sonnet-5-5, local' })
+  assert.deepEqual(commandFrom('/help'), { name: 'help' })
+  for (const line of ['/models', '/Users/me/file.txt what is this', 'model', 'what does /model do'])
+    assert.equal(commandFrom(line), null, line)
 })

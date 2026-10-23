@@ -1,15 +1,15 @@
 #!/usr/bin/env bun
 import { auto } from 'neorouter'
 import { homedir } from 'node:os'
-import { promptFrom, startsFresh } from './args.ts'
-import { parseModelSpec, walkChain } from './spec.ts'
+import { commandFrom, promptFrom, startsFresh } from './args.ts'
+import { parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
 import { makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
 import { loadSession, saveSession, sessionFile } from './session.ts'
 import { createHarness, DEFAULT_STEPS, type HarnessEvent } from './harness.ts'
 import { readConfig } from 'neorouter'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
-import { entryLabel } from './setup-core.ts'
+import { describe, entryLabel, modelLabel } from './setup-core.ts'
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 
@@ -57,6 +57,19 @@ async function setup(argv: string[]) {
 /** Typed at the prompt to leave; ^C and ^D work too. */
 const QUIT = new Set(['exit', 'quit', 'q'])
 
+// CLI-21
+const HELP = [
+  '/model             the model answering, and the saved chain',
+  '/model <spec>      switch for this session: <provider>:<model>, local, best, or a list',
+  '/help              this list',
+  'exit, quit, ^C, ^D leave',
+].join('\n')
+
+/** Each link that did not answer, and why (MOD-21). */
+function failedLines(failures: Failure[]): string[] {
+  return failures.map((f) => `${['primary', 'fallback'][f.index] ?? `link ${f.index + 1}`} (${entryLabel(f.entry)}): ${f.why}`)
+}
+
 async function main() {
   let argv = process.argv.slice(2)
   if (argv[0] === 'setup') return setup(argv.slice(1))
@@ -85,18 +98,18 @@ async function main() {
 
   // --model overrides the config file for one run; both take the same values.
   const config = await readConfig()
-  const chain = parseModelSpec(model.value ?? config.model, Object.keys(config.custom ?? {}))
+  const custom = Object.keys(config.custom ?? {})
+  const chain = parseModelSpec(model.value ?? config.model, custom)
   const { chosen, failures } = await walkChain(chain)
-  // Why each earlier link did not answer (MOD-21): on stderr, so pipes still
-  // get exactly the answer.
-  const failed = failures.map((f) => `${['primary', 'fallback'][f.index] ?? `link ${f.index + 1}`} (${entryLabel(f.entry)}): ${f.why}`)
   if (!chosen) {
     console.error('navi has no model to answer with:')
-    for (const line of failed) console.error(`  ${line}`)
+    for (const line of failedLines(failures)) console.error(`  ${line}`)
     console.error(CLI_NEXT_STEP)
     return 1
   }
-  for (const line of failed) console.error(dim(`· ${line}`))
+  // Why each earlier link did not answer (MOD-21): on stderr, so pipes still
+  // get exactly the answer.
+  for (const line of failedLines(failures)) console.error(dim(`· ${line}`))
 
   const cwd = process.cwd()
   const file = sessionFile(cwd, homedir())
@@ -117,7 +130,7 @@ async function main() {
     if (midLine) process.stdout.write('\n')
     midLine = false
   }
-  const harness = await createHarness({
+  const harnessFor = (chosen: Chosen) => createHarness({
     model: auto(chosen.options),
     contextWindow: chosen.contextWindow,
     cwd,
@@ -132,7 +145,27 @@ async function main() {
       return ok
     },
   })
-  const session = harness.session(stored)
+  let answering = chosen
+  let session = (await harnessFor(chosen)).session(stored)
+
+  /** CLI-20: what answers and the saved chain, or a switch that keeps the conversation. */
+  const switchModel = async (spec: string) => {
+    if (!spec) {
+      console.error(describe({ ...answering, label: modelLabel(answering) }))
+      console.error(dim(`chain: ${chain.map(entryLabel).join(' → ')}`))
+      console.error(dim('switch with /model <provider>:<model>, local, best, or a list separated by commas'))
+      return
+    }
+    const next = await walkChain(parseModelSpec(spec, custom))
+    if (!next.chosen) {
+      console.error(`nothing in ${spec} answers, so the model stays ${modelLabel(answering)}:`)
+      for (const line of failedLines(next.failures)) console.error(`  ${line}`)
+      return
+    }
+    answering = next.chosen
+    session = (await harnessFor(answering)).session(session.history)
+    console.error(describe({ ...answering, label: modelLabel(answering) }))
+  }
 
   /** A note on stderr, never over a spinner frame or the end of streamed text. */
   const note = (s: string) => {
@@ -185,7 +218,7 @@ async function main() {
       const answered = await turn(first)
       if (!interactive) return answered ? 0 : 1
     }
-    if (!first) console.error(dim('navi · ask anything; exit, ^C or ^D to leave'))
+    if (!first) console.error(dim('navi · ask anything; /help for commands; exit, ^C or ^D to leave'))
     for (;;) {
       // The marker gets a lighter background; bold is opened as part of the
       // prompt so the typed line inherits it.
@@ -194,7 +227,10 @@ async function main() {
       if (process.stdout.isTTY) process.stdout.write('\x1b[0m\n')
       if (prompt === undefined || prompt === null || QUIT.has(prompt.toLowerCase())) return 0
       if (!prompt) continue
-      await turn(prompt)
+      const command = commandFrom(prompt)
+      if (command?.name === 'model') await switchModel(command.spec)
+      else if (command?.name === 'help') console.error(HELP)
+      else await turn(prompt)
     }
   } finally {
     line.close()
