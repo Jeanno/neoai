@@ -59,3 +59,26 @@ test('no scope reaches the keyless tier', () => {
   assert.deepEqual(rungsFor('keyed'), ['keyed'])
   assert.deepEqual(rungsFor('local'), ['reachable', 'launched'])
 })
+
+// MOD-16
+test('local discovery looks only at the standard local servers', async () => {
+  const { reachableServers } = await import('../src/discover.ts')
+  const real = globalThis.fetch
+  const asked: string[] = []
+  globalThis.fetch = (async (url: string) => {
+    asked.push(String(url))
+    throw new TypeError('fetch failed')
+  }) as any
+  try {
+    assert.deepEqual(await reachableServers(), [])
+  } finally {
+    globalThis.fetch = real
+  }
+  assert.deepEqual(asked.sort(), [
+    'http://127.0.0.1:11434/api/tags',
+    'http://127.0.0.1:1234/v1/models',
+    'http://127.0.0.1:1337/v1/models',
+    'http://127.0.0.1:8000/v1/models',
+    'http://127.0.0.1:8080/v1/models',
+  ])
+})

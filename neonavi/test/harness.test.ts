@@ -139,7 +139,7 @@ test('every turn gets navi\'s system prompt and tools, rooted at the front end\'
   )
 })
 
-// HAR-4, TL-22
+// HAR-4, TL-22, TL-25: the fake model is the session's, and it is also what judges.
 test('only commands not judged safe reach the approval callback', async () => {
   const asked: string[] = []
   const model = fake([

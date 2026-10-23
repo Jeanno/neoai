@@ -105,3 +105,21 @@ test('only /model and /help at the prompt are commands', () => {
   for (const line of ['/models', '/Users/me/file.txt what is this', 'model', 'what does /model do'])
     assert.equal(commandFrom(line), null, line)
 })
+
+// TL-1, TL-16, TL-17
+test('run_shell output is cut at 8000 characters, says when there is none, and reports failure', async () => {
+  const tools = makeTools({ approve: async () => true })
+  const exec = (command: string) => (tools.run_shell.execute as any)({ command }, { toolCallId: 't', messages: [] })
+  const long = await exec(`node -e "process.stdout.write('x'.repeat(9000))"`)
+  assert.equal(long, `${'x'.repeat(8000)}\n…[truncated]`)
+  assert.equal(await exec('true'), '(no output)')
+  assert.equal(await exec('echo oops >&2'), 'oops\n')
+  assert.match(await exec('ls /surely/not/here'), /^command failed: .*No such file/)
+})
+
+// PRM-6, PRM-7
+test('the prompt says run_shell asks every time, and asks for a plain answer', () => {
+  const p = args.systemPrompt('/x')
+  assert.match(p, /run_shell asks the user for approval every time; if they decline, do not retry it/)
+  assert.match(p, /state it plainly\. Do not narrate your tool use/)
+})
