@@ -1,5 +1,5 @@
 import { createInterface, type Interface } from 'node:readline/promises'
-import type { Readable, Writable } from 'node:stream'
+import { Writable, type Readable } from 'node:stream'
 import { visible, type FileChange } from './diff.ts'
 import { PROMPTS_KEPT } from './session.ts'
 
@@ -82,9 +82,31 @@ export function makeLine({
     history.save(kept)
   }
   const deliver = (l: string) => (waiting.length ? waiting.shift()!(l) : lines.push(l))
+  // What readline draws reaches the terminal only while a question is open:
+  // keys typed during an answer would otherwise land in the middle of it, and
+  // a key being typed must not show at all. Typed-ahead text shows with the
+  // next prompt.
+  let shows: 'all' | 'newline' | 'nothing' = 'nothing'
+  const screen = new Writable({
+    // Decided as each write is made and finished at once, never later, when
+    // the question may have closed.
+    write(chunk, _enc, done) {
+      if (shows === 'all') output.write(chunk)
+      else if (shows === 'newline' && String(chunk).includes('\n')) output.write('\n')
+      done()
+    },
+  })
+  Object.defineProperty(screen, 'columns', { get: () => (output as { columns?: number }).columns })
+  output.on('resize', () => screen.emit('resize'))
   const open = () => {
     if (!rl) {
-      rl = createInterface({ input, output, history: [...(history?.prompts ?? [])], historySize: PROMPTS_KEPT })
+      rl = createInterface({
+        input,
+        output: screen,
+        terminal: (output as { isTTY?: boolean }).isTTY === true,
+        history: [...(history?.prompts ?? [])],
+        historySize: PROMPTS_KEPT,
+      })
       rl.on('line', (l) => {
         // readline has already kept the line; whether it should be is decided
         // by the question it answers (remember, below).
@@ -107,16 +129,19 @@ export function makeLine({
         })
       }
       rl.on('SIGINT', () => {
-        // Something typed: ^C clears it, as a shell does (CLI-7).
-        if (rl!.line || pasted.length) {
+        const typed = !!rl!.line || pasted.length > 0
+        const clear = () => {
           pasted = []
           rl!.write(null, { ctrl: true, name: 'u' })
           rl!.write(null, { ctrl: true, name: 'k' })
-          return
         }
-        // A turn running: ^C stops it (CLI-25). Otherwise it ends the session
-        // instead of killing the process mid-write.
-        if (!onInterrupt?.()) rl!.close()
+        // Something typed at a question: ^C clears it, as a shell does (CLI-7).
+        if (typed && shows !== 'nothing') return clear()
+        // A turn running: ^C stops it, and what was typed ahead goes with it
+        // (CLI-25, CLI-28).
+        if (onInterrupt?.()) return void (typed && clear())
+        // Otherwise it ends the session instead of killing the process mid-write.
+        rl!.close()
       })
     }
     return rl
@@ -131,12 +156,21 @@ export function makeLine({
       if (lines.length) return kept(lines.shift()!)
       // Input already at EOF: waiting would stall the agent instead of refusing.
       if (closed || signal?.aborted) return null
+      // Typed ahead of a key's question: it would show, and is no key anyway.
+      if (secret && (output as { isTTY?: boolean }).isTTY) {
+        r.write(null, { ctrl: true, name: 'u' })
+        r.write(null, { ctrl: true, name: 'k' })
+      }
+      shows = 'all'
       r.setPrompt(prompt)
-      r.prompt()
+      // The cursor stays at the end of anything typed ahead.
+      r.prompt(true)
+      if (secret) shows = 'newline'
       // A question given up on (the turn stopped) must not take the next line typed.
       const waitFor = (after: (l: string | null) => void = () => {}) =>
         new Promise<string | null>((resolve) => {
           const answer = (l: string | null) => {
+            shows = 'nothing'
             signal?.removeEventListener('abort', gaveUp)
             after(l)
             resolve(l)
@@ -150,18 +184,8 @@ export function makeLine({
           signal?.addEventListener('abort', gaveUp, { once: true })
           waiting.push(answer)
         })
-      if (!secret) return waitFor().then(kept)
-      // Everything readline draws while the key is typed is dropped, except the
-      // newline that ends it. Muting the stream rather than readline itself
-      // holds across Node versions, whose internals have moved.
-      const write = output.write
-      output.write = ((chunk: unknown, enc?: unknown, cb?: unknown) => {
-        const done = (typeof enc === 'function' ? enc : cb) as (() => void) | undefined
-        if (String(chunk).includes('\n')) return write.call(output, '\n', 'utf8', done)
-        done?.()
-        return true
-      }) as typeof output.write
-      return waitFor(() => (output.write = write))
+      // A key shows nothing as it is typed but the newline that ends it.
+      return waitFor().then(secret ? (l) => l : kept)
     },
     listen: () => void open(),
     close: () => rl?.close(),

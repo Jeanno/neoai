@@ -51,6 +51,10 @@
   (0600), one per line with line breaks escaped. Only what is typed at
   `navi>` is kept; answers to approvals, setup questions and keys never are,
   nor is a line starting with a space.
+- CLI-28: Keys typed while a turn runs are not drawn over the answer; they
+  show at the next prompt, ready to edit or send. ^C during the turn stops it
+  (CLI-25) and discards them. A key typed at a hidden question (SET-6) is
+  never drawn, and text typed ahead of that question is dropped.
 - CLI-8: The interactive prompt and shell approval share one stdin reader, so
   input typed ahead is never lost and never read by the wrong question.
 

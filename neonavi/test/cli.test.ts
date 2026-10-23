@@ -164,7 +164,7 @@ async function naviOnTerminal(
   await writeFile(join(home, '.neoai', 'config.json'), JSON.stringify(config))
   const env = { PATH: process.env.PATH, HOME: home, NEOROUTER_QUIET: '1', TERM: 'xterm' }
   // script(1) needs real pipes, and node's stdio on macOS is a socket.
-  const child = spawn('sh', ['-c', 'cat | script -q /dev/null "$@" | cat', 'sh', TSX, CLI, ...args], { env, cwd: home })
+  const child = spawn('sh', ['-c', 'cat | script -q /dev/null "$@" | cat', 'sh', TSX, CLI, ...args], { env, cwd: home, detached: true })
   let shown = ''
   let prompts = 0
   child.stdout.on('data', (c) => {
@@ -180,7 +180,8 @@ async function naviOnTerminal(
     }
   })
   // A navi that never leaves fails the test rather than hanging the run.
-  const limit = setTimeout(() => child.kill(), 30_000)
+  // The whole group: script(1) and navi under it outlive a killed sh.
+  const limit = setTimeout(() => process.kill(-child.pid!, 'SIGKILL'), 20_000)
   const code = await new Promise<number>((resolve) => child.on('close', (c) => resolve(c ?? -1)))
   clearTimeout(limit)
   return { code, raw: shown, shown: shown.replace(/\x1b\[[0-9;]*m/g, ''), home }
@@ -275,4 +276,26 @@ test('up arrow recalls a prompt from an earlier session', { skip: process.platfo
   // The recalled prompt was asked again: one more step (the fake calls a tool only on its first).
   assert.equal(fake.steps(), 3)
   assert.match(again.shown, /navi> [^\n]*what is here/)
+})
+
+// CLI-28: keys typed during an answer are not drawn into it; they wait at the next prompt.
+test('typing during an answer draws nothing until the next prompt', { skip: process.platform !== 'darwin' }, async () => {
+  const fake = await fakeModel()
+  let typed = false
+  // The first prompt's turn runs a tool, so there is a moment to type into.
+  // Enter at the next prompt sends what was typed ahead.
+  const r = await naviOnTerminal(['-p', 'what is here'], ['', 'exit'], fake.config, (shown, type) => {
+    if (!typed && shown.includes('list_dir')) (typed = true, type('later'))
+  })
+  fake.close()
+  assert.equal(r.code, 0, r.shown)
+  const answered = r.shown.indexOf('It holds .neoai.')
+  assert.ok(answered > 0, r.shown)
+  assert.ok(!r.shown.slice(0, answered).includes('later'), r.shown)
+  // At the prompt that follows, ready to send.
+  assert.match(r.shown.slice(answered), /navi> [^\n]*later/)
+  assert.equal(fake.steps(), 3)
+  const [file] = await readdir(join(r.home, '.neoai', 'sessions'))
+  const saved = JSON.parse(await readFile(join(r.home, '.neoai', 'sessions', file), 'utf8'))
+  assert.deepEqual(saved.messages.filter((m: any) => m.role === 'user').map((m: any) => m.content), ['what is here', 'later'])
 })
