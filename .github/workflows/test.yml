@@ -1,0 +1,31 @@
+# Tests and typechecks every package on each push to master and each pull
+# request. macOS, as navi's attachments (sips, PDFKit) and its terminal test
+# (script) use what macOS ships.
+name: Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # navi's grep and glob tools run ripgrep, and their tests do too.
+      - run: brew install ripgrep
+
+      - name: Test
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
