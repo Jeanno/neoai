@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { formatResults, parseResults, webSearch } from '../src/web.ts'
+import { formatResults, parseResults, searchBackend, webSearch } from '../src/web.ts'
 import { makeTools } from '../src/tools.ts'
 import { systemPrompt } from '../src/args.ts'
 
@@ -85,7 +85,55 @@ test('a failed or blocked request says search is unavailable instead of throwing
   }
   const blocked = async () => new Response('captcha', { status: 403 })
   assert.match(await webSearch('q', down as typeof fetch), /^web search is unavailable/)
-  assert.match(await webSearch('q', blocked as typeof fetch), /^web search is unavailable \(HTTP 403\)/)
+  assert.match(await webSearch('q', blocked as typeof fetch), /^web search is unavailable \(DuckDuckGo answered HTTP 403\)/)
+})
+
+// TL-29: DuckDuckGo's bot check is a block, never "no results".
+test("DuckDuckGo's bot check says search is rate-limited, not that nothing was found", async () => {
+  const check = async () => new Response('<div class="anomaly-modal__title">Unfortunately, bots use DuckDuckGo too.</div>', { status: 202 })
+  const out = await webSearch('q', check as typeof fetch)
+  assert.match(out, /^web search is unavailable \(DuckDuckGo is rate-limiting searches from here for now\)/)
+  assert.doesNotMatch(out, /no results/)
+})
+
+// TL-44
+test('a search backend comes from the config, or Brave from its environment key', () => {
+  assert.deepEqual(searchBackend({ searxng: 'http://box:8888' }, {}), { searxng: 'http://box:8888' })
+  assert.deepEqual(searchBackend({ brave: 'k' }, {}), { brave: 'k' })
+  assert.deepEqual(searchBackend(undefined, { BRAVE_SEARCH_API_KEY: 'e' }), { brave: 'e' })
+  assert.equal(searchBackend(undefined, {}), undefined)
+  assert.equal(searchBackend({ searxng: 7 }, {}), undefined)
+})
+
+// TL-44, TL-28
+test('SearXNG and Brave are asked first, with the query and nothing else but Brave\'s key', async () => {
+  const sent: { url: string; headers: Record<string, string> }[] = []
+  const fake = async (url: any, init: any) => {
+    sent.push({ url: String(url), headers: init?.headers ?? {} })
+    if (String(url).startsWith('http://box'))
+      return Response.json({ results: [{ title: 'A <b>page</b>', url: 'https://a.example', content: 'about &amp; more' }] })
+    return Response.json({ web: { results: [{ title: 'B', url: 'https://b.example', description: 'the <strong>b</strong> page' }] } })
+  }
+  const viaSearx = await webSearch('two words', fake as typeof fetch, { searxng: 'http://box/' })
+  assert.equal(viaSearx, '1. A page\n   https://a.example\n   about & more')
+  assert.equal(sent[0].url, 'http://box/search?q=two+words&format=json')
+  const viaBrave = await webSearch('two words', fake as typeof fetch, { brave: 'KEY' })
+  assert.equal(viaBrave, '1. B\n   https://b.example\n   the b page')
+  assert.equal(sent[1].url, 'https://api.search.brave.com/res/v1/web/search?q=two+words&count=8')
+  assert.equal(sent[1].headers['x-subscription-token'], 'KEY')
+  assert.equal(sent.length, 2)
+})
+
+// TL-44
+test('a backend that fails falls back to DuckDuckGo, and both failing names each', async () => {
+  const refused = (ddg: Response) => async (url: any) =>
+    String(url).includes('duckduckgo') ? ddg : new Response('no', { status: 403 })
+  const fallback = await webSearch('zhuge liang', refused(new Response(PAGE)) as typeof fetch, { searxng: 'http://box' })
+  assert.match(fallback, /^1\. /)
+  const both = await webSearch('q', refused(new Response('', { status: 503 })) as typeof fetch, { brave: 'bad' })
+  assert.equal(both, 'web search is unavailable (Brave Search refused the key; DuckDuckGo answered HTTP 503); answer without it')
+  const json = await webSearch('q', refused(new Response('', { status: 503 })) as typeof fetch, { searxng: 'http://box' })
+  assert.match(json, /SearXNG at http:\/\/box refuses JSON \(turn on json/)
 })
 
 // TL-30

@@ -14,6 +14,7 @@ import { compact, estimateTokens } from './compact.ts'
 import { userContent, type Attachment } from './attach.ts'
 
 export { attach, splitUserContent, type Attachment } from './attach.ts'
+import { searchBackend } from './web.ts'
 export { allowable, type Answer } from './approve.ts'
 
 /**
@@ -36,6 +37,8 @@ export interface HarnessConfig {
   web_search?: boolean
   /** false removes only fetch_url (TL-35). */
   fetch_url?: boolean
+  /** A search backend asked before DuckDuckGo (TL-44). */
+  search?: unknown
   /** false removes write_file and edit_file (TL-40). */
   write?: boolean
   /** Commands that run without the judge or a question (TL-41). */
@@ -225,7 +228,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         // Never kept: "always" is for commands, so here it is a plain yes.
         return (await ask(summarize(c), toolSignal ?? signal, c)) !== false
       }
-      const tools = makeTools({ approve, change }, { web, fetch, write, cwd: o.cwd, ripgrep: o.ripgrep })
+      const tools = makeTools({ approve, change }, { web, fetch, write, cwd: o.cwd, ripgrep: o.ripgrep, search: searchBackend(config.search) })
 
       // Messages of the finished steps; the step in flight only adds its text.
       let finished: ModelMessage[] = []

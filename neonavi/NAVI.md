@@ -52,7 +52,10 @@ Tools: `grep`, `glob`, `read_file` (numbered lines, pageable), `list_dir`,
 (DuckDuckGo); the query is the only thing it sends. `fetch_url` reads one page
 as text and refuses this machine and the local network (`src/web.ts`).
 `"web_search": false` in the config removes both; `"fetch_url": false` only the
-latter.
+latter. DuckDuckGo rate-limits bursts of searches; for steadier results set
+`"search": { "searxng": "http://your-searxng:8080" }` (JSON output turned on)
+or `"search": { "brave": "<Brave Search API key>" }` (or `BRAVE_SEARCH_API_KEY`),
+asked first with DuckDuckGo as the fallback.
 `grep` and `glob` use ripgrep when it is on PATH and a built-in search
 otherwise (`src/search.ts`), honouring `.gitignore` either way, so nothing
 needs installing.

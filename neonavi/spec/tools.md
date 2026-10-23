@@ -93,7 +93,18 @@ anything off the machine.
   it reads and writes nothing on the machine.
 - TL-29: No results is a normal result ("no results for …"). A network error,
   timeout (10s) or blocked request returns a message saying search is
-  unavailable, never a throw, so the model can answer without it.
+  unavailable, never a throw, so the model can answer without it. DuckDuckGo
+  answering with its bot check (HTTP 202, or a page asking to confirm a
+  human) is a blocked request, never "no results", and the message says it
+  is rate-limited for now.
+- TL-44: `"search"` in `~/.neoai/config.json` names a backend asked before
+  DuckDuckGo: `{ "searxng": "<base URL>" }`, a SearXNG instance with JSON
+  output on (its `/search?format=json`), or `{ "brave": "<key>" }`, the Brave
+  Search API; `BRAVE_SEARCH_API_KEY` in the environment counts as the second.
+  Their results are shown as in TL-26. When the backend fails or refuses,
+  DuckDuckGo is asked instead, and a message from either names which
+  backend could not be used and why. The query is still the only thing sent
+  (TL-28), plus the key to Brave.
 - TL-30: `"web_search": false` in `~/.neoai/config.json` removes web_search
   and fetch_url, for sessions where nothing but the model may leave the
   machine.
@@ -161,7 +172,3 @@ A model call that decides whether a shell command needs the user's approval.
   without deleting or overwriting existing files, with no network sends, no
   privilege escalation, no process kills, and no git history rewriting or
   pushing. Everything else, including anything the judge cannot tell, is unsafe.
-
-## Open
-
-- A keyed search backend (Brave, Tavily, SearXNG) when DuckDuckGo blocks.

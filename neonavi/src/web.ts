@@ -54,21 +54,83 @@ export function formatResults(query: string, results: Result[]): string {
     .join('\n')
 }
 
-/** Never throws: a model that cannot search can still answer from what it knows (TL-29). */
-export async function webSearch(query: string, fetcher: typeof fetch = fetch): Promise<string> {
-  try {
-    const res = await fetcher(ENDPOINT, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      // The query and nothing else (TL-28).
-      body: new URLSearchParams({ q: query }).toString(),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    })
-    if (!res.ok) return `web search is unavailable (HTTP ${res.status}); answer without it`
-    return formatResults(query, parseResults(await res.text()))
-  } catch (e) {
-    return `web search is unavailable (${e instanceof Error ? e.message : String(e)}); answer without it`
+/** A backend asked before DuckDuckGo (TL-44). */
+export type SearchBackend = { searxng: string } | { brave: string }
+
+/** The backend the config names, or Brave by its environment key; undefined for none. */
+export function searchBackend(
+  config: unknown,
+  env: Record<string, string | undefined> = process.env,
+): SearchBackend | undefined {
+  const c = config as { searxng?: unknown; brave?: unknown } | undefined
+  if (typeof c?.searxng === 'string' && c.searxng) return { searxng: c.searxng }
+  if (typeof c?.brave === 'string' && c.brave) return { brave: c.brave }
+  return env.BRAVE_SEARCH_API_KEY ? { brave: env.BRAVE_SEARCH_API_KEY } : undefined
+}
+
+/** Results, or why there are none to give; `blocked` says it was refused rather than empty. */
+type Outcome = { results: Result[] } | { problem: string }
+
+async function duckDuckGo(query: string, fetcher: typeof fetch): Promise<Outcome> {
+  const res = await fetcher(ENDPOINT, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    // The query and nothing else (TL-28).
+    body: new URLSearchParams({ q: query }).toString(),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  })
+  if (!res.ok) return { problem: `DuckDuckGo answered HTTP ${res.status}` }
+  const html = await res.text()
+  // Its bot check comes back as a 202 page, which holds no results but is not "none" (TL-29).
+  if (res.status === 202 || /anomaly-modal|confirm this search was made by a human/i.test(html))
+    return { problem: 'DuckDuckGo is rate-limiting searches from here for now' }
+  return { results: parseResults(html) }
+}
+
+/** A SearXNG instance's JSON results (TL-44). */
+async function searxng(base: string, query: string, fetcher: typeof fetch): Promise<Outcome> {
+  const url = `${base.replace(/\/+$/, '')}/search?${new URLSearchParams({ q: query, format: 'json' })}`
+  const res = await fetcher(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(TIMEOUT_MS) })
+  if (res.status === 403) return { problem: `SearXNG at ${base} refuses JSON (turn on json under search.formats in its settings.yml)` }
+  if (!res.ok) return { problem: `SearXNG at ${base} answered HTTP ${res.status}` }
+  const body = (await res.json().catch(() => null)) as { results?: { title?: string; url?: string; content?: string }[] } | null
+  if (!Array.isArray(body?.results)) return { problem: `SearXNG at ${base} did not answer with results` }
+  return { results: body.results.filter((r) => r.url).map((r) => ({ title: text(r.title ?? r.url!), url: r.url!, snippet: text(r.content ?? '') })) }
+}
+
+/** The Brave Search API (TL-44). */
+async function brave(key: string, query: string, fetcher: typeof fetch): Promise<Outcome> {
+  const url = `https://api.search.brave.com/res/v1/web/search?${new URLSearchParams({ q: query, count: String(MAX_RESULTS) })}`
+  const res = await fetcher(url, {
+    headers: { accept: 'application/json', 'x-subscription-token': key },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  })
+  if (res.status === 401 || res.status === 403) return { problem: 'Brave Search refused the key' }
+  if (res.status === 429) return { problem: "Brave Search's limit for the key is used up for now" }
+  if (!res.ok) return { problem: `Brave Search answered HTTP ${res.status}` }
+  const body = (await res.json().catch(() => null)) as { web?: { results?: { title?: string; url?: string; description?: string }[] } } | null
+  const results = body?.web?.results ?? []
+  return { results: results.filter((r) => r.url).map((r) => ({ title: text(r.title ?? r.url!), url: r.url!, snippet: text(r.description ?? '') })) }
+}
+
+const tried = (o: Promise<Outcome>): Promise<Outcome> =>
+  o.catch((e) => ({ problem: e instanceof Error ? e.message : String(e) }))
+
+/**
+ * The configured backend, then DuckDuckGo when it fails (TL-44). Never throws:
+ * a model that cannot search can still answer from what it knows (TL-29).
+ */
+export async function webSearch(query: string, fetcher: typeof fetch = fetch, backend?: SearchBackend): Promise<string> {
+  const problems: string[] = []
+  if (backend) {
+    const first = await tried('searxng' in backend ? searxng(backend.searxng, query, fetcher) : brave(backend.brave, query, fetcher))
+    if ('results' in first) return formatResults(query, first.results.slice(0, MAX_RESULTS))
+    problems.push(first.problem)
   }
+  const ddg = await tried(duckDuckGo(query, fetcher))
+  if ('results' in ddg) return formatResults(query, ddg.results)
+  problems.push(ddg.problem)
+  return `web search is unavailable (${problems.join('; ')}); answer without it`
 }
 
 const FETCH_TIMEOUT_MS = 15_000

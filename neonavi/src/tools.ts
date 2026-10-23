@@ -4,7 +4,7 @@ import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/pr
 import { exec } from 'node:child_process'
 import { basename, dirname, join, relative, resolve, isAbsolute, sep } from 'node:path'
 import { promisify } from 'node:util'
-import { fetchUrl, webSearch } from './web.ts'
+import { fetchUrl, webSearch, type SearchBackend } from './web.ts'
 import { makeSearch } from './search.ts'
 import { diffLines, hasUnseen, summarize, type FileChange } from './diff.ts'
 import { CONTEXT_FILE } from './context.ts'
@@ -47,9 +47,11 @@ export interface ToolOptions {
   ripgrep?: boolean
   /** false removes write_file and edit_file (TL-40). */
   write?: boolean
+  /** Asked before DuckDuckGo (TL-44). */
+  search?: SearchBackend
 }
 
-export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.cwd(), ripgrep, write = true }: ToolOptions = {}) {
+export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.cwd(), ripgrep, write = true, search: backend }: ToolOptions = {}) {
   const search = makeSearch({ cwd, ripgrep })
   const at = (path: string) => resolve(cwd, path)
 
@@ -235,7 +237,7 @@ export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.
         'Search the web. Returns numbered results with title, URL and snippet. ' +
         'Use it for anything that may have changed since your training.',
       inputSchema: z.object({ query: z.string() }),
-      execute: async ({ query }) => clip(await webSearch(query)),
+      execute: async ({ query }) => clip(await webSearch(query, globalThis.fetch, backend)),
     }),
 
     fetch_url: tool({
