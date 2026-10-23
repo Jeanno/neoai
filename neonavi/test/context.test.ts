@@ -31,6 +31,15 @@ test('collects the package file and the repo root file, root first', async () =>
   assert.ok(out.indexOf('ROOT:') < out.indexOf('PKG:'))
 })
 
+// CTX-3
+test('each file is headed by its absolute path, with a blank line between them', async () => {
+  const root = await monorepo()
+  assert.equal(
+    await collectContext(join(root, 'pkg')),
+    `# ${join(root, 'NAVI.md')}\nROOT: a monorepo of two packages.\n\n# ${join(root, 'pkg', 'NAVI.md')}\nPKG: the cli.`,
+  )
+})
+
 // CTX-2
 test('stops climbing at the repo root', async () => {
   // A NAVI.md above the repo belongs to a different project.

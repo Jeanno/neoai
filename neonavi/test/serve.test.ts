@@ -217,3 +217,10 @@ test('keys exported in the shell but not saved are named at install', async () =
   assert.deepEqual(keysOnlyInEnv({ keys: { anthropic: 'saved' } }, env), ['OPENAI_API_KEY'])
   assert.deepEqual(keysOnlyInEnv({}, {}), [])
 })
+
+// SRV-1: only this computer can reach it.
+test('it listens on loopback only', async () => {
+  const s = await serving([ok])
+  assert.match(s.base, /^http:\/\/127\.0\.0\.1:\d+$/)
+  s.close()
+})

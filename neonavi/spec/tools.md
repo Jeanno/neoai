@@ -135,5 +135,4 @@ A model call that decides whether a shell command needs the user's approval.
 ## Open
 
 - A keyed search backend (Brave, Tavily, SearXNG) when DuckDuckGo blocks.
-- A fetch tool to read a result's page, not just its snippet.
 - Per-command allowlist to skip approval.

@@ -105,7 +105,7 @@ async function fakeModel() {
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`
-  return { config: { model: 'box:fake-1', custom: { box: { baseURL: url } } }, close: () => server.close() }
+  return { config: { model: 'box:fake-1', custom: { box: { baseURL: url } } }, steps: () => calls, close: () => server.close() }
 }
 
 // CLI-4, CLI-10, CLI-11, CLI-13, CLI-15, MOD-20
@@ -153,10 +153,20 @@ async function naviOnTerminal(args: string[], lines: string[], config: object) {
     }
   })
   const code = await new Promise<number>((resolve) => child.on('close', (c) => resolve(c ?? -1)))
-  return { code, shown: shown.replace(/\x1b\[[0-9;]*m/g, ''), home }
+  return { code, raw: shown, shown: shown.replace(/\x1b\[[0-9;]*m/g, ''), home }
 }
 
-// CLI-3, CLI-6, CLI-7, CLI-20: a session on a terminal: a turn, a blank line,
+// CLI-9: a step is one model response; the turn stops after --max-steps of them.
+test('--max-steps bounds how many times the model is asked in one turn', async () => {
+  const fake = await fakeModel()
+  const r = await navi(['-p', 'what is here', '--max-steps', '1'], { config: fake.config })
+  fake.close()
+  assert.equal(fake.steps(), 1)
+  assert.match(r.stderr, /list_dir/)
+  assert.doesNotMatch(r.stdout, /It holds/)
+})
+
+// CLI-3, CLI-6, CLI-7, CLI-18, CLI-20: a session on a terminal: a turn, a blank line,
 // the model shown and switched, then leaving.
 test('on a terminal navi keeps asking until told to leave', { skip: process.platform !== 'darwin' }, async () => {
   const fake = await fakeModel()
@@ -171,5 +181,7 @@ test('on a terminal navi keeps asking until told to leave', { skip: process.plat
   assert.match(r.shown, /\/model\r?\r\n\r\n[^\n]*\r\nsaved chain: fake-1 on box\r\nthis session: nope on box\r\n/)
   // The blank line is ignored and QUIT leaves: one prompt per line sent.
   assert.match(r.shown, /usage: \/attach <file>/)
+  // The prompt is gray with bright text, and what is typed after it bold until the line ends.
+  assert.match(r.raw, /\x1b\[100;97mnavi>\x1b\[0m \x1b\[1m[^\n]*what is here\r\r?\n(\x1b\[0m)?/)
   assert.equal(r.shown.split('navi>').length - 1, 7)
 })

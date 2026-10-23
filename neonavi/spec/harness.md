@@ -30,9 +30,8 @@ jack-ins are others (`jackins/NAVI.md`).
 - HAR-6: The CLI is built on the library, with its behaviour in `cli.md`
   unchanged.
 
-## Open
+## Attachments
 
-- Serving the harness over MCP or HTTP for jack-ins that cannot import it.
 - HAR-7: A turn may carry attachments, files read from disk with the prompt
   (`attach()` reads one). An image (PNG, JPEG, GIF, WebP) is sent to the model
   as an image, scaled down first so its longer side is at most 1600 pixels
@@ -48,3 +47,9 @@ jack-ins are others (`jackins/NAVI.md`).
 - HAR-8: Attachments are kept in the history like the prompt they came with.
   For the history's size (SES-8) an image counts as 1,000 tokens, however
   many bytes it holds.
+
+## Open
+
+- Jack-ins that cannot import the harness reach the model chain through
+  `navi serve` (`serve.md`) or hand navi a task through `navi mcp`
+  (`mcp.md`); a full harness session over HTTP is not offered yet.

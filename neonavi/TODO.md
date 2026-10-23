@@ -19,9 +19,10 @@ add the requirement there first.
 - [x] The installer leaves `navi` runnable: it already warns when
       `~/.local/bin` is not on PATH; navi had simply never been installed here.
 - [x] Cite spec ids from the existing tests so every requirement is traceable.
-- [ ] Tests for the 20 requirements no test checks yet: CLI-2 to CLI-7,
-      CLI-9 to CLI-11, CLI-13 to CLI-15, CLI-18, CTX-3, HAR-6, MOD-16, PRM-6,
-      PRM-7, RAY-1, RAY-5, RAY-8, SET-3, TL-1, TL-17, TL-25. (`test/*.test.ts`)
+- [x] Tests for the requirements no test checked: the CLI end to end (on a
+      pipe, and on a real terminal through script(1)), tool limits, local
+      discovery, serve and mcp. Left: HAR-6 (structural) and RAY-1, RAY-5,
+      RAY-8, which need Raycast running.
 
 ### 2. Daily driver: the agent I reach for first
 
