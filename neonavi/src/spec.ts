@@ -1,4 +1,4 @@
-import { probe, providerById, type AutoOptions } from 'neorouter'
+import { diagnose, probe, providerById, type AutoOptions } from 'neorouter'
 
 export interface Entry {
   /** 'remote' is a provider or custom endpoint; prompts leave the machine. */
@@ -70,31 +70,53 @@ export function optionsFor(entry: Entry): Chosen['options'] {
   return { think: false, model: entry.id, provider: entry.provider }
 }
 
+/** A link that did not answer, and why (MOD-21). */
+export interface Failure {
+  entry: Entry
+  index: number
+  why: string
+}
+
 /**
  * Walks the chain and returns the first link that actually resolves (MOD-5).
  * A link fails when its key is missing, its server is unreachable, or its
  * model is not on offer — and then the next one is tried, which is what makes
  * the list a fallback chain rather than a preference. `launch: false` starts
- * no local runtime (MOD-18).
+ * no local runtime (MOD-18). Every link tried before is in `failures`, with
+ * why it failed (MOD-21).
  */
-export async function resolveChain(chain: Entry[], { launch = true }: { launch?: boolean } = {}): Promise<Chosen | null> {
+export async function walkChain(
+  chain: Entry[],
+  { launch = true }: { launch?: boolean } = {},
+): Promise<{ chosen: Chosen | null; failures: Failure[] }> {
+  const failures: Failure[] = []
   for (const [index, entry] of chain.entries()) {
     const options = optionsFor(entry)
     // Without launching, a local link looks only at running servers (MOD-18).
     // The options handed back stay the link's own, so the model built from
     // them may still launch when it is used.
-    const got = await probe(!launch && options.scope === 'local' ? { ...options, scope: 'running' } : options)
-    if (got)
-      return {
-        entry,
-        index,
-        options,
-        contextWindow: got.contextWindow,
-        backend: got.backend,
-        modelId: got.modelId,
-        local: got.local,
-        ...(got.replaced && { replaced: got.replaced }),
-      }
+    const probed = !launch && options.scope === 'local' ? { ...options, scope: 'running' as const } : options
+    const got = await probe(probed)
+    if (!got) {
+      failures.push({ entry, index, why: (await diagnose(probed)) ?? 'it did not answer' })
+      continue
+    }
+    const chosen: Chosen = {
+      entry,
+      index,
+      options,
+      contextWindow: got.contextWindow,
+      backend: got.backend,
+      modelId: got.modelId,
+      local: got.local,
+      ...(got.replaced && { replaced: got.replaced }),
+    }
+    return { chosen, failures }
   }
-  return null
+  return { chosen: null, failures }
+}
+
+/** walkChain without the reasons. */
+export async function resolveChain(chain: Entry[], options: { launch?: boolean } = {}): Promise<Chosen | null> {
+  return (await walkChain(chain, options)).chosen
 }

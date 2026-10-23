@@ -2,9 +2,9 @@ import './quiet'
 import { mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { parseModelSpec, resolveChain, type Chosen } from 'neonavi/spec'
+import { parseModelSpec, walkChain, type Chosen } from 'neonavi/spec'
 import { auto, readConfig, reset } from 'neorouter'
-import { modelLabel } from 'neonavi/setup'
+import { describe, labelFor, links, modelLabel, type LinkFailure } from 'neonavi/setup'
 
 export interface Navi {
   chosen: Chosen
@@ -47,9 +47,19 @@ export function forgetNavi(): void {
   reset()
 }
 
+/** Why the last resolution found no model: one line per link (MOD-21, RAY-7). */
+let lastFailures: LinkFailure[] = []
+
+export function whyNoModel(): string {
+  return describe(null, undefined, { failures: lastFailures }).split('\n').slice(1).join('\n')
+}
+
 async function resolve(): Promise<Navi | null> {
   const config = await readConfig()
-  const chosen = await resolveChain(parseModelSpec(config.model, Object.keys(config.custom ?? {})))
+  const custom = Object.keys(config.custom ?? {})
+  const parts = links(config.model)
+  const { chosen, failures } = await walkChain(parseModelSpec(parts, custom))
+  lastFailures = failures.map((f) => ({ index: f.index, label: labelFor(parts[f.index], custom), why: f.why }))
   if (!chosen) return null
   return { chosen, model: auto(chosen.options), label: modelLabel(chosen), local: chosen.local }
 }

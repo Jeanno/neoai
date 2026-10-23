@@ -2,20 +2,22 @@ import { Action, ActionPanel, Detail, Icon } from '@raycast/api'
 import { SetUp } from './set-up-navi'
 import { NEXT_STEP } from 'neonavi/setup'
 import { NO_MODEL_TITLE } from './lib/offer-set-up'
+import { whyNoModel } from './lib/model'
 import type { Approval } from './lib/approval'
 
-// The core's next step (SET-27), then how to take it here (RAY-7).
-const NO_MODEL = `## ${NO_MODEL_TITLE}
+// The core's next step (SET-27), why each link failed (MOD-21), then how to
+// take the step here (RAY-7).
+const noModel = (why: string) => `## ${NO_MODEL_TITLE}
 
 ${NEXT_STEP}
-
+${why && `\n${why}\n`}
 Press Return to open **Set Up Navi**.`
 
 /** RAY-7: what every view shows when no model answers, with Set Up Navi first. */
 export function NoModel({ onDone }: { onDone: () => void }) {
   return (
     <Detail
-      markdown={NO_MODEL}
+      markdown={noModel(whyNoModel())}
       actions={
         <ActionPanel>
           <SetUpAction onDone={onDone} />

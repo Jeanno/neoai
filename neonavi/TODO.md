@@ -14,9 +14,8 @@ add the requirement there first.
       no model.) (`spec/models.md` MOD-19, `spec/setup.md` SET-1)
 - [x] A custom endpoint on this machine (Darkbloom on its Tailscale address)
       is described as on this computer, not REMOTE. (`spec/models.md` MOD-20)
-- [ ] Say why a link failed: unreachable, key refused, model gone, with the
-      link named, in `navi`, `navi setup --check` and Raycast.
-      (`spec/models.md`, `spec/setup.md`)
+- [x] Say why a link failed: unreachable, key refused, model gone, with the
+      link named, in `navi`, `navi setup --check` and Raycast. (MOD-21)
 - [ ] The installer leaves `navi` runnable: warn when `~/.local/bin` is not
       on PATH and print the line to add. (`spec/setup.md`)
 - [ ] Cite spec ids from the existing tests so every requirement is traceable.

@@ -26,7 +26,8 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
   slots, then Providers, Local and Custom, with keys entered in a password
   field and endpoints in a form.
 - RAY-7: When no model answers, every command says so and offers Set Up Navi
-  as its primary action, instead of an error naming the chain.
+  as its primary action, instead of an error naming the chain. Below that,
+  each link is listed with why it failed (MOD-21).
 - RAY-8: Model choices are saved to `~/.neoai/config.json`, shared with the
   CLI. The extension has no model preference of its own.
 

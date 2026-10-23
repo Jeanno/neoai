@@ -15,6 +15,8 @@ JSON by hand. Everything it writes goes to `~/.neoai/config.json`.
 - SET-1: Setup first resolves the configured chain (MOD-5) and reports either
   the model that would answer, with REMOTE when prompts leave the machine, or
   that nothing answers. A pin replaced under MOD-19 is named as gone.
+  Each link that failed before it, or every link when none answers, is
+  listed with why (MOD-21).
 - SET-2: `navi setup --check` only reports: it exits 0 when a model resolves,
   and otherwise prints how to get one (the next step of SET-27, then naming
   `navi setup`) and exits 1. It never asks anything.

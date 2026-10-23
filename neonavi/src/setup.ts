@@ -276,7 +276,7 @@ export async function runSetup(d: SetupDeps, { check = false } = {}): Promise<nu
   let status = await d.core.status({ launch: check })
   const code = () => (status.answering ? 0 : 1)
   if (check) {
-    d.print(describe(status.answering, bold))
+    d.print(describe(status.answering, bold, status))
     if (!status.answering) d.print(CLI_NEXT_STEP)
     return code()
   }

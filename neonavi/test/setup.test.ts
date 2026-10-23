@@ -19,7 +19,7 @@ import {
   type CoreDeps,
 } from '../src/setup-core.ts'
 import { makeLine } from '../src/approve.ts'
-import { optionsFor, type Chosen, type Entry } from '../src/spec.ts'
+import { optionsFor, type Chosen, type Entry, type Failure } from '../src/spec.ts'
 import type { Verdict } from 'neorouter'
 
 /** A scripted answer: literal text, or computed from what has been printed so far. */
@@ -94,11 +94,13 @@ function fake(answers: Answer[], w: World = {}) {
     env,
     resolve: async (chain, { launch }) => {
       resolves.push(launch)
-      for (const [index, e] of chain.entries()) {
-        const got = resolveLink(e, launch)
-        if (got) return { ...got, index }
+      const failures: Failure[] = []
+      for (const [index, entry] of chain.entries()) {
+        const got = resolveLink(entry, launch)
+        if (got) return { chosen: { ...got, index }, failures }
+        failures.push({ entry, index, why: 'it is not there' })
       }
-      return null
+      return { chosen: null, failures }
     },
     localModels: async () => local.map((id) => ({ backend: 'lmstudio', id })),
     checkKey: async () => w.key ?? 'ok',
@@ -170,6 +172,19 @@ test('--check exits 1 with the next step when nothing answers', async () => {
   assert.match(f.out(), /navi setup/)
   assert.ok(f.out().includes(CLI_NEXT_STEP))
   assert.equal(f.saved.length, 0)
+})
+
+// SET-1, MOD-21
+test('--check says why each link failed', async () => {
+  const f = fake(['1'], { config: { ...KEYED, model: ['local:qwen3-4b', 'anthropic:claude-sonnet-5-5'] } })
+  assert.equal(await runSetup(f.d, { check: true }), 0)
+  assert.match(f.out(), /the fallback \(REMOTE[^\n]*\n- The primary, qwen3-4b on this computer: it is not there\./)
+})
+
+test('--check lists every link when nothing answers', async () => {
+  const f = fake(['1'], { config: { model: ['local:qwen3-4b', 'anthropic:claude-sonnet-5-5'] } })
+  assert.equal(await runSetup(f.d, { check: true }), 1)
+  assert.match(f.out(), /- The primary, qwen3-4b on this computer: it is not there\.\n- The fallback, claude-sonnet-5-5 on Anthropic: it is not there\./)
 })
 
 // SET-27: the core's own next step names no command.
@@ -403,7 +418,7 @@ test('a local model on two servers is one choice', async () => {
     load: async () => ({}),
     save: async () => {},
     env: {},
-    resolve: async () => null,
+    resolve: async () => ({ chosen: null, failures: [] }),
     localModels: async () => [
       { backend: 'lmstudio', id: 'a' },
       { backend: 'ollama', id: 'a' },

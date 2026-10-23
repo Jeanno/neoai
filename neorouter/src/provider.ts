@@ -8,7 +8,7 @@ import type {
   LanguageModelV2Usage,
 } from '@ai-sdk/provider'
 import type { Resolved } from './resolve.ts'
-import { probeBackend, resolveBackend, type Scope } from './resolve.ts'
+import { diagnoseBackend, probeBackend, resolveBackend, type Scope } from './resolve.ts'
 import { shutdown } from './launch.ts'
 import { serialize } from './hosted.ts'
 import type { Prefer, Server } from './types.ts'
@@ -458,6 +458,11 @@ export function auto(options: AutoOptions = {}): LanguageModelV2 {
  */
 export function probe(options: AutoOptions = {}) {
   return probeBackend(options.prefer, options.remote, options.model, options.scope, options.provider)
+}
+
+/** Why probe(options) is null, or null when it resolves (MOD-21). */
+export function diagnose(options: AutoOptions = {}) {
+  return diagnoseBackend(options.prefer, options.remote, options.model, options.scope, options.provider)
 }
 
 auto.shutdown = shutdown

@@ -57,6 +57,13 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
   resolves, and which model was pinned and which answers is said wherever
   the answering model is shown. With several models listed, or at a
   provider, MOD-7 holds: the link fails.
+- MOD-21: A failed link says why, in words naming it: no key for the
+  provider, no endpoint by that name, the server not reached (with its
+  address), the key refused, the model not served (with what is, when the
+  list is short), the model not installed, or no local server running or
+  installed. `navi` prints each failed link's reason when no link answers,
+  and on stderr when a later link answers instead; setup reports them
+  (SET-1) and Raycast shows them where it says no model answers (RAY-7).
 - MOD-8: A local link fails when no server is reachable or launchable, or the
   pinned id is not installed.
 - MOD-18: A local link can be probed without launching anything: it then

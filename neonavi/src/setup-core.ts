@@ -15,7 +15,7 @@ import {
   type Listing,
   type Verdict,
 } from 'neorouter'
-import { parseModelSpec, resolveChain, type Chosen, type Entry } from './spec.ts'
+import { parseModelSpec, walkChain, type Chosen, type Entry, type Failure as ChainFailure } from './spec.ts'
 
 /**
  * Setup's one core (SET-23): every choice, check and write. Front ends — the
@@ -49,7 +49,7 @@ export interface CoreDeps {
    * Resolves a chain afresh: what was missing a moment ago may be running now.
    * With `launch: false` no local runtime is started (MOD-18).
    */
-  resolve: (chain: Entry[], o: { launch: boolean }) => Promise<Chosen | null>
+  resolve: (chain: Entry[], o: { launch: boolean }) => Promise<{ chosen: Chosen | null; failures: ChainFailure[] }>
   /** The models on servers already running; never launches. */
   localModels: (signal?: AbortSignal) => Promise<{ backend: string; id: string }[]>
   checkKey: (provider: string, key: string, signal?: AbortSignal) => Promise<Verdict>
@@ -64,6 +64,13 @@ export interface Answering extends Chosen {
   label: string
 }
 
+/** A saved link that did not answer, in words (MOD-21). */
+export interface LinkFailure {
+  index: number
+  label: string
+  why: string
+}
+
 /** One saved link, in words. */
 export interface Link {
   value: string
@@ -76,6 +83,8 @@ export interface Status {
   /** Links after the fallback, kept as they are (SET-17). */
   later: Link[]
   answering: Answering | null
+  /** Each link tried before the one answering, or every link when none does, with why (MOD-21). */
+  failures: LinkFailure[]
   /**
    * True when local links were looked for only on servers already running
    * (SET-24), so an installed runtime that is not running counted as nothing.
@@ -178,27 +187,40 @@ export function modelLabel(chosen: { backend: string; modelId: string; local: bo
 
 /** What one link means, in words. */
 export function labelFor(part: string, custom: string[] = []): string {
-  const [e] = parseModelSpec(part, custom)
+  return entryLabel(parseModelSpec(part, custom)[0])
+}
+
+/** One parsed link, in words. */
+export function entryLabel(e: Entry): string {
   if (e.where === 'remote') return e.id ? `${e.id} on ${nameOf(e.provider!)}` : 'any free OpenRouter model'
   if (e.id) return `${e.id} on this computer`
   return e.prefer === 'fast' ? 'any local model (fastest)' : 'the largest local model'
 }
 
+/** One link, as a slot: "The primary", "The fallback", "Link 3". */
+function slotName(index: number): string {
+  return ['the primary', 'the fallback'][index] ?? `link ${index + 1}`
+}
+
+const capital = (s: string) => s[0].toUpperCase() + s.slice(1)
+
 /**
- * SET-1, in one sentence. `strong` marks the model's name for a front end that
- * can. With `onlyRunning` (SET-24), nothing found means nothing running.
+ * SET-1: one sentence, then a line for each link that failed, with why
+ * (MOD-21). `strong` marks the model's name for a front end that can. With
+ * `onlyRunning` (SET-24), nothing found means nothing running.
  */
 export function describe(
   answering: Answering | null,
   strong = (s: string) => s,
-  { onlyRunning = false }: { onlyRunning?: boolean } = {},
+  { onlyRunning = false, failures = [] }: { onlyRunning?: boolean; failures?: LinkFailure[] } = {},
 ): string {
-  if (!answering) return onlyRunning ? "navi can't find a running model to answer with." : "navi can't find a model to answer with."
-  const slot = ['the primary', 'the fallback'][answering.index] ?? `link ${answering.index + 1}`
+  const failed = failures.map((f) => `\n- ${capital(slotName(f.index))}, ${f.label}: ${f.why}.`).join('')
+  if (!answering)
+    return (onlyRunning ? "navi can't find a running model to answer with." : "navi can't find a model to answer with.") + failed
   const where = answering.local ? 'on this computer' : 'REMOTE: prompts leave this computer'
   // A pin replaced under MOD-19 is named, so the swap is never silent.
   const gone = answering.replaced ? ` The pinned ${answering.replaced} is gone; it serves only this model now.` : ''
-  return `navi answers with ${strong(answering.label)}, ${slot} (${where}).${gone}`
+  return `navi answers with ${strong(answering.label)}, ${slotName(answering.index)} (${where}).${gone}${failed}`
 }
 
 /**
@@ -287,12 +309,14 @@ export function setupCore(d: CoreDeps) {
     const custom = customNames(config)
     const parts = links(config.model)
     const link = (value: string): Link => ({ value, label: labelFor(value, custom) })
-    const chosen = await cancellable(d.resolve(parseModelSpec(parts, custom), { launch }), signal)
+    const chain = parseModelSpec(parts, custom)
+    const { chosen, failures } = await cancellable(d.resolve(chain, { launch }), signal)
     return {
       primary: link(parts[0]),
       fallback: parts[1] ? link(parts[1]) : null,
       later: parts.slice(2).map(link),
       answering: answeringFor(chosen),
+      failures: failures.map((f) => ({ index: f.index, label: labelFor(parts[f.index], custom), why: f.why })),
       onlyRunning: !launch,
     }
   }
@@ -391,7 +415,7 @@ export function setupCore(d: CoreDeps) {
      * starts an installed runtime that is not running.
      */
     async recheckLocal({ signal }: Cancel = {}): Promise<Answering | null> {
-      return answeringFor(await cancellable(d.resolve([{ where: 'local', prefer: 'fast' }], { launch: true }), signal))
+      return answeringFor((await cancellable(d.resolve([{ where: 'local', prefer: 'fast' }], { launch: true }), signal)).chosen)
     },
 
     /** Saved custom endpoints (SET-22). */
@@ -523,7 +547,7 @@ export function realDeps(dir = configDir()): CoreDeps {
     resolve: async (chain, { launch }) => {
       // Failures are memoised too, and setup asks again after things change.
       reset()
-      return resolveChain(chain, { launch })
+      return walkChain(chain, { launch })
     },
     localModels: (signal) => localModels(signal),
     checkKey: (provider, key, signal) => checkKey(provider, key, fetch, signal),

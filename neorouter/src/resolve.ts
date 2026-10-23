@@ -4,6 +4,7 @@ import { reachableServers } from './discover.ts'
 import { rank, contextWindow, evaluate, pick } from './select.ts'
 import { launchable, launch } from './launch.ts'
 import { hostedServers, hostedModels } from './hosted.ts'
+import { providerById } from './providers.ts'
 import { chooseListed, fetchModels, onThisMachine, remoteServer } from './remote.ts'
 
 export interface Resolved extends Resolution {
@@ -88,9 +89,9 @@ async function resolveOnce(
 ): Promise<Resolved> {
   // A provider or custom endpoint is its own scope (MOD-6): that server or nothing.
   if (provider) {
-    const got = await remoteResolution(provider, modelId)
-    if (got) return got
-    throw new Error(`neorouter: ${provider}${modelId ? ` has no ${modelId}` : ''}, or has no key, or cannot be reached.`)
+    const got = await remoteAttempt(provider, modelId)
+    if ('failed' in got) throw new Error(`neorouter: ${got.failed}`)
+    return got
   }
   const rejected: { id: string; why: string }[] = []
   // Debug escape hatch for exercising a rung that would otherwise never win.
@@ -100,16 +101,21 @@ async function resolveOnce(
 
   const tryReachable = async (): Promise<Resolved | null> => {
     reachable = only && only !== 'reachable' ? [] : await reachableServers()
+    if (reachable.length) anyServer = true
     const r1 = await fromServers(reachable, 'reachable', prefer, modelId)
     if (r1?.resolved) return r1.resolved
     if (r1) rejected.push(...r1.all.map((c) => ({ id: c.id, why: c.reject! })))
     return null
   }
 
+  // Whether any local server was found or started, for saying why (MOD-21).
+  let anyServer = false
+
   const tryLaunched = async (): Promise<Resolved | null> => {
     for (const l of only && only !== 'launched' ? [] : await launchable(reachable)) {
       const started = await launch(l, l.files[0])
       if (!started) continue
+      anyServer = true
       const r2 = await fromServers([started.server], 'launched', prefer, modelId)
       if (r2?.resolved) return { ...r2.resolved, pid: started.pid, coldStartMs: started.coldStartMs }
     }
@@ -129,27 +135,52 @@ async function resolveOnce(
     if (got) return got
   }
 
-  throw new Error(
-    'neorouter: nothing to talk to — no local server, no installed runtime, no network.',
-  )
+  throw new Error(`neorouter: ${localFailure(scope, anyServer, rejected, modelId)}`)
+}
+
+/** Why a link could not be resolved, in words naming it (MOD-21). */
+export interface Failed {
+  failed: string
+}
+
+/** A short list says what is on offer; a catalogue is too long to read out. */
+function offered(ids: string[]): string {
+  if (!ids.length) return 'it lists no models'
+  return ids.length <= 3 ? `it serves ${ids.join(', ')}` : `it lists ${ids.length} others`
 }
 
 /**
- * A provider or custom endpoint (MOD-7): it fails without a key, without an
- * answer, or when the pinned model is not in its live list. Unpinned, only
- * OpenRouter has a pick: its roomiest free model (MOD-9).
+ * A provider or custom endpoint, scoped to that server (MOD-6): its pinned
+ * model, or OpenRouter's roomiest free one (MOD-9), or why not (MOD-21).
  */
-export async function remoteResolution(
+export async function remoteAttempt(
   name: string,
   modelId?: string,
   rejected: { id: string; why: string }[] = [],
-): Promise<Resolved | null> {
+): Promise<Resolved | Failed> {
   const server = await remoteServer(name)
-  if (!server) return null
+  if (!server) {
+    const provider = providerById(name)
+    return { failed: provider ? `no key for ${provider.name}` : `no custom endpoint named ${name}` }
+  }
+  const label = providerById(name)?.name ?? name
   const listing = await fetchModels(server)
-  if (!listing.ok) return null
+  if (!listing.ok)
+    return {
+      failed:
+        listing.why === 'rejected'
+          ? `${label} refused the key`
+          : listing.message.startsWith('could not reach')
+            ? `${label} could not be reached at ${server.baseURL}`
+            : `${label}: ${listing.message}`,
+    }
   const chosen = chooseListed(listing.models, modelId, { name, custom: server.custom })
-  if (!chosen) return null
+  if (!chosen)
+    return {
+      failed: modelId
+        ? `${label} does not serve ${modelId}; ${offered(listing.models.map((m) => m.id))}`
+        : `${label} offers no free chat model`,
+    }
   const { model, replaced } = chosen
   return {
     rung: 'hosted',
@@ -168,6 +199,35 @@ export async function remoteResolution(
     server,
     ...(replaced && { replaced }),
   }
+}
+
+/** remoteAttempt for a rung that falls through: null instead of why. */
+export async function remoteResolution(
+  name: string,
+  modelId?: string,
+  rejected: { id: string; why: string }[] = [],
+): Promise<Resolved | null> {
+  const got = await remoteAttempt(name, modelId, rejected)
+  return 'failed' in got ? null : got
+}
+
+/** Why no local model answered (MOD-21). */
+export function localFailure(
+  scope: Scope | undefined,
+  anyServer: boolean,
+  rejected: { id: string; why: string }[],
+  modelId?: string,
+): string {
+  if (scope !== 'local' && scope !== 'running')
+    return 'nothing to talk to: no local server, no installed runtime, no network'
+  if (!anyServer)
+    return scope === 'running' ? 'no local model server is running' : 'no local model server is running or installed'
+  if (modelId) {
+    const found = rejected.find((r) => r.id === modelId)
+    return found ? `${modelId} is ${found.why}` : `${modelId} is not installed on this computer`
+  }
+  const why = [...new Set(rejected.map((r) => r.why))]
+  return why.length ? `no local model is usable (${why.join('; ')})` : 'no local model is installed'
 }
 
 async function keylessResolution(
@@ -239,6 +299,23 @@ export async function probeBackend(
   provider?: string,
 ): Promise<Resolved | null> {
   return resolveBackend(prefer, remote, modelId, scope, provider).catch(() => null)
+}
+
+/**
+ * Why a probe of the same arguments came back null, or null when it resolves
+ * (MOD-21). Memoised with resolution, so it costs nothing after the probe.
+ */
+export async function diagnoseBackend(
+  prefer?: Prefer,
+  remote = false,
+  modelId?: string,
+  scope?: Scope,
+  provider?: string,
+): Promise<string | null> {
+  return resolveBackend(prefer, remote, modelId, scope, provider).then(
+    () => null,
+    (e) => (e instanceof Error ? e.message : String(e)).replace(/^neorouter: /, ''),
+  )
 }
 
 /**

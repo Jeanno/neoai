@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkKey, chooseListed, fetchModels, modelHeaders, onThisMachine, parseModels, remoteServer, roomiestFree } from '../src/remote.ts'
 import { PROVIDERS } from '../src/providers.ts'
+import { localFailure } from '../src/resolve.ts'
 import { customEndpoints, readKey } from '../src/config.ts'
 
 async function dirWith(config: unknown) {
@@ -185,4 +186,13 @@ test('an address of this computer is told from one elsewhere', () => {
     assert.equal(onThisMachine(url, nics), true, url)
   for (const url of ['http://100.64.0.8:8000/v1', 'https://api.example.com/v1', 'http://homelab.local:8000', 'not a url'])
     assert.equal(onThisMachine(url, nics), false, url)
+})
+
+// MOD-21
+test('a failed local link says why', () => {
+  assert.equal(localFailure('running', false, []), 'no local model server is running')
+  assert.equal(localFailure('local', false, []), 'no local model server is running or installed')
+  assert.equal(localFailure('local', true, [], 'qwen3-4b'), 'qwen3-4b is not installed on this computer')
+  assert.equal(localFailure('local', true, [{ id: 'embed', why: 'not a chat model' }], 'embed'), 'embed is not a chat model')
+  assert.equal(localFailure('local', true, [{ id: 'embed', why: 'not a chat model' }]), 'no local model is usable (not a chat model)')
 })

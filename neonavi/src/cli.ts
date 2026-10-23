@@ -2,13 +2,14 @@
 import { auto } from 'neorouter'
 import { homedir } from 'node:os'
 import { promptFrom, startsFresh } from './args.ts'
-import { parseModelSpec, resolveChain } from './spec.ts'
+import { parseModelSpec, walkChain } from './spec.ts'
 import { makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
 import { loadSession, saveSession, sessionFile } from './session.ts'
 import { createHarness, DEFAULT_STEPS, type HarnessEvent } from './harness.ts'
 import { readConfig } from 'neorouter'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
+import { entryLabel } from './setup-core.ts'
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
@@ -80,16 +81,17 @@ async function main() {
   // --model overrides the config file for one run; both take the same values.
   const config = await readConfig()
   const chain = parseModelSpec(model.value ?? config.model, Object.keys(config.custom ?? {}))
-  const chosen = await resolveChain(chain)
+  const { chosen, failures } = await walkChain(chain)
+  // Why each earlier link did not answer (MOD-21): on stderr, so pipes still
+  // get exactly the answer.
+  const failed = failures.map((f) => `${['primary', 'fallback'][f.index] ?? `link ${f.index + 1}`} (${entryLabel(f.entry)}): ${f.why}`)
   if (!chosen) {
-    console.error(
-      `nothing in the model chain could be resolved: ${chain
-        .map((e) => (e.provider ? `${e.provider}:${e.id ?? 'free'}` : (e.id ?? e.where)))
-        .join(' → ')}`,
-    )
+    console.error('navi has no model to answer with:')
+    for (const line of failed) console.error(`  ${line}`)
     console.error(CLI_NEXT_STEP)
     return 1
   }
+  for (const line of failed) console.error(dim(`· ${line}`))
 
   const cwd = process.cwd()
   const file = sessionFile(cwd, homedir())
