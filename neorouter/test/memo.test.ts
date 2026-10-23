@@ -21,7 +21,7 @@ test('a failed link is looked at again after a while; a resolved one is kept', a
   const { probeBackend, FAILURE_TTL } = await import('../src/resolve.ts')
   mock.timers.enable({ apis: ['setTimeout'] })
   try {
-    const probe = () => probeBackend(undefined, true, 'm1', 'custom', 'box')
+    const probe = () => probeBackend(undefined, true, 'm1', 'keyed', 'box')
     assert.equal(await probe(), null)
     serving = ['m1']
     assert.equal(await probe(), null, 'remembered for now')
