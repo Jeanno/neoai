@@ -96,7 +96,7 @@ test('/attach takes a path as typed, quoted or dropped with escapes', () => {
   assert.deepEqual(commandFrom('/attach ~/a.png'), { name: 'attach', path: '~/a.png' })
   assert.deepEqual(commandFrom("/attach '/Users/me/My Photo.png'"), { name: 'attach', path: '/Users/me/My Photo.png' })
   assert.equal(unshell('/Users/me/My\\ Photo\\ \\(1\\).png'), '/Users/me/My Photo (1).png')
-  assert.equal(commandFrom('/attach '), null)
+  assert.deepEqual(commandFrom('/attach '), { name: 'attach', path: '' })
 })
 
 // HAR-8, RAY-11: a stored turn is shown as its prompt and the names of what came with it.
