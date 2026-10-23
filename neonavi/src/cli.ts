@@ -6,6 +6,7 @@ import { commandFrom, promptFrom, startsFresh } from './args.ts'
 import { parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
 import { makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
+import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } from './serve.ts'
 import { ago, clearAllSessions, clearSession, listSessions, loadSession, saveSession, sessionFile } from './session.ts'
 import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
 import { readConfig } from 'neorouter'
@@ -83,6 +84,55 @@ function failedLines(failures: Failure[]): string[] {
   return failures.map((f) => `${['primary', 'fallback'][f.index] ?? `link ${f.index + 1}`} (${entryLabel(f.entry)}): ${f.why}`)
 }
 
+/** `navi serve [--port N]`: the chain as an OpenAI-compatible server (serve.md). */
+async function serve(argv: string[]) {
+  const install = takeFlag(argv, '--install', false)
+  const uninstall = takeFlag(install.rest, '--uninstall', false)
+  const port = takeFlag(uninstall.rest, '--port', true)
+  const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
+  if (port.rest.length || !Number.isInteger(n) || n < 1 || n > 65535 || (install.value !== undefined && uninstall.value !== undefined)) {
+    if (port.rest.length) console.error(`unexpected: ${port.rest.join(' ')}`)
+    else if (!Number.isInteger(n) || n < 1 || n > 65535) console.error(`not a port: ${port.value}`)
+    console.error('usage: navi serve [--port N] [--install | --uninstall]')
+    return 1
+  }
+  // SRV-8: kept running by launchd instead of this terminal.
+  if (uninstall.value !== undefined) {
+    console.log((await uninstallAgent(homedir())) ? 'Stopped navi serve and removed it from login.' : 'navi serve was not set to run at login.')
+    return 0
+  }
+  if (install.value !== undefined) {
+    const got = await installAgent(homedir(), n)
+    if ('problem' in got) {
+      console.error(got.problem)
+      return 1
+    }
+    console.log(`navi serve now runs in the background and at every login, on ${bold(`http://127.0.0.1:${n}/v1`)}.`)
+    console.log(dim(`Log: ${got.log} · stop it with \`navi serve --uninstall\``))
+    return 0
+  }
+  // Each request is logged on its own line (SRV-6); the router's line would interleave.
+  process.env.NEOROUTER_QUIET = '1'
+  const config = await readConfig()
+  const custom = Object.keys(config.custom ?? {})
+  const chain = parseModelSpec(config.model, custom)
+  const { chosen, failures } = await walkChain(chain)
+  if (chosen) console.error(describe({ ...chosen, label: modelLabel(chosen) }))
+  else console.error(`No model answers yet; requests will get a 503 until one does.`)
+  for (const line of failedLines(failures)) console.error(dim(`· ${line}`))
+  try {
+    await listen(chain, realServeDeps((line) => console.error(dim(`${new Date().toLocaleTimeString()} ${line}`))), n)
+  } catch (e) {
+    const busy = (e as NodeJS.ErrnoException).code === 'EADDRINUSE'
+    console.error(busy ? `Port ${n} is in use; choose another with --port.` : `navi serve: ${(e as Error).message}`)
+    return 1
+  }
+  console.error(`\nServing on ${bold(`http://127.0.0.1:${n}/v1`)}: give apps that base URL, any API key, and the model ${bold('navi')}.`)
+  console.error(dim('Only this computer can reach it. ^C stops it.'))
+  // Runs until stopped: the open server keeps the process alive.
+  return new Promise<number>(() => {})
+}
+
 /** `navi sessions [clear [<directory> | --all]]` (SES-13, SES-14). */
 async function sessions(argv: string[]) {
   const home = homedir()
@@ -123,6 +173,7 @@ async function main() {
   let argv = process.argv.slice(2)
   if (argv[0] === 'setup') return setup(argv.slice(1))
   if (argv[0] === 'sessions') return sessions(argv.slice(1))
+  if (argv[0] === 'serve') return serve(argv.slice(1))
   const steps = takeFlag(argv, '--max-steps', true)
   argv = steps.rest
   const resume = takeFlag(argv, '--resume', false)
@@ -143,7 +194,7 @@ async function main() {
   if (stray.length || (!first && !interactive)) {
     if (stray.length) console.error(`unexpected: ${stray.join(' ')}`)
     console.error(
-      'usage: navi [-p "what you want done"] [-a file]... [-r|--resume] [--model local|best|<provider>:<model>[,...]] [--max-steps N]\n       navi setup [--check]\n       navi sessions [clear [<directory> | --all]]',
+      'usage: navi [-p "what you want done"] [-a file]... [-r|--resume] [--model local|best|<provider>:<model>[,...]] [--max-steps N]\n       navi setup [--check]\n       navi sessions [clear [<directory> | --all]]\n       navi serve [--port N] [--install | --uninstall]',
     )
     return 1
   }

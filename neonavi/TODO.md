@@ -38,8 +38,8 @@ add the requirement there first.
 
 ### 3. Everywhere: navi in the apps I already use
 
-- [ ] An OpenAI-compatible local endpoint serving navi's model chain, so any
-      app that takes a base URL gets the same model. (`jackins/`)
+- [x] `navi serve`: an OpenAI-compatible local endpoint serving navi's model
+      chain, with fallback, and `--install` to keep it running. (SRV-1 to SRV-8)
 - [ ] An MCP server exposing navi's tools and harness. (`jackins/`)
 
 ## Done

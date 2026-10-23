@@ -476,6 +476,34 @@ export function probe(options: AutoOptions = {}) {
   return probeBackend(options.prefer, options.remote, options.model, options.scope, options.provider)
 }
 
+/** Where a chat request for auto(options) goes, for a caller that sends it itself. */
+export interface Route {
+  url: string
+  /** Carries the key when the backend needs one. Never log these. */
+  headers: Record<string, string>
+  /** The model id the backend knows. */
+  model: string
+  backend: string
+  local: boolean
+  /** Fields neorouter would add to the body itself, such as reasoning_effort. */
+  extra: Record<string, unknown>
+}
+
+/** The chat endpoint auto(options) would call, or null when it resolves to nothing. */
+export async function route(options: AutoOptions = {}): Promise<Route | null> {
+  const r = await probe(options)
+  if (!r) return null
+  const effort = reasoningEffort(r.server, options.think)
+  return {
+    url: chatEndpoint(r.server, r.backend),
+    headers: { 'content-type': 'application/json', ...(r.server.auth && { authorization: `Bearer ${r.server.auth}` }) },
+    model: r.modelId,
+    backend: r.backend,
+    local: r.local,
+    extra: effort ? { reasoning_effort: effort } : {},
+  }
+}
+
 /** Why probe(options) is null, or null when it resolves (MOD-21). */
 export function diagnose(options: AutoOptions = {}) {
   return diagnoseBackend(options.prefer, options.remote, options.model, options.scope, options.provider)

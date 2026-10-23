@@ -17,6 +17,13 @@ prompt, `/attach <file>` (drag a file in) sends one with your next message,
 `/model <spec>` switches model for the rest of the conversation, and `/help`
 lists these.
 
+`navi serve` puts the same model chain behind an OpenAI-compatible server on
+this computer: give any app the base URL `http://127.0.0.1:8484/v1`, any API
+key, and the model `navi`, and it answers with your model and falls back the
+same way. Requests pass through as sent (images, tools, streaming); only
+this computer can reach it, and a web page cannot. `navi serve --install`
+keeps it running at login (macOS); `--uninstall` stops that (`spec/serve.md`).
+
 Each directory keeps its own conversation. `navi sessions` lists them, newest
 first; `navi sessions clear` forgets this directory's, `clear <directory>`
 another's, `clear --all` every one.

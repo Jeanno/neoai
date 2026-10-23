@@ -6,7 +6,8 @@ Run language models locally with no configuration.
   itself: a server already running (Ollama, LM Studio, llama.cpp, vLLM, Jan) or a runtime it can launch, or the
   hosted provider you chose.
 - **[neonavi](neonavi/NAVI.md)** — `navi`, a command-line agent built on top of it, with file-search and
-  file-editing tools (every change shown as a diff) and model-judged shell approval.
+  file-editing tools (every change shown as a diff), model-judged shell approval, and
+  `navi serve`, which gives any app that takes an OpenAI base URL the same model.
 - **[jack-ins](jackins/NAVI.md)** — navi jacked into the apps you already use, starting with
   [Raycast](jackins/raycast/NAVI.md).
 
