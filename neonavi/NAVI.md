@@ -24,6 +24,15 @@ same way. Requests pass through as sent (images, tools, streaming); only
 this computer can reach it, and a web page cannot. `navi serve --install`
 keeps it running at login (macOS); `--uninstall` stops that (`spec/serve.md`).
 
+`navi mcp` is navi as an MCP server: clients such as Claude Desktop, Claude
+Code or Cursor get one tool, `ask_navi`, that hands a task (and any files) to
+navi and your model in a directory they name. There is no one to say `y` over
+MCP, so anything that would ask is declined (`spec/mcp.md`). To add it:
+
+    claude mcp add navi -- navi mcp
+
+or, in a client's JSON config, `{"command": "navi", "args": ["mcp"]}`.
+
 Each directory keeps its own conversation. `navi sessions` lists them, newest
 first; `navi sessions clear` forgets this directory's, `clear <directory>`
 another's, `clear --all` every one.

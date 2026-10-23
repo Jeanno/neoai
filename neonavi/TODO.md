@@ -40,7 +40,8 @@ add the requirement there first.
 
 - [x] `navi serve`: an OpenAI-compatible local endpoint serving navi's model
       chain, with fallback, and `--install` to keep it running. (SRV-1 to SRV-8)
-- [ ] An MCP server exposing navi's tools and harness. (`jackins/`)
+- [x] `navi mcp`: an MCP server whose `ask_navi` tool runs a navi turn.
+      (MCP-1 to MCP-5)
 
 ## Done
 

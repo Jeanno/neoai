@@ -6,6 +6,7 @@ import { commandFrom, promptFrom, startsFresh } from './args.ts'
 import { parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
 import { makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
+import { serveMcp, type Ask } from './mcp.ts'
 import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } from './serve.ts'
 import { ago, clearAllSessions, clearSession, listSessions, loadSession, saveSession, sessionFile } from './session.ts'
 import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
@@ -82,6 +83,33 @@ const HELP = [
 /** Each link that did not answer, and why (MOD-21). */
 function failedLines(failures: Failure[]): string[] {
   return failures.map((f) => `${['primary', 'fallback'][f.index] ?? `link ${f.index + 1}`} (${entryLabel(f.entry)}): ${f.why}`)
+}
+
+/** `navi mcp`: navi as an MCP server over stdio (mcp.md). */
+async function mcp(argv: string[]) {
+  if (argv.length) {
+    console.error(`unexpected: ${argv.join(' ')}`)
+    console.error('usage: navi mcp')
+    return 1
+  }
+  process.env.NEOROUTER_QUIET = '1'
+  const ask: Ask = async ({ prompt, directory, attachments }) => {
+    const config = await readConfig()
+    const { chosen, failures } = await walkChain(parseModelSpec(config.model, Object.keys(config.custom ?? {})))
+    if (!chosen) throw new Error(`navi has no model to answer with: ${failedLines(failures).join('; ')}`)
+    // No approve callback: what would need a y is declined (MCP-4).
+    const harness = await createHarness({ model: auto(chosen.options), contextWindow: chosen.contextWindow, cwd: directory, config })
+    let done: Extract<HarnessEvent, { type: 'done' }> | undefined
+    const errors: string[] = []
+    for await (const e of harness.session().turn(prompt, { attachments })) {
+      if (e.type === 'done') done = e
+      else if (e.type === 'error') errors.push(e.error instanceof Error ? e.error.message : String(e.error))
+    }
+    if (!done || done.empty) throw new Error(errors[0] ?? 'the model returned no answer')
+    return { text: done.text, model: modelLabel(chosen) }
+  }
+  await serveMcp(ask, { input: process.stdin, output: process.stdout })
+  return 0
 }
 
 /** `navi serve [--port N]`: the chain as an OpenAI-compatible server (serve.md). */
@@ -174,6 +202,7 @@ async function main() {
   if (argv[0] === 'setup') return setup(argv.slice(1))
   if (argv[0] === 'sessions') return sessions(argv.slice(1))
   if (argv[0] === 'serve') return serve(argv.slice(1))
+  if (argv[0] === 'mcp') return mcp(argv.slice(1))
   const steps = takeFlag(argv, '--max-steps', true)
   argv = steps.rest
   const resume = takeFlag(argv, '--resume', false)
@@ -194,7 +223,7 @@ async function main() {
   if (stray.length || (!first && !interactive)) {
     if (stray.length) console.error(`unexpected: ${stray.join(' ')}`)
     console.error(
-      'usage: navi [-p "what you want done"] [-a file]... [-r|--resume] [--model local|best|<provider>:<model>[,...]] [--max-steps N]\n       navi setup [--check]\n       navi sessions [clear [<directory> | --all]]\n       navi serve [--port N] [--install | --uninstall]',
+      'usage: navi [-p "what you want done"] [-a file]... [-r|--resume] [--model local|best|<provider>:<model>[,...]] [--max-steps N]\n       navi setup [--check]\n       navi sessions [clear [<directory> | --all]]\n       navi serve [--port N] [--install | --uninstall]\n       navi mcp',
     )
     return 1
   }
