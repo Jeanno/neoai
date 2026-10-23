@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 import { auto } from 'neorouter'
 import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import { commandFrom, promptFrom, startsFresh } from './args.ts'
 import { parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
 import { makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
-import { loadSession, saveSession, sessionFile } from './session.ts'
+import { ago, clearAllSessions, clearSession, listSessions, loadSession, saveSession, sessionFile } from './session.ts'
 import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
 import { readConfig } from 'neorouter'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
@@ -14,7 +15,7 @@ import { describe, entryLabel, modelLabel } from './setup-core.ts'
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 
 /** A tool call's input on one line, long strings such as a file's content cut short (CLI-10). */
-export function echo(input: unknown): string {
+function echo(input: unknown): string {
   return JSON.stringify(input, (_, v) => (typeof v === 'string' && v.length > 80 ? `${v.slice(0, 77)}…` : v))
 }
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
@@ -82,9 +83,46 @@ function failedLines(failures: Failure[]): string[] {
   return failures.map((f) => `${['primary', 'fallback'][f.index] ?? `link ${f.index + 1}`} (${entryLabel(f.entry)}): ${f.why}`)
 }
 
+/** `navi sessions [clear [<directory> | --all]]` (SES-13, SES-14). */
+async function sessions(argv: string[]) {
+  const home = homedir()
+  const cwd = process.cwd()
+  const tilde = (p: string) => (p === home || p.startsWith(`${home}/`) ? `~${p.slice(home.length)}` : p)
+  if (!argv.length) {
+    const all = await listSessions(home)
+    if (!all.length) {
+      console.log('No saved conversations yet.')
+      return 0
+    }
+    const here = sessionFile(cwd, home)
+    for (const s of all) {
+      const mark = s.file === here ? '*' : ' '
+      const where = s.cwd ? tilde(s.cwd) : `(directory unknown) ${s.file}`
+      console.log(`${mark} ${where}  ${dim(`${s.messages} messages · ${ago(s.used)}`)}`)
+    }
+    console.log(dim('\n* this directory · clear one with `navi sessions clear [<directory>]`, all with `--all`'))
+    return 0
+  }
+  if (argv[0] === 'clear' && argv.length <= 2) {
+    if (argv[1] === '--all') {
+      const n = await clearAllSessions(home)
+      console.log(n ? `Deleted ${n} saved conversation${n === 1 ? '' : 's'}.` : 'There were no saved conversations.')
+      return 0
+    }
+    const dir = resolve(cwd, argv[1] ?? '.')
+    const had = await clearSession(dir, home)
+    console.log(had ? `Deleted the conversation saved for ${tilde(dir)}.` : `No conversation is saved for ${tilde(dir)}.`)
+    return 0
+  }
+  console.error(`unexpected: ${argv.join(' ')}`)
+  console.error('usage: navi sessions [clear [<directory> | --all]]')
+  return 1
+}
+
 async function main() {
   let argv = process.argv.slice(2)
   if (argv[0] === 'setup') return setup(argv.slice(1))
+  if (argv[0] === 'sessions') return sessions(argv.slice(1))
   const steps = takeFlag(argv, '--max-steps', true)
   argv = steps.rest
   const resume = takeFlag(argv, '--resume', false)
@@ -105,7 +143,7 @@ async function main() {
   if (stray.length || (!first && !interactive)) {
     if (stray.length) console.error(`unexpected: ${stray.join(' ')}`)
     console.error(
-      'usage: navi [-p "what you want done"] [-a file]... [-r|--resume] [--model local|best|<provider>:<model>[,...]] [--max-steps N]\n       navi setup [--check]',
+      'usage: navi [-p "what you want done"] [-a file]... [-r|--resume] [--model local|best|<provider>:<model>[,...]] [--max-steps N]\n       navi setup [--check]\n       navi sessions [clear [<directory> | --all]]',
     )
     return 1
   }
@@ -232,7 +270,7 @@ async function main() {
     endLine()
     // Saved even when the answer came out empty: the tool results are the part
     // worth carrying forward, and a follow-up is how you recover from a bad turn.
-    await saveSession(file, done!.history)
+    await saveSession(file, done!.history, cwd)
     if (!done!.empty) {
       if (!streaming) console.log(done!.text)
       return true

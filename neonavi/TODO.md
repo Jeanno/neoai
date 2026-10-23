@@ -33,7 +33,8 @@ add the requirement there first.
       CLI-23, RAY-11)
 - [ ] A PDF that is only scanned pages: render its pages as images for a
       vision model instead of refusing it. (`spec/harness.md`)
-- [ ] `navi --sessions` to list and clear per-directory history. (`spec/session.md`)
+- [x] `navi sessions` lists per-directory histories; `navi sessions clear`
+      forgets one or all. (SES-12 to SES-14)
 
 ### 3. Everywhere: navi in the apps I already use
 

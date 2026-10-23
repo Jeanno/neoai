@@ -2,13 +2,15 @@
 
     navi [-p <prompt>] [-a <file>]... [-r|--resume] [--model <spec>] [--max-steps N]
     navi setup [--check]
+    navi sessions [clear [<directory> | --all]]
 
 ## Prompt
 
 - CLI-1: `-p <text>` is the prompt. Bare words are not a prompt: anything in
   argv that is not a recognised flag is an error, reported with the usage line.
-  The one exception is `setup` as the first argument, which runs setup
-  (`setup.md`) instead of a session.
+  The exceptions are `setup` as the first argument, which runs setup
+  (`setup.md`), and `sessions`, which manages saved histories (SES-13,
+  SES-14), each instead of a session.
 - CLI-2: Flags may appear anywhere in argv. `--resume` and its short form `-r`
   are bare; `-p`, `--model`, `--max-steps` and `-a`/`--attach` take the next
   argument.

@@ -17,6 +17,10 @@ prompt, `/attach <file>` (drag a file in) sends one with your next message,
 `/model <spec>` switches model for the rest of the conversation, and `/help`
 lists these.
 
+Each directory keeps its own conversation. `navi sessions` lists them, newest
+first; `navi sessions clear` forgets this directory's, `clear <directory>`
+another's, `clear --all` every one.
+
 When stdin is not a terminal (a pipe, a script) navi answers once and exits, so
 it still composes: `echo | navi -p "summarize this"` prints one answer.
 

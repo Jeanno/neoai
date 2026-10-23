@@ -9,8 +9,10 @@
   continuing with N > 0 messages, "· continuing (N messages)" is printed on
   stderr. Saving overwrites.
 - ~~SES-4: Only the last 20 messages are kept.~~ Replaced by SES-7 to SES-10.
-- SES-5: A missing, malformed, or non-array file is treated as empty, never as
-  an error.
+- SES-5: A missing or malformed file is treated as empty, never as an error.
+- SES-12: A file holds `{ "cwd": <directory>, "messages": [...] }`, so a
+  listing can name the directory. A file that is a bare array, as written
+  before, still loads, as a history whose directory is unknown.
 - SES-6: The sessions directory is created 0700 and files are written 0600.
 
 ## Compaction
@@ -34,6 +36,12 @@ summarised, in place, by the session's model.
 - SES-11: The compacted history is what gets saved, so the file stays bounded.
   "· compacted N messages" is printed on stderr when it happens.
 
-## Open
+## Managing them
 
-- Clearing or listing sessions from the CLI.
+- SES-13: `navi sessions` lists every saved history, most recently used
+  first: its directory (or that it is unknown), how many messages, and how
+  long ago it was used. This directory's is marked. Nothing is changed.
+- SES-14: `navi sessions clear` deletes this directory's history;
+  `navi sessions clear <directory>` that directory's; `navi sessions clear
+  --all` every one. Each says what it deleted, or that there was nothing.
+  Only files in the sessions directory are touched.
