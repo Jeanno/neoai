@@ -64,7 +64,10 @@ anything off the machine.
   command (TL-22). Changing an existing file, or writing anywhere outside the
   working directory, always asks, and so does every change under
   `"approve": "ask"`. Only `y` approves (TL-14). A path that leads out of the working
-  directory through a symbolic link counts as outside. A file that changed, or
+  directory through a symbolic link counts as outside. So does a hidden one,
+  a name starting with `.` anywhere in the path (`.git/hooks/…`,
+  `.github/workflows/…`, `.envrc`): tools and shells run many of those on
+  their own. A file that changed, or
   appeared, while the question was open is not written; the model is told to
   read it again.
 - TL-39: A decline returns a message telling the model not to retry it

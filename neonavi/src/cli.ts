@@ -110,6 +110,8 @@ async function mcp(argv: string[]) {
     return { text: done.text, model: modelLabel(chosen) }
   }
   await serveMcp(ask, { input: process.stdin, output: process.stdout })
+  // A pipe's writes are asynchronous: exiting now could cut off the last replies.
+  await new Promise<void>((r) => process.stdout.write('', () => r()))
   return 0
 }
 

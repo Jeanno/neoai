@@ -72,8 +72,9 @@ test('a path outside the working directory is marked so', async () => {
   assert.deepEqual(w.asked.map((c) => c.inside), [false, false])
 })
 
-// TL-38: a symbolic link can lead out of the working directory however the path reads.
-test('a path through a symbolic link that leads out counts as outside', async () => {
+// TL-38: a symbolic link can lead out of the working directory however the path reads,
+// and a hidden file may be run by tools on their own.
+test('a path through a symbolic link that leads out, or to a hidden name, counts as outside', async () => {
   const w = await setup()
   const elsewhere = await mkdtemp(join(tmpdir(), 'navi-elsewhere-'))
   await symlink(elsewhere, join(w.cwd, 'link'))
@@ -83,7 +84,15 @@ test('a path through a symbolic link that leads out counts as outside', async ()
   await w.call('write_file', { path: 'link/evil.sh', content: 'x' })
   await w.call('write_file', { path: 'note.txt', content: 'x' })
   await w.call('write_file', { path: 'here/fine.txt', content: 'x' })
-  assert.deepEqual(w.asked.map((c) => [c.path, c.inside]), [['link/evil.sh', false], ['note.txt', false], ['here/fine.txt', true]])
+  await w.call('write_file', { path: '.git/hooks/pre-commit', content: 'x' })
+  await w.call('write_file', { path: '.envrc', content: 'x' })
+  assert.deepEqual(w.asked.map((c) => [c.path, c.inside]), [
+    ['link/evil.sh', false],
+    ['note.txt', false],
+    ['here/fine.txt', true],
+    ['.git/hooks/pre-commit', false],
+    ['.envrc', false],
+  ])
 })
 
 // TL-38: approval can take minutes.

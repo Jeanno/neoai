@@ -2,7 +2,7 @@ import { tool } from 'ai'
 import { z } from 'zod'
 import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises'
 import { exec } from 'node:child_process'
-import { dirname, join, relative, resolve, isAbsolute } from 'node:path'
+import { dirname, join, relative, resolve, isAbsolute, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { fetchUrl, webSearch } from './web.ts'
 import { makeSearch } from './search.ts'
@@ -61,7 +61,9 @@ export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.
     while (!(await lstat(dir).then(() => true, () => false)) && dirname(dir) !== dir) dir = dirname(dir)
     const real = join(await realpath(dir).catch(() => dir), relative(dir, file))
     const rel = relative(home, real)
-    return !!rel && !rel.startsWith('..') && !isAbsolute(rel)
+    // A hidden name (.git/hooks, .github/workflows, .envrc) is one that tools
+    // and shells load on their own, so making one is never taken as safe.
+    return !!rel && !rel.startsWith('..') && !isAbsolute(rel) && !rel.split(sep).some((part) => part.startsWith('.'))
   }
 
   /** Shows the change, asks, and makes it only when approved (TL-38, TL-39). */

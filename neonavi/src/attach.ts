@@ -22,6 +22,11 @@ const IMAGES: Record<string, string> = {
 
 const MAX_TEXT = 100_000
 const MAX_SIDE = 1600
+/** Read whole before anything else, so a stray video or disk image is refused first. */
+const MAX_FILE = 50 * 1024 * 1024
+/** What one image may still weigh once scaled: more is a request no server takes. */
+const MAX_IMAGE = 20 * 1024 * 1024
+const mb = (n: number) => `${Math.round(n / 1024 / 1024)} MB`
 
 function cut(text: string): string {
   return text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}\n…[truncated]` : text
@@ -66,9 +71,14 @@ export async function attach(path: string, cwd = process.cwd()): Promise<Attachm
   const info = await stat(file).catch(() => null)
   if (!info) throw new Error(`${path}: no such file`)
   if (info.isDirectory()) throw new Error(`${path} is a directory; attach the files in it instead`)
+  if (info.size > MAX_FILE) throw new Error(`${path} is ${mb(info.size)}; navi attaches files up to ${mb(MAX_FILE)}`)
   const ext = extname(file).toLowerCase()
   const bytes = await readFile(file)
-  if (IMAGES[ext]) return { kind: 'image', name, mediaType: IMAGES[ext], data: (await scaled(file, ext, bytes)).toString('base64') }
+  if (IMAGES[ext]) {
+    const image = await scaled(file, ext, bytes)
+    if (image.length > MAX_IMAGE) throw new Error(`${path} is ${mb(image.length)} even scaled down; navi sends images up to ${mb(MAX_IMAGE)}`)
+    return { kind: 'image', name, mediaType: IMAGES[ext], data: image.toString('base64') }
+  }
   if (ext === '.pdf') {
     const text = await pdfText(bytes).catch(() => '')
     if (!text.replace(/\[page \d+\]/g, '').trim())

@@ -109,3 +109,12 @@ test("a user message's prompt and attachment names come back out of its text", (
   assert.deepEqual(splitUserText('plain words'), { prompt: 'plain words', names: [] })
   assert.deepEqual(splitUserText('<file name="x"> typed by hand'), { prompt: '<file name="x"> typed by hand', names: [] })
 })
+
+// HAR-7: refused before it is read whole.
+test('a file over 50 MB is refused, naming it', async () => {
+  const d = await dir()
+  const { truncate } = await import('node:fs/promises')
+  await writeFile(join(d, 'huge.log'), '')
+  await truncate(join(d, 'huge.log'), 51 * 1024 * 1024)
+  await assert.rejects(attach('huge.log', d), /^Error: huge\.log is 51 MB; navi attaches files up to 50 MB$/)
+})

@@ -39,8 +39,9 @@ jack-ins are others (`jackins/NAVI.md`).
   pixels where the system can (`sips` on macOS). A PDF is sent as its text,
   headed by its file name. Any other file that reads as UTF-8 text is sent as
   text, headed by its name. Text attachments are cut at 100,000 characters,
-  marked. A missing file, a directory, a PDF with no text layer, or anything
-  else is refused with a message naming the file, before any model call.
+  marked. A missing file, a directory, a file over 50 MB, an image still
+  over 20 MB once scaled, a PDF with no text layer, or anything else is
+  refused with a message naming the file, before any model call.
 - HAR-8: Attachments are kept in the history like the prompt they came with.
   For the history's size (SES-8) an image counts as 1,000 tokens, however
   many bytes it holds.
