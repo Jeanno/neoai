@@ -102,7 +102,7 @@ export function Conversation({ initialChat }: { initialChat?: Chat }) {
                 markdown={turnMarkdown(exchange.turn, {
                   streaming: live && streaming,
                   showReasoning,
-                  approval: live ? approval?.command : null,
+                  approval: live ? approval : null,
                 })}
               />
             }

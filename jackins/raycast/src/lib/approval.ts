@@ -1,6 +1,11 @@
-/** A shell command waiting for the user (RAY-3). */
+import type { FileChange } from 'neonavi/harness'
+
+/** A shell command or file change waiting for the user (RAY-3). */
 export interface Approval {
+  /** The command, or a file change's one-line summary. */
   command: string
+  /** Set for a file change, whose diff is shown (TL-38). */
+  change?: FileChange
   answer: (run: boolean) => void
 }
 
@@ -13,6 +18,7 @@ export function waitForAnswer(
   command: string,
   signal: AbortSignal,
   show: (approval: Approval | null) => void,
+  change?: FileChange,
 ): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     if (signal.aborted) return resolve(false)
@@ -26,6 +32,6 @@ export function waitForAnswer(
     }
     const declined = () => settle(false)
     signal.addEventListener('abort', declined, { once: true })
-    show({ command, answer: settle })
+    show({ command, ...(change && { change }), answer: settle })
   })
 }

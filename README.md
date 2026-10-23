@@ -5,8 +5,8 @@ Run language models locally with no configuration.
 - **[neorouter](neorouter/NAVI.md)** — an [AI SDK](https://ai-sdk.dev) provider that finds a model to talk to by
   itself: a server already running (Ollama, LM Studio, llama.cpp, vLLM, Jan) or a runtime it can launch, or the
   hosted provider you chose.
-- **[neonavi](neonavi/NAVI.md)** — `navi`, a command-line agent built on top of it, with file-search tools and
-  model-judged shell approval.
+- **[neonavi](neonavi/NAVI.md)** — `navi`, a command-line agent built on top of it, with file-search and
+  file-editing tools (every change shown as a diff) and model-judged shell approval.
 - **[jack-ins](jackins/NAVI.md)** — navi jacked into the apps you already use, starting with
   [Raycast](jackins/raycast/NAVI.md).
 

@@ -20,3 +20,7 @@ Rebuilt at startup and sent with every turn.
   news, docs — and to cite the URLs it relied on.
 - PRM-10: When fetch_url is available, says to use it to read a page the user
   names or a search result worth opening.
+- PRM-11: When write_file and edit_file are available, says to change files
+  with them rather than through run_shell: edit_file for part of a file after
+  reading it, write_file for a new file or a whole rewrite. The user sees each
+  change and may decline it; a declined change is not retried.

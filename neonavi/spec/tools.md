@@ -1,7 +1,8 @@
 # Tools
 
-Seven tools. Nothing writes to disk except a shell command the user approved.
-Only web_search, fetch_url and the model itself send anything off the machine.
+Nine tools. Nothing writes to disk except a shell command or a file change
+that was approved. Only web_search, fetch_url and the model itself send
+anything off the machine.
 
 ## Limits
 
@@ -45,6 +46,26 @@ Only web_search, fetch_url and the model itself send anything off the machine.
   else stderr, else "(no output)".
 - TL-17: A failing command returns its stderr or error message as the tool
   result so the model can recover; it is never thrown.
+
+## write_file / edit_file
+
+- TL-36: `write_file(path, content)` creates a file, with any missing parent
+  directories, or replaces an existing one whole.
+- TL-37: `edit_file(path, old_text, new_text)` replaces `old_text`, which must
+  occur exactly once in an existing file. Not found, found more than once, or
+  no such file returns a message saying which (and, for several, to include
+  more surrounding lines), never a throw, and changes nothing.
+- TL-38: Every change is shown as a diff before it is made: the changed lines
+  marked `-` and `+`, with up to 3 unchanged lines around them. Creating a new
+  file inside the working directory is what TL-21 calls safe, so with judging
+  on (TL-24) it runs without asking and is reported as auto-approved like a
+  command (TL-22). Changing an existing file, or writing anywhere outside the
+  working directory, always asks, and so does every change under
+  `"approve": "ask"`. Only `y` approves (TL-14).
+- TL-39: A decline returns a message telling the model not to retry it
+  (TL-15). A change made returns the path and how many lines were added and
+  removed.
+- TL-40: `"write": false` in `~/.neoai/config.json` removes both tools.
 
 ## web_search
 
@@ -105,7 +126,6 @@ A model call that decides whether a shell command needs the user's approval.
 
 ## Open
 
-- A write/edit tool, gated like run_shell.
 - A keyed search backend (Brave, Tavily, SearXNG) when DuckDuckGo blocks.
 - A fetch tool to read a result's page, not just its snippet.
 - Per-command allowlist to skip approval.

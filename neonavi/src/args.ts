@@ -15,7 +15,14 @@ export function promptFrom(argv: string[]): { prompt: string | null; stray: stri
  * "list the dir" resolving to a directory from an earlier turn instead of here.
  * The listing is included so looking around is free and guessing has no excuse.
  */
-export function systemPrompt(cwd: string, entries: string[] = [], context = '', web = false, fetch = false): string {
+export function systemPrompt(
+  cwd: string,
+  entries: string[] = [],
+  context = '',
+  web = false,
+  fetch = false,
+  write = false,
+): string {
   const here = entries.length ? entries.join(', ') : '(empty)'
   return [
     'You are navi, a command-line assistant.',
@@ -28,6 +35,13 @@ export function systemPrompt(cwd: string, entries: string[] = [], context = '', 
     'To find something, prefer grep (contents) and glob (filenames) over opening',
     'files one at a time — one search beats four reads.',
     'run_shell asks the user for approval every time; if they decline, do not retry it.',
+    ...(write
+      ? [
+          'To change files, use edit_file (read the file first, then replace an exact passage)',
+          'or write_file (a new file, or a whole rewrite), never run_shell. The user sees each',
+          'change and may decline it; if they do, do not retry it.',
+        ]
+      : []),
     ...(web
       ? [
           'For anything outside this directory that may have changed since your training —',

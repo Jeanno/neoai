@@ -12,6 +12,11 @@ import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 import { entryLabel } from './setup-core.ts'
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
+
+/** A tool call's input on one line, long strings such as a file's content cut short (CLI-10). */
+export function echo(input: unknown): string {
+  return JSON.stringify(input, (_, v) => (typeof v === 'string' && v.length > 80 ? `${v.slice(0, 77)}…` : v))
+}
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
 const highlight = (s: string) => `\x1b[100;97m${s}\x1b[0m`
 
@@ -119,10 +124,10 @@ async function main() {
     config,
     maxSteps,
     // The question would otherwise be drawn beside a spinning frame.
-    approve: async (command) => {
+    approve: async (command, { change }) => {
       spin.stop()
       endLine()
-      const ok = await asker.approve(command)
+      const ok = change ? await asker.approveChange(command, change) : await asker.approve(command)
       spin.start()
       return ok
     },
@@ -152,7 +157,7 @@ async function main() {
         } else {
           spin.stop()
           if (e.type === 'compacted') note(`· compacted ${e.messages} messages`)
-          else if (e.type === 'tool-call') note(`· ${e.name}(${JSON.stringify(e.input)})`)
+          else if (e.type === 'tool-call') note(`· ${e.name}(${echo(e.input)})`)
           else if (e.type === 'auto-approved') note(`· auto-approved: ${e.command}`)
           else if (e.type === 'error') note(`error: ${e.error instanceof Error ? e.error.message : String(e.error)}`)
           // The model or a tool is busy again.

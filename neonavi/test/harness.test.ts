@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { simulateReadableStream, type ModelMessage } from 'ai'
@@ -135,7 +135,7 @@ test('every turn gets navi\'s system prompt and tools, rooted at the front end\'
   assert.match(String(system?.content), /a\.txt/)
   assert.deepEqual(
     sent.tools?.map((t) => t.name).sort(),
-    ['glob', 'grep', 'list_dir', 'read_file', 'run_shell'],
+    ['edit_file', 'glob', 'grep', 'list_dir', 'read_file', 'run_shell', 'write_file'],
   )
 })
 
@@ -159,6 +159,40 @@ test('only commands not judged safe reach the approval callback', async () => {
   assert.ok(events.some((e) => e.type === 'auto-approved' && e.command === 'echo safe-cmd'))
   const results = events.filter((e) => e.type === 'tool-result').map((e) => String((e as any).output).trim())
   assert.deepEqual(results.sort(), ['risky', 'safe-cmd'])
+})
+
+// HAR-4, TL-38: a new file in the working directory is made without asking;
+// changing one that exists asks, with the change attached.
+test('file changes ask unless they create a file here', async () => {
+  const asked: { command: string; diff?: string }[] = []
+  const model = fake([
+    [
+      call('c1', 'write_file', { path: 'new.txt', content: 'fresh\n' }),
+      call('c2', 'edit_file', { path: 'a.txt', old_text: 'hello', new_text: 'bye' }),
+      finish('tool-calls'),
+    ],
+    [...text('t', 'done'), finish('stop')],
+  ])
+  const h = await harness(model, {
+    approve: async (command, { change }) => (asked.push({ command, diff: change?.diff }), true),
+  })
+  const events = await collect(h.session().turn('make them'))
+  assert.deepEqual(asked, [{ command: 'edit a.txt (+1 -1)', diff: '@@ line 1 @@\n- hello\n+ bye' }])
+  assert.ok(events.some((e) => e.type === 'auto-approved' && e.command === 'create new.txt (+1)' && e.change))
+  const cwd = h.system.match(/The working directory is (\S+)/)![1]
+  assert.equal(await readFile(join(cwd, 'a.txt'), 'utf8'), 'bye\n')
+  assert.equal(await readFile(join(cwd, 'new.txt'), 'utf8'), 'fresh\n')
+})
+
+test('approve: "ask" asks about a new file too', async () => {
+  const asked: string[] = []
+  const model = fake([
+    [call('c1', 'write_file', { path: 'new.txt', content: 'x' }), finish('tool-calls')],
+    [...text('t', 'done'), finish('stop')],
+  ])
+  const h = await harness(model, { config: { approve: 'ask', web_search: false }, approve: async (c) => (asked.push(c), false) })
+  await collect(h.session().turn('make it'))
+  assert.deepEqual(asked, ['create new.txt (+1)'])
 })
 
 // HAR-4, TL-24

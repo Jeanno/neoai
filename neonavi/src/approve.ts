@@ -1,8 +1,19 @@
 import { createInterface, type Interface } from 'node:readline/promises'
 import type { Readable, Writable } from 'node:stream'
+import type { FileChange } from './diff.ts'
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
+const red = (s: string) => `\x1b[31m${s}\x1b[0m`
+const green = (s: string) => `\x1b[32m${s}\x1b[0m`
+
+/** A diff for a terminal: removed lines red, added green, the rest dim. */
+export function colorDiff(diff: string): string {
+  return diff
+    .split('\n')
+    .map((l) => (l.startsWith('- ') ? red(l) : l.startsWith('+ ') ? green(l) : dim(l)))
+    .join('\n')
+}
 
 /** One readline shared by everything that reads stdin: prompts and approvals alike. */
 export interface Line {
@@ -16,6 +27,8 @@ export interface Line {
 
 export interface Approver {
   approve: (command: string) => Promise<boolean>
+  /** Shows the diff, then asks about the change by its summary (TL-38). */
+  approveChange: (summary: string, change: FileChange) => Promise<boolean>
   close: () => void
 }
 
@@ -84,6 +97,10 @@ export function makeApprover(
   return {
     approve: async (command) => {
       const answer = await line.ask(`\n${bold('run?')} ${command}\n${dim('[y/N]')} `)
+      return (answer ?? '').trim().toLowerCase() === 'y'
+    },
+    approveChange: async (summary, change) => {
+      const answer = await line.ask(`\n${colorDiff(change.diff)}\n${bold('write?')} ${summary}\n${dim('[y/N]')} `)
       return (answer ?? '').trim().toLowerCase() === 'y'
     },
     close: () => line.close(),

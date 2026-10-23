@@ -52,7 +52,7 @@ test('RAY-2: failed, judged-safe and compacted steps are marked', () => {
     { type: 'tool-call', id: '2', name: 'read_file', input: { path: 'nope' } },
     { type: 'tool-result', id: '2', name: 'read_file', output: 'ENOENT', error: true },
   ])
-  assert.equal(md(t), '- _compacted 12 earlier messages_\n- `run_shell ls` — judged safe\n- `read_file nope` — failed')
+  assert.equal(md(t), '- _compacted 12 earlier messages_\n- `run_shell ls` — approved automatically\n- `read_file nope` — failed')
 })
 
 test('RAY-2: backticks in arguments cannot break out of the code span', () => {
@@ -62,7 +62,7 @@ test('RAY-2: backticks in arguments cannot break out of the code span', () => {
 
 test('RAY-3: the command awaiting approval comes last, fenced', () => {
   const t = fold([{ type: 'tool-call', id: '1', name: 'run_shell', input: { command: 'rm x' } }])
-  const out = md(t, { streaming: true, approval: 'rm x' })
+  const out = md(t, { streaming: true, approval: { command: 'rm x' } })
   assert.ok(out.endsWith('**Run this command?**\n\n```sh\nrm x\n```\n\nnavi wants to run it in ~/.navi-raycast.'))
   assert.equal(fence('a ``` b', 'sh'), '````sh\na ``` b\n````')
 })

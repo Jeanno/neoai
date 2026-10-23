@@ -1,11 +1,12 @@
 import { tool } from 'ai'
 import { z } from 'zod'
-import { readFile, readdir } from 'node:fs/promises'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { exec } from 'node:child_process'
-import { resolve } from 'node:path'
+import { dirname, relative, resolve, isAbsolute } from 'node:path'
 import { promisify } from 'node:util'
 import { fetchUrl, webSearch } from './web.ts'
 import { makeSearch } from './search.ts'
+import { diffLines, summarize, type FileChange } from './diff.ts'
 
 const run = promisify(exec)
 
@@ -15,6 +16,11 @@ export interface Gate {
    * The signal aborts when the turn is stopped, which should decline.
    */
   approve: (command: string, signal?: AbortSignal) => Promise<boolean>
+  /**
+   * Returns true to let a file change be made (TL-38). `inside` is whether
+   * the file is in the working directory. Left out, every change declines.
+   */
+  change?: (change: FileChange & { inside: boolean }, signal?: AbortSignal) => Promise<boolean>
 }
 
 const MAX_OUTPUT = 8000
@@ -35,11 +41,34 @@ export interface ToolOptions {
   cwd?: string
   /** false forces the built-in grep/glob even where rg is installed (TL-31). */
   ripgrep?: boolean
+  /** false removes write_file and edit_file (TL-40). */
+  write?: boolean
 }
 
-export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.cwd(), ripgrep }: ToolOptions = {}) {
+export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.cwd(), ripgrep, write = true }: ToolOptions = {}) {
   const search = makeSearch({ cwd, ripgrep })
   const at = (path: string) => resolve(cwd, path)
+
+  /** Shows the change, asks, and makes it only when approved (TL-38, TL-39). */
+  const apply = async (path: string, before: string | null, after: string, signal?: AbortSignal) => {
+    const file = at(path)
+    const rel = relative(cwd, file)
+    const change: FileChange = { path, created: before === null, ...diffLines(before ?? '', after) }
+    if (before === after) return `${path} already reads that way; nothing changed.`
+    const inside = !!rel && !rel.startsWith('..') && !isAbsolute(rel)
+    if (!gate.change || !(await gate.change({ ...change, inside }, signal)))
+      return `The user declined to ${summarize(change)}. Do not retry it; try another approach.`
+    try {
+      await mkdir(dirname(file), { recursive: true })
+      await writeFile(file, after)
+    } catch (e: any) {
+      return `could not write ${path}: ${e.message}`
+    }
+    return `${change.created ? 'created' : 'edited'} ${path}: +${change.added} -${change.removed} lines`
+  }
+
+  /** The file's text, or null when there is none to read. */
+  const current = (path: string) => readFile(at(path), 'utf8').catch((e) => (e.code === 'ENOENT' ? null : Promise.reject(e)))
   const tools = {
     grep: tool({
       description: 'Search file contents for a pattern. Returns file:line:text.',
@@ -127,6 +156,43 @@ export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.
       },
     }),
 
+    write_file: tool({
+      description:
+        'Create a file, or replace one whole, with the given content. The user ' +
+        'sees the change and may be asked first. To change part of a file, use edit_file.',
+      inputSchema: z.object({ path: z.string(), content: z.string() }),
+      execute: async ({ path, content }, { abortSignal }) => {
+        try {
+          return await apply(path, await current(path), content, abortSignal)
+        } catch (e: any) {
+          return `could not read ${path}: ${e.message}`
+        }
+      },
+    }),
+
+    edit_file: tool({
+      description:
+        'Replace old_text with new_text in an existing file. old_text must match ' +
+        'the file exactly, whitespace included, and occur once: include enough ' +
+        'surrounding lines to make it unique. Read the file first.',
+      inputSchema: z.object({ path: z.string(), old_text: z.string(), new_text: z.string() }),
+      execute: async ({ path, old_text, new_text }, { abortSignal }) => {
+        let before: string | null
+        try {
+          before = await current(path)
+        } catch (e: any) {
+          return `could not read ${path}: ${e.message}`
+        }
+        if (before === null) return `${path} does not exist; use write_file to create it.`
+        if (!old_text) return 'old_text is empty; give the exact text to replace.'
+        const count = before.split(old_text).length - 1
+        if (count === 0) return `old_text was not found in ${path}; read the file and copy the text exactly.`
+        if (count > 1) return `old_text occurs ${count} times in ${path}; include more surrounding lines so it occurs once.`
+        // A function replacer, so `$&` and friends in new_text stay literal.
+        return apply(path, before, before.replace(old_text, () => new_text), abortSignal)
+      },
+    }),
+
     web_search: tool({
       description:
         'Search the web. Returns numbered results with title, URL and snippet. ' +
@@ -146,5 +212,9 @@ export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.
   // Removed rather than typed optional, so callers keep exact tool types.
   if (!web) delete (tools as Partial<typeof tools>).web_search
   if (!web || !fetch) delete (tools as Partial<typeof tools>).fetch_url
+  if (!write) {
+    delete (tools as Partial<typeof tools>).write_file
+    delete (tools as Partial<typeof tools>).edit_file
+  }
   return tools
 }

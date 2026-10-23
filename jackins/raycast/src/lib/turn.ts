@@ -1,6 +1,7 @@
 import type { ModelMessage } from 'ai'
 import type { HarnessEvent } from 'neonavi/harness'
 import { splitThinking } from './think'
+import type { Approval } from './approval'
 
 /**
  * One answer as the views draw it: the harness's events folded into text and
@@ -60,9 +61,8 @@ export function applyEvent(turn: Turn, e: HarnessEvent): Turn {
       return { ...turn, items }
     case 'auto-approved': {
       // The event names the command, not the call: mark the latest shell call still running.
-      const at = items.findLastIndex(
-        (i) => i.kind === 'tool' && i.state === 'running' && i.line.startsWith('run_shell'),
-      )
+      const tool = e.change ? /^(write_file|edit_file)/ : /^run_shell/
+      const at = items.findLastIndex((i) => i.kind === 'tool' && i.state === 'running' && tool.test(i.line))
       if (at >= 0) items[at] = { ...(items[at] as Extract<Item, { kind: 'tool' }>), auto: true }
       return { ...turn, items }
     }
@@ -111,7 +111,7 @@ const code = (s: string) => `\`${s.replace(/`/g, "'")}\``
 
 function toolMarkdown(i: Extract<Item, { kind: 'tool' }>): string {
   const state = i.state === 'running' ? ' …' : i.state === 'failed' ? ' — failed' : ''
-  return `- ${code(i.line)}${i.auto ? ' — judged safe' : ''}${state}`
+  return `- ${code(i.line)}${i.auto ? ' — approved automatically' : ''}${state}`
 }
 
 /**
@@ -121,7 +121,7 @@ function toolMarkdown(i: Extract<Item, { kind: 'tool' }>): string {
  */
 export function turnMarkdown(
   turn: Turn,
-  o: { streaming: boolean; showReasoning: boolean; approval?: string | null },
+  o: { streaming: boolean; showReasoning: boolean; approval?: Pick<Approval, 'command' | 'change'> | null },
 ): string {
   const blocks: string[] = []
   let tools: string[] = []
@@ -141,10 +141,14 @@ export function turnMarkdown(
   flush()
   if (turn.errors.length) blocks.push(turn.errors.map((e) => `**Error:** ${e}`).join('\n\n'))
   if (turn.stopped) blocks.push('_Stopped._')
-  if (o.approval)
-    blocks.push(`**Run this command?**\n\n${fence(o.approval, 'sh')}\n\nnavi wants to run it in ~/.navi-raycast.`)
+  if (o.approval?.change)
+    blocks.push(`**${capitalized(o.approval.command)}?**\n\n${fence(o.approval.change.diff, 'diff')}`)
+  else if (o.approval)
+    blocks.push(`**Run this command?**\n\n${fence(o.approval.command, 'sh')}\n\nnavi wants to run it in ~/.navi-raycast.`)
   return blocks.join('\n\n') || '…'
 }
+
+const capitalized = (s: string) => s[0].toUpperCase() + s.slice(1)
 
 /** What a user message said, as text. */
 export function userText(m: ModelMessage): string {

@@ -31,7 +31,7 @@ function Answer({ question }: { question: string }) {
     <Detail
       navigationTitle={question}
       isLoading={streaming && !approval}
-      markdown={turnMarkdown(turn, { streaming, showReasoning, approval: approval?.command })}
+      markdown={turnMarkdown(turn, { streaming, showReasoning, approval })}
       metadata={
         <Detail.Metadata>
           <Detail.Metadata.Label title="Question" text={question} />

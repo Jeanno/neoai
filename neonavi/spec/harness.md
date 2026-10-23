@@ -21,7 +21,10 @@ jack-ins are others (`jackins/NAVI.md`).
 - HAR-4: Shell approval goes through the front end's callback with the command;
   the judge (TL-18 to TL-25) runs first, so the callback is only asked about
   commands not judged safe. A callback that throws or is never answered before
-  the turn is stopped declines.
+  the turn is stopped declines. A file change (TL-38) goes through the same
+  callback: the command is a one-line summary such as `edit src/a.ts (+2 -1)`,
+  and the options carry the change itself (path, whether it creates the
+  file, and the diff) for a front end that can show it.
 - HAR-5: The harness never writes to stdout or stderr itself; everything a user
   might see is an event or a callback, so a front end with no terminal works.
 - HAR-6: The CLI is built on the library, with its behaviour in `cli.md`

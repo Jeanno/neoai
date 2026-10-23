@@ -14,7 +14,7 @@ When stdin is not a terminal (a pipe, a script) navi answers once and exits, so
 it still composes: `echo | navi -p "summarize this"` prints one answer.
 
 Tools: `grep`, `glob`, `read_file` (numbered lines, pageable), `list_dir`,
-`web_search`, `fetch_url` and `run_shell`. `web_search` needs no key
+`write_file`, `edit_file`, `web_search`, `fetch_url` and `run_shell`. `web_search` needs no key
 (DuckDuckGo); the query is the only thing it sends. `fetch_url` reads one page
 as text and refuses this machine and the local network (`src/web.ts`).
 `"web_search": false` in the config removes both; `"fetch_url": false` only the
@@ -22,6 +22,11 @@ latter.
 `grep` and `glob` use ripgrep when it is on PATH and a built-in search
 otherwise (`src/search.ts`), honouring `.gitignore` either way, so nothing
 needs installing.
+
+`write_file` and `edit_file` show each change as a diff first. A new file in
+the working directory is made without asking; changing an existing file, or
+anything outside the directory, waits for `y` (`src/diff.ts`). `"write":
+false` in the config removes both.
 
 Before a shell command runs, the session's model is asked whether it is
 safe — read-only, or writing new files inside the directory, nothing over the

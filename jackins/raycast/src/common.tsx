@@ -34,13 +34,18 @@ export function SetUpAction({ onDone }: { onDone: () => void }) {
   return <Action.Push title="Set Up Navi" icon={Icon.Gear} target={<SetUp />} onPop={onDone} />
 }
 
-/** RAY-3: the command waiting for approval, as the first actions in the panel. */
+/** RAY-3: the command or file change waiting for approval, as the first actions in the panel. */
 export function ApprovalSection({ approval }: { approval: Approval }) {
+  const file = !!approval.change
   return (
-    <ActionPanel.Section title="Run this command?">
-      <Action title="Run Command" icon={Icon.Terminal} onAction={() => approval.answer(true)} />
+    <ActionPanel.Section title={file ? 'Make this change?' : 'Run this command?'}>
       <Action
-        title="Don't Run"
+        title={file ? 'Write File' : 'Run Command'}
+        icon={file ? Icon.Document : Icon.Terminal}
+        onAction={() => approval.answer(true)}
+      />
+      <Action
+        title={file ? "Don't Write" : "Don't Run"}
         icon={Icon.XMarkCircle}
         style={Action.Style.Destructive}
         shortcut={{ modifiers: ['cmd'], key: 'd' }}

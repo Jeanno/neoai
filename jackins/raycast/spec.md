@@ -14,7 +14,8 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
   above the text, and stays there once the answer is done.
 - RAY-3: A shell command not judged safe pauses the answer and shows the
   command with Run Command and Don't Run actions. Leaving the view or stopping
-  the answer declines.
+  the answer declines. A file change waiting for approval shows its diff,
+  with Write File and Don't Write actions (TL-38).
 - RAY-4: Chats are kept in Raycast's own storage and continued through the
   harness (HAR-3).
 - RAY-5: Fix Spelling and Grammar and Translate and Replace use the model

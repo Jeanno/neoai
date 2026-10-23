@@ -25,7 +25,8 @@ add the requirement there first.
 
 ### 2. Daily driver: the agent I reach for first
 
-- [ ] A write/edit tool, approved like `run_shell`. (`spec/tools.md`)
+- [x] `write_file` and `edit_file`, each change shown as a diff; a new file
+      here is made without asking, any other change asks. (TL-36 to TL-40)
 - [ ] `--model` or `/model` mid-session, without leaving the loop. (`spec/cli.md`)
 - [ ] Image and PDF input: attach files to a turn (CLI path argument,
       Raycast selected Finder files); images go to vision models, PDFs as

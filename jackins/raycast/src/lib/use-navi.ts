@@ -1,6 +1,6 @@
 import { showToast, Toast } from '@raycast/api'
 import type { ModelMessage } from 'ai'
-import { createHarness, type Harness } from 'neonavi/harness'
+import { createHarness, type FileChange, type Harness } from 'neonavi/harness'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { errorMessage, forgetNavi, naviHome, resolveNavi, type Navi } from './model'
 import { waitForAnswer, type Approval } from './approval'
@@ -48,7 +48,8 @@ export function useNavi() {
 
   // Shows the command and waits; Stop or leaving the view declines (RAY-3).
   const approve = useCallback(
-    (command: string, { signal }: { signal: AbortSignal }) => waitForAnswer(command, signal, setApproval),
+    (command: string, { signal, change }: { signal: AbortSignal; change?: FileChange }) =>
+      waitForAnswer(command, signal, setApproval, change),
     [],
   )
 

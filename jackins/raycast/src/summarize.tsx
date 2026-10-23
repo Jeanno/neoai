@@ -51,7 +51,7 @@ function Summary({ source }: { source: Source }) {
     <Detail
       navigationTitle="Summary"
       isLoading={streaming && !approval}
-      markdown={turnMarkdown(turn, { streaming, showReasoning, approval: approval?.command })}
+      markdown={turnMarkdown(turn, { streaming, showReasoning, approval })}
       metadata={
         <Detail.Metadata>
           <Detail.Metadata.Label title="Source" text={source.from} />

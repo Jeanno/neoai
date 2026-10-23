@@ -7,6 +7,9 @@ import { collectContext } from './context.ts'
 import { gated } from './approve.ts'
 import { judge } from './judge.ts'
 import { makeTools } from './tools.ts'
+import { summarize, type FileChange } from './diff.ts'
+
+export type { FileChange } from './diff.ts'
 import { compact, estimateTokens } from './compact.ts'
 
 /**
@@ -29,6 +32,8 @@ export interface HarnessConfig {
   web_search?: boolean
   /** false removes only fetch_url (TL-35). */
   fetch_url?: boolean
+  /** false removes write_file and edit_file (TL-40). */
+  write?: boolean
 }
 
 export interface HarnessOptions {
@@ -38,11 +43,13 @@ export interface HarnessOptions {
   /** Where tools look and shell commands run; named in the system prompt. */
   cwd: string
   /**
-   * Asked about each shell command the judge did not call safe (HAR-4). The
+   * Asked about each shell command the judge did not call safe, and each
+   * file change that is not a new file in `cwd` (HAR-4, TL-38). For a file
+   * change, `command` is a one-line summary and `change` holds the diff. The
    * signal aborts when the turn is stopped; a throw, or no answer before
-   * then, declines. Leaving it out declines every such command.
+   * then, declines. Leaving it out declines every such request.
    */
-  approve?: (command: string, o: { signal: AbortSignal }) => Promise<boolean>
+  approve?: (command: string, o: { signal: AbortSignal; change?: FileChange }) => Promise<boolean>
   /** Read from `~/.neoai/config.json` when left out. */
   config?: HarnessConfig
   /** Model responses per turn (CLI-9). */
@@ -66,8 +73,11 @@ export type HarnessEvent =
   | { type: 'text'; text: string }
   /** A tool call about to run (CLI-10, RAY-2). */
   | { type: 'tool-call'; id: string; name: string; input: unknown }
-  /** A shell command the judge passed, so it runs without asking (TL-22). */
-  | { type: 'auto-approved'; command: string }
+  /**
+   * A shell command the judge passed, or a new file in the working directory,
+   * made without asking (TL-22, TL-38). `command` is the change's summary for a file.
+   */
+  | { type: 'auto-approved'; command: string; change?: FileChange }
   /** What the tool returned; `error` when it threw and the model got the message. */
   | { type: 'tool-result'; id: string; name: string; output: unknown; error: boolean }
   /** The model call failed. The turn still ends with `done`. */
@@ -105,13 +115,14 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
   // On unless the config says otherwise; off keeps everything but the model on the machine.
   const web = config.web_search !== false
   const fetch = web && config.fetch_url !== false
+  const write = config.write !== false
   const entries = await readdir(o.cwd).catch(() => [])
   const context = await collectContext(o.cwd, o.home ?? homedir())
-  const system = systemPrompt(o.cwd, entries, context, web, fetch)
+  const system = systemPrompt(o.cwd, entries, context, web, fetch, write)
   const systemTokens = estimateTokens([{ role: 'system', content: system }])
 
   /** The front end's answer, or a decline if it throws or the turn stops first. */
-  const ask = (command: string, signal: AbortSignal) =>
+  const ask = (command: string, signal: AbortSignal, change?: FileChange) =>
     new Promise<boolean>((resolve) => {
       if (!o.approve || signal.aborted) return resolve(false)
       // Removed once answered: a long turn would otherwise pile listeners on one signal.
@@ -122,7 +133,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       const declined = () => settle(false)
       signal.addEventListener('abort', declined, { once: true })
       Promise.resolve()
-        .then(() => o.approve!(command, { signal }))
+        .then(() => o.approve!(command, change ? { signal, change } : { signal }))
         .then((ok) => settle(ok === true), declined)
     })
 
@@ -163,7 +174,16 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           onAuto: (c) => emit({ type: 'auto-approved', command: c }),
           ask: (c) => ask(c, toolSignal ?? signal),
         })(command)
-      const tools = makeTools({ approve }, { web, fetch, cwd: o.cwd, ripgrep: o.ripgrep })
+      // A new file in the working directory is what the judge would call safe
+      // (TL-21), so it needs no model call to decide; any other change asks (TL-38).
+      const change = async ({ inside, ...c }: FileChange & { inside: boolean }, toolSignal?: AbortSignal) => {
+        if (config.approve !== 'ask' && c.created && inside) {
+          emit({ type: 'auto-approved', command: summarize(c), change: c })
+          return true
+        }
+        return ask(summarize(c), toolSignal ?? signal, c)
+      }
+      const tools = makeTools({ approve, change }, { web, fetch, write, cwd: o.cwd, ripgrep: o.ripgrep })
 
       // Messages of the finished steps; the step in flight only adds its text.
       let finished: ModelMessage[] = []
