@@ -9,7 +9,7 @@ const CHAIN: Entry[] = [
   { where: 'local', prefer: 'fast' },
 ]
 
-type Backend = (body: any) => Response | Promise<Response>
+type Backend = (body: any, signal?: AbortSignal) => Response | Promise<Response>
 
 /** A server over fake links: `links[i]` answers for chain[i], or is null when it resolves to nothing. */
 async function serving(links: (Backend | null)[]) {
@@ -27,7 +27,7 @@ async function serving(links: (Backend | null)[]) {
     fetch: (async (url: string, init: any) => {
       const body = JSON.parse(init.body)
       sent.push({ url, body, headers: init.headers })
-      return links[Number(/link(\d)/.exec(url)![1])]!(body)
+      return links[Number(/link(\d)/.exec(url)![1])]!(body, init.signal)
     }) as any,
     forget: () => forgot++,
     log: (l) => logs.push(l),
@@ -38,8 +38,8 @@ async function serving(links: (Backend | null)[]) {
 }
 
 const ok = (body: any) => Response.json({ choices: [{ message: { role: 'assistant', content: `hi from ${body.model}` } }] })
-const post = (base: string, body: unknown, headers: Record<string, string> = {}) =>
-  fetch(`${base}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) })
+const post = (base: string, body: unknown, headers: Record<string, string> = {}, signal?: AbortSignal) =>
+  fetch(`${base}/v1/chat/completions`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body), signal })
 
 // SRV-2
 test('lists one model, navi', async () => {
@@ -142,4 +142,78 @@ test('each request is logged in one line, without the prompt or the key', async 
   assert.match(s.logs[0], /^POST \/v1\/chat\/completions → b1 · model1 · 200 · \d+ ms$/)
   assert.doesNotMatch(s.logs.join('\n'), /secret|key\d/)
   s.close()
+})
+
+// SRV-6
+test('every request is logged, whatever it was, without its query', async () => {
+  const s = await serving([ok])
+  await (await fetch(`${s.base}/v1/models?key=sk-123`)).text()
+  await (await fetch(`${s.base}/nope`)).text()
+  await new Promise((r) => setTimeout(r, 20))
+  assert.match(s.logs[0], /^GET \/v1\/models → 200 · \d+ ms$/)
+  assert.match(s.logs[1], /^GET \/nope → 404 · \d+ ms$/)
+  s.close()
+})
+
+const SSE = (chunks: string[], end?: (c: ReadableStreamDefaultController) => void, cancel?: () => void) =>
+  new Response(
+    new ReadableStream({
+      start(c) {
+        for (const chunk of chunks) c.enqueue(new TextEncoder().encode(chunk))
+        end?.(c)
+      },
+      cancel,
+    }),
+    { headers: { 'content-type': 'text/event-stream' } },
+  )
+
+// SRV-3: a link that breaks mid-answer cuts that answer off, and the server goes on.
+test('a stream that breaks ends its own response only', async () => {
+  const s = await serving([() => SSE(['data: {"a":1}\n\n'], (c) => setTimeout(() => c.error(new TypeError('terminated')), 10))])
+  const r = await post(s.base, { stream: true })
+  await assert.rejects(r.text())
+  const again = await fetch(`${s.base}/v1/models`)
+  assert.equal(again.status, 200)
+  await new Promise((r) => setTimeout(r, 20))
+  assert.match(s.logs[0], /→ b0 · model0 · cut off/)
+  s.close()
+})
+
+// SRV-3: an app that leaves stops the model.
+test('an app that leaves mid-answer stops the link answering', async () => {
+  let stopped: () => void
+  const gone = new Promise<void>((r) => (stopped = r))
+  const s = await serving([
+    (_body, signal) => {
+      signal?.addEventListener('abort', () => stopped())
+      return SSE(['data: {"a":1}\n\n'], undefined, () => stopped())
+    },
+  ])
+  const leave = new AbortController()
+  const r = await post(s.base, { stream: true }, {}, leave.signal)
+  const reader = r.body!.getReader()
+  await reader.read()
+  leave.abort()
+  await gone
+  s.close()
+})
+
+// SRV-3, MOD-11: a link refusing the reasoning hint navi added is asked again without it.
+test('a 400 over the reasoning hint is retried without it', async () => {
+  const s = await serving([
+    null,
+    (body) => ('reasoning_effort' in body ? Response.json({ error: { message: 'unknown field reasoning_effort' } }, { status: 400 }) : ok(body)),
+  ])
+  const r = await post(s.base, { messages: [] })
+  assert.equal(r.status, 200)
+  assert.deepEqual(s.sent.map((x) => 'reasoning_effort' in x.body), [true, false])
+  s.close()
+})
+
+// SRV-8: launchd gets none of the shell's exports.
+test('keys exported in the shell but not saved are named at install', async () => {
+  const { keysOnlyInEnv } = await import('../src/serve.ts')
+  const env = { OPENAI_API_KEY: 'sk-1', ANTHROPIC_API_KEY: 'sk-2', PATH: '/bin' }
+  assert.deepEqual(keysOnlyInEnv({ keys: { anthropic: 'saved' } }, env), ['OPENAI_API_KEY'])
+  assert.deepEqual(keysOnlyInEnv({}, {}), [])
 })

@@ -266,8 +266,9 @@ function announce(r: Resolved): void {
 // Keyed by preference: 'fast' and the default resolve to different models, so a
 // single memo would hand the second caller the first caller's backend.
 const pending = new Map<string, Promise<Resolved>>()
+export const FAILURE_TTL = 30_000
 
-/** Resolution is memoised per process; the first call pays for discovery. */
+/** Resolution is memoised per process, failures briefly; the first call pays for discovery. */
 export function resolveBackend(
   prefer?: Prefer,
   remote = false,
@@ -278,10 +279,18 @@ export function resolveBackend(
   const key = `${prefer ?? 'default'}:${remote}:${modelId ?? ''}:${scope ?? ''}:${provider ?? ''}`
   let p = pending.get(key)
   if (!p) {
-    p = resolveOnce(prefer, remote, modelId, scope, provider).then((r) => {
-      announce(r)
-      return r
-    })
+    p = resolveOnce(prefer, remote, modelId, scope, provider).then(
+      (r) => {
+        announce(r)
+        return r
+      },
+      (e) => {
+        // A failure is looked at afresh after a while: the user may have
+        // started the server or saved the key since (MOD-22).
+        setTimeout(() => pending.get(key) === p && pending.delete(key), FAILURE_TTL).unref()
+        throw e
+      },
+    )
     pending.set(key, p)
   }
   return p

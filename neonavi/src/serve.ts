@@ -1,11 +1,12 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { execFile } from 'node:child_process'
-import { access, mkdir, rm, writeFile } from 'node:fs/promises'
+import { access, constants, mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { delimiter, join } from 'node:path'
 import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import type { ReadableStream as WebStream } from 'node:stream/web'
-import { diagnose, reset, route, type Route } from 'neorouter'
+import { diagnose, PROVIDERS, readConfig, reset, route, type Route } from 'neorouter'
 import { optionsFor, type Entry } from './spec.ts'
 
 /** What the server needs from the world; the real ones by default, fakes in tests. */
@@ -61,7 +62,21 @@ function linkName(entry: Entry, index: number): string {
 
 /** The request handler for SRV-2 to SRV-7, over the chain navi resolves. */
 export function serveHandler(chain: Entry[], d: ServeDeps) {
-  async function chat(req: IncomingMessage, res: ServerResponse, started: number) {
+  /** Posts to one link; a 400 over the reasoning hint navi added is asked once more without it, as navi does. */
+  async function send(r: Route, body: Record<string, unknown>, signal: AbortSignal): Promise<Response> {
+    const sent: Record<string, unknown> = { ...r.extra, ...body, model: r.model }
+    const answer = await d.fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(sent), signal })
+    if (answer.status !== 400 || !r.extra.reasoning_effort || 'reasoning_effort' in body) return answer
+    const text = await answer.text()
+    if (/reasoning/i.test(text)) {
+      const { reasoning_effort: _, ...rest } = sent
+      return d.fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(rest), signal })
+    }
+    return new Response(text, { status: answer.status, headers: answer.headers })
+  }
+
+  /** Answers one chat request, telling `note` which link is answering for the log line. */
+  async function chat(req: IncomingMessage, res: ServerResponse, note: (via: string) => void) {
     const raw = await readBody(req)
     if (!raw) return error(res, 413, 'The request is larger than 50 MB.')
     let body: Record<string, unknown>
@@ -71,6 +86,9 @@ export function serveHandler(chain: Entry[], d: ServeDeps) {
     } catch {
       return error(res, 400, 'The body is not a JSON object.')
     }
+    // An app that leaves stops the model too, rather than leaving it generating.
+    const stop = new AbortController()
+    res.once('close', () => stop.abort())
     const failed: string[] = []
     for (const [index, entry] of chain.entries()) {
       const name = linkName(entry, index)
@@ -79,12 +97,12 @@ export function serveHandler(chain: Entry[], d: ServeDeps) {
         failed.push(`${name}: ${await d.why(entry)}`)
         continue
       }
-      // The request's own fields win; navi only fills in what it would add (SRV-3).
-      const sent = { ...r.extra, ...body, model: r.model }
+      note(`${r.backend} · ${r.model}`)
       let answer: Response
       try {
-        answer = await d.fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(sent) })
+        answer = await send(r, body, stop.signal)
       } catch {
+        if (stop.signal.aborted) return
         failed.push(`${name}: could not be reached`)
         d.forget()
         continue
@@ -94,34 +112,39 @@ export function serveHandler(chain: Entry[], d: ServeDeps) {
         await answer.body?.cancel()
         continue
       }
-      // Logged once the answer is through, so a stream's time is all of it (SRV-6).
-      res.once('close', () => d.log(`${req.method} ${req.url} → ${r.backend} · ${r.model} · ${answer.status} · ${Date.now() - started} ms`))
       res.writeHead(answer.status, { 'content-type': answer.headers.get('content-type') ?? 'application/json' })
-      if (!answer.body) return res.end()
-      // Streamed as it arrives, so an app's streaming works unchanged.
-      Readable.fromWeb(answer.body as WebStream).pipe(res)
+      if (!answer.body) res.end()
+      // Streamed as it arrives, so an app's streaming works unchanged. A link
+      // that drops mid-answer ends this response, never the server.
+      else pipeline(Readable.fromWeb(answer.body as WebStream), res).catch(() => res.destroy())
       return
     }
     // Nothing answered: look afresh next time, since a server may be back by then.
     d.forget()
-    d.log(`${req.method} ${req.url} → no model · 503 · ${Date.now() - started} ms`)
+    note('no model')
     error(res, 503, `No model in navi's chain answered: ${failed.join('; ')}.`, 'service_unavailable')
   }
 
   return async (req: IncomingMessage, res: ServerResponse) => {
     const started = Date.now()
+    // The query is left out: it is the one place a client might put a key (SRV-6).
+    const path = (req.url ?? '').split('?')[0].replace(/\/+$/, '')
+    let via: string | undefined
+    // Logged once the answer is through, so a stream's time is all of it (SRV-6).
+    res.once('close', () =>
+      d.log(`${req.method} ${path || '/'} → ${via ? `${via} · ` : ''}${res.writableFinished ? res.statusCode : 'cut off'} · ${Date.now() - started} ms`),
+    )
     // SRV-5: a browser page carries an Origin; local apps do not.
     if (req.headers.origin) {
-      d.log(`${req.method} ${req.url} → refused: sent from a web page (${req.headers.origin})`)
+      via = `refused: sent from a web page (${req.headers.origin})`
       return error(res, 403, 'Requests from web pages are refused.', 'permission_error')
     }
-    const path = (req.url ?? '').split('?')[0].replace(/\/+$/, '')
     try {
       if (req.method === 'GET' && path === '/v1/models')
         return res
           .writeHead(200, { 'content-type': 'application/json' })
           .end(JSON.stringify({ object: 'list', data: [{ id: 'navi', object: 'model', created: 0, owned_by: 'navi' }] }))
-      if (req.method === 'POST' && path === '/v1/chat/completions') return await chat(req, res, started)
+      if (req.method === 'POST' && path === '/v1/chat/completions') return await chat(req, res, (v) => (via = v))
       error(res, 404, `navi serves GET /v1/models and POST /v1/chat/completions, not ${req.method} ${path || '/'}.`)
     } catch (e) {
       if (!res.headersSent) error(res, 500, e instanceof Error ? e.message : String(e), 'server_error')
@@ -179,15 +202,21 @@ ${args}
 async function naviOnPath(path = process.env.PATH ?? ''): Promise<string | null> {
   for (const dir of path.split(delimiter).filter(Boolean)) {
     const file = join(dir, 'navi')
-    if (await access(file).then(() => true, () => false)) return file
+    const runnable = await access(file, constants.X_OK).then(() => stat(file).then((s) => s.isFile()), () => false)
+    if (runnable) return file
   }
   return null
 }
 
 const agentFile = (home: string) => join(home, 'Library', 'LaunchAgents', `${AGENT}.plist`)
 
+/** Provider keys this shell has in its environment but config.json lacks: launchd will not see them (SRV-8). */
+export function keysOnlyInEnv(config: Record<string, any>, env: Record<string, string | undefined> = process.env): string[] {
+  return PROVIDERS.filter((p) => env[p.env] && !config.keys?.[p.id]).map((p) => p.env)
+}
+
 /** Installs or replaces the LaunchAgent and starts it; returns the log's path (SRV-8). */
-export async function installAgent(home: string, port: number): Promise<{ log: string } | { problem: string }> {
+export async function installAgent(home: string, port: number): Promise<{ log: string; unsaved: string[] } | { problem: string }> {
   if (process.platform !== 'darwin') return { problem: 'Keeping navi serve running is only set up on macOS.' }
   const navi = await naviOnPath()
   if (!navi) return { problem: 'navi is not on PATH; install it first (neonavi/install.sh).' }
@@ -199,8 +228,16 @@ export async function installAgent(home: string, port: number): Promise<{ log: s
   // Replacing: the old one is stopped first, or bootstrap refuses.
   await run('launchctl', ['bootout', `${domain}/${AGENT}`]).catch(() => {})
   await writeFile(file, agentPlist(navi, port, log, process.env.PATH ?? '/usr/bin:/bin'))
-  await run('launchctl', ['bootstrap', domain, file])
-  return { log }
+  // launchd may still be letting go of the old one; a second try a moment later usually takes.
+  const start = () => run('launchctl', ['bootstrap', domain, file])
+  try {
+    await start().catch(() => new Promise((r) => setTimeout(r, 1000)).then(start))
+  } catch (e) {
+    await rm(file, { force: true })
+    const why = String((e as { stderr?: string }).stderr || (e as Error).message).trim()
+    return { problem: `launchd would not start navi serve: ${why}` }
+  }
+  return { log, unsaved: keysOnlyInEnv(await readConfig()) }
 }
 
 /** Stops and removes the LaunchAgent; false when there was none (SRV-8). */

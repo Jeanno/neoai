@@ -31,5 +31,8 @@ falls back the same way.
   LaunchAgent (`dev.neoai.navi-serve`) starts it now and at every login and
   restarts it if it stops, logging to `~/Library/Logs/navi-serve.log`. It
   runs the `navi` found on PATH, so updating navi updates it once restarted;
-  installing again replaces it. `navi serve --uninstall` stops and removes
+  installing again replaces it. A provider key only exported in the shell is not seen
+  by launchd, so installing names any such key and says to save it with
+  `navi setup`; when launchd will not start it, the reason is printed and
+  nothing is left installed. `navi serve --uninstall` stops and removes
   it, and says when there was nothing to remove.

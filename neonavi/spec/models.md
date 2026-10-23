@@ -64,6 +64,10 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
   installed. `navi` prints each failed link's reason when no link answers,
   and on stderr when a later link answers instead; setup reports them
   (SET-1) and Raycast shows them where it says no model answers (RAY-7).
+- MOD-22: A resolution is remembered for the life of the process, but a
+  failed link only for 30 seconds: a long-running navi (`serve`, `mcp`, an
+  interactive session) looks again once the user has started the server or
+  saved the key it lacked.
 - MOD-8: A local link fails when no server is reachable or launchable, or the
   pinned id is not installed.
 - MOD-18: A local link can be probed without launching anything: it then

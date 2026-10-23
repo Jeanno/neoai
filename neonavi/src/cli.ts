@@ -137,6 +137,9 @@ async function serve(argv: string[]) {
     }
     console.log(`navi serve now runs in the background and at every login, on ${bold(`http://127.0.0.1:${n}/v1`)}.`)
     console.log(dim(`Log: ${got.log} · stop it with \`navi serve --uninstall\``))
+    // Started by launchd, it gets none of this shell's exports.
+    if (got.unsaved.length)
+      console.error(`${got.unsaved.join(', ')} ${got.unsaved.length > 1 ? 'are' : 'is'} set in this shell but not saved; navi serve will not see ${got.unsaved.length > 1 ? 'them' : 'it'}. Save keys with \`navi setup\`.`)
     return 0
   }
   // Each request is logged on its own line (SRV-6); the router's line would interleave.
