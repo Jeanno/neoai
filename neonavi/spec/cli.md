@@ -46,6 +46,11 @@
   the terminal is asked to mark pastes (bracketed paste), the lines inside a
   paste are kept together, and Enter sends them. A terminal that does not
   mark pastes sends each line as before.
+- CLI-27: Up and down at the `navi>` prompt recall earlier prompts, from
+  this session and before: the last 500 are kept in `~/.neoai/history`
+  (0600), one per line with line breaks escaped. Only what is typed at
+  `navi>` is kept; answers to approvals, setup questions and keys never are,
+  nor is a line starting with a space.
 - CLI-8: The interactive prompt and shell approval share one stdin reader, so
   input typed ahead is never lost and never read by the wrong question.
 

@@ -1,8 +1,8 @@
-import { readFile, readdir, rm, stat, writeFile, mkdir } from 'node:fs/promises'
+import { chmod, readFile, readdir, rm, stat, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { ModelMessage } from 'ai'
-import { sessionsDir } from 'neorouter'
+import { configDir, sessionsDir } from 'neorouter'
 
 /**
  * One history per directory, so a question asked in one project never answers
@@ -84,4 +84,32 @@ export function ago(then: Date, now = new Date()): string {
   if (min < 60) return `${min} min ago`
   if (min < 48 * 60) return `${Math.round(min / 60)} h ago`
   return `${Math.round(min / (24 * 60))} days ago`
+}
+
+/** How many `navi>` prompts are kept for recall (CLI-27). */
+export const PROMPTS_KEPT = 500
+
+const promptsFile = (home: string) => join(configDir(home), 'history')
+
+/** Earlier `navi>` prompts, newest first; none when the file is missing (CLI-27). */
+export async function loadPrompts(home: string): Promise<string[]> {
+  const text = await readFile(promptsFile(home), 'utf8').catch(() => '')
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => l.replace(/\\(.)/g, (_, c) => (c === 'n' ? '\n' : c)))
+    .reverse()
+    .slice(0, PROMPTS_KEPT)
+}
+
+/** Writes the prompts, newest first as given, oldest first in the file, 0600 (CLI-27). */
+export async function savePrompts(home: string, prompts: string[]): Promise<void> {
+  const file = promptsFile(home)
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 })
+  const lines = prompts
+    .slice(0, PROMPTS_KEPT)
+    .reverse()
+    .map((p) => p.replace(/\\/g, '\\\\').replace(/\n/g, '\\n'))
+  await writeFile(file, lines.map((l) => `${l}\n`).join(''), { mode: 0o600 })
+  await chmod(file, 0o600)
 }

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { mkdtemp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -157,8 +157,9 @@ async function naviOnTerminal(
   config: object,
   /** Called with all shown so far on each output, to type keys that are not a line. */
   react?: (shown: string, type: (keys: string) => void) => void,
+  home?: string,
 ) {
-  const home = await mkdtemp(join(tmpdir(), 'navi-cli-'))
+  home ??= await mkdtemp(join(tmpdir(), 'navi-cli-'))
   await mkdir(join(home, '.neoai'), { recursive: true })
   await writeFile(join(home, '.neoai', 'config.json'), JSON.stringify(config))
   const env = { PATH: process.env.PATH, HOME: home, NEOROUTER_QUIET: '1', TERM: 'xterm' }
@@ -258,4 +259,20 @@ test('a pasted block of lines is one prompt', { skip: process.platform !== 'darw
   const saved = JSON.parse(await readFile(join(r.home, '.neoai', 'sessions', file), 'utf8'))
   const asked = saved.messages.filter((m: any) => m.role === 'user').map((m: any) => m.content)
   assert.deepEqual(asked, ['first line\nsecond line'])
+})
+
+// CLI-27: a prompt is recalled with up arrow in a later session; leaving is not kept.
+test('up arrow recalls a prompt from an earlier session', { skip: process.platform !== 'darwin' }, async () => {
+  const fake = await fakeModel()
+  const first = await naviOnTerminal([], ['what is here', 'exit'], fake.config)
+  assert.equal(first.code, 0, first.shown)
+  const kept = await readFile(join(first.home, '.neoai', 'history'), 'utf8')
+  assert.equal(kept, 'what is here\n')
+  assert.equal((await stat(join(first.home, '.neoai', 'history'))).mode & 0o777, 0o600)
+  const again = await naviOnTerminal([], ['\x1b[A', 'exit'], fake.config, undefined, first.home)
+  fake.close()
+  assert.equal(again.code, 0, again.shown)
+  // The recalled prompt was asked again: one more step (the fake calls a tool only on its first).
+  assert.equal(fake.steps(), 3)
+  assert.match(again.shown, /navi> [^\n]*what is here/)
 })

@@ -9,7 +9,7 @@ import { makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
 import { serveMcp, type Ask } from './mcp.ts'
 import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } from './serve.ts'
-import { ago, clearAllSessions, clearSession, listSessions, loadSession, saveSession, sessionFile } from './session.ts'
+import { ago, clearAllSessions, clearSession, listSessions, loadPrompts, loadSession, savePrompts, saveSession, sessionFile } from './session.ts'
 import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
 import { readConfig, reset } from 'neorouter'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
@@ -307,6 +307,8 @@ async function main() {
       running.abort()
       return true
     },
+    // A history that cannot be written is only a convenience lost.
+    history: { prompts: await loadPrompts(homedir()), save: (p) => void savePrompts(homedir(), p).catch(() => {}) },
   })
   const spin = makeSpinner(process.stderr)
   const asker = makeApprover({ line })
@@ -436,7 +438,10 @@ async function main() {
     for (;;) {
       // The marker gets a lighter background; bold is opened as part of the
       // prompt so the typed line inherits it.
-      const prompt = (await line.ask(`\n${highlight('navi>')} \x1b[1m`))?.trim()
+      const prompt = (await line.ask(`\n${highlight('navi>')} \x1b[1m`, {
+        // Leaving is not worth recalling.
+        remember: (l) => !QUIT.has(l.trim().toLowerCase()),
+      }))?.trim()
       // Reset the bold, and a blank line between what was asked and what comes back.
       if (process.stdout.isTTY) process.stdout.write('\x1b[0m\n')
       if (prompt === undefined || prompt === null || QUIT.has(prompt.toLowerCase())) return 0

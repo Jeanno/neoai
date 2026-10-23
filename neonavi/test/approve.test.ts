@@ -234,3 +234,28 @@ test('a at the prompt means always, offered only where a command could be allowe
   b.close()
   assert.match(shown.join(''), /\[y\/N\/a\][\s\S]*\[y\/N\]\x1b\[0m $/)
 })
+
+// CLI-27: only what a question says to remember is kept; a key and an approval never are.
+test('a line reader keeps only the answers it is told to, newest first', async () => {
+  const { PassThrough } = await import('node:stream')
+  const input = Object.assign(new PassThrough(), { isTTY: true, setRawMode: () => {} })
+  const output = Object.assign(new PassThrough(), { isTTY: true, columns: 80 })
+  output.resume()
+  const saves: string[][] = []
+  const line = makeLine({ input, output, history: { prompts: ['older'], save: (p) => saves.push(p) } })
+  const keep = () => true
+  const answer = (typed: string) => setImmediate(() => input.write(`${typed}\r`))
+  answer('what is here')
+  assert.equal(await line.ask('navi> ', { remember: keep }), 'what is here')
+  answer('sk-secret')
+  assert.equal(await line.ask('key: ', { secret: true }), 'sk-secret')
+  answer('y')
+  assert.equal(await line.ask('run? '), 'y')
+  answer(' private')
+  assert.equal(await line.ask('navi> ', { remember: keep }), ' private')
+  answer('older')
+  assert.equal(await line.ask('navi> ', { remember: keep }), 'older')
+  line.close()
+  assert.deepEqual(saves.at(-1), ['older', 'what is here'])
+  assert.equal(saves.length, 2)
+})

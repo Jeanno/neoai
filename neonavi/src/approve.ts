@@ -1,6 +1,7 @@
 import { createInterface, type Interface } from 'node:readline/promises'
 import type { Readable, Writable } from 'node:stream'
 import { visible, type FileChange } from './diff.ts'
+import { PROMPTS_KEPT } from './session.ts'
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
@@ -21,7 +22,11 @@ export interface Line {
    * The line typed, or null when input is gone (EOF, ^C, ^D). A secret answer
    * is not echoed as it is typed.
    */
-  ask: (prompt: string, opts?: { secret?: boolean; signal?: AbortSignal }) => Promise<string | null>
+  /** `remember` keeps an answer it approves for up-arrow recall (CLI-27); nothing else is kept. */
+  ask: (
+    prompt: string,
+    opts?: { secret?: boolean; signal?: AbortSignal; remember?: (line: string) => boolean },
+  ) => Promise<string | null>
   /** Starts reading now, so ^C reaches `onInterrupt` before the first question (CLI-25). */
   listen: () => void
   close: () => void
@@ -43,9 +48,12 @@ export function makeLine({
   input,
   output,
   onInterrupt,
+  history,
 }: {
   input: Readable
   output: Writable
+  /** Earlier prompts, newest first, and where to keep them when one is added (CLI-27). */
+  history?: { prompts: string[]; save: (prompts: string[]) => void }
   /** ^C on an empty line: true when it was handled (a turn stopped), false to leave (CLI-7, CLI-25). */
   onInterrupt?: () => boolean
 }): Line {
@@ -63,11 +71,24 @@ export function makeLine({
   let pasting = false
   let pasted: string[] = []
   const terminal = (input as { isTTY?: boolean }).isTTY === true && (output as { isTTY?: boolean }).isTTY === true
+  const recalled = () => (rl as unknown as { history: string[] }).history
+  const forget = (l: string) => {
+    if (recalled()[0] === l) recalled().shift()
+  }
+  const remember = (l: string) => {
+    if (!history || !l.trim() || l.startsWith(' ')) return
+    const kept = [l, ...recalled().filter((p) => p !== l)].slice(0, PROMPTS_KEPT)
+    recalled().splice(0, Infinity, ...kept)
+    history.save(kept)
+  }
   const deliver = (l: string) => (waiting.length ? waiting.shift()!(l) : lines.push(l))
   const open = () => {
     if (!rl) {
-      rl = createInterface({ input, output })
+      rl = createInterface({ input, output, history: [...(history?.prompts ?? [])], historySize: PROMPTS_KEPT })
       rl.on('line', (l) => {
+        // readline has already kept the line; whether it should be is decided
+        // by the question it answers (remember, below).
+        forget(l)
         if (pasting) return void pasted.push(l)
         const whole = [...pasted, l].join('\n')
         pasted = []
@@ -101,9 +122,13 @@ export function makeLine({
     return rl
   }
   return {
-    ask: async (prompt, { secret = false, signal } = {}) => {
+    ask: async (prompt, { secret = false, signal, remember: keep } = {}) => {
       const r = open()
-      if (lines.length) return lines.shift()!
+      const kept = (l: string | null) => {
+        if (l !== null && keep?.(l)) remember(l)
+        return l
+      }
+      if (lines.length) return kept(lines.shift()!)
       // Input already at EOF: waiting would stall the agent instead of refusing.
       if (closed || signal?.aborted) return null
       r.setPrompt(prompt)
@@ -125,7 +150,7 @@ export function makeLine({
           signal?.addEventListener('abort', gaveUp, { once: true })
           waiting.push(answer)
         })
-      if (!secret) return waitFor()
+      if (!secret) return waitFor().then(kept)
       // Everything readline draws while the key is typed is dropped, except the
       // newline that ends it. Muting the stream rather than readline itself
       // holds across Node versions, whose internals have moved.
