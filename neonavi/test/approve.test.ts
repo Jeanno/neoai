@@ -235,27 +235,139 @@ test('a at the prompt means always, offered only where a command could be allowe
   assert.match(shown.join(''), /\[y\/N\/a\][\s\S]*\[y\/N\]\x1b\[0m $/)
 })
 
-// CLI-27: only what a question says to remember is kept; a key and an approval never are.
-test('a line reader keeps only the answers it is told to, newest first', async () => {
+/** A fake terminal: what is typed goes in as keys, what is drawn is collected. */
+async function fakeTerminal() {
   const { PassThrough } = await import('node:stream')
   const input = Object.assign(new PassThrough(), { isTTY: true, setRawMode: () => {} })
   const output = Object.assign(new PassThrough(), { isTTY: true, columns: 80 })
-  output.resume()
-  const saves: string[][] = []
-  const line = makeLine({ input, output, history: { prompts: ['older'], save: (p) => saves.push(p) } })
-  const keep = () => true
-  const answer = (typed: string) => setImmediate(() => input.write(`${typed}\r`))
-  answer('what is here')
-  assert.equal(await line.ask('navi> ', { remember: keep }), 'what is here')
-  answer('sk-secret')
-  assert.equal(await line.ask('key: ', { secret: true }), 'sk-secret')
-  answer('y')
-  assert.equal(await line.ask('run? '), 'y')
-  answer(' private')
-  assert.equal(await line.ask('navi> ', { remember: keep }), ' private')
-  answer('older')
-  assert.equal(await line.ask('navi> ', { remember: keep }), 'older')
+  let drawn = ''
+  output.on('data', (c) => (drawn += c))
+  const tick = () => new Promise((r) => setImmediate(r))
+  return {
+    input,
+    output,
+    /** Keys typed, then a moment for readline to take them. */
+    type: async (keys: string) => {
+      input.write(keys)
+      await tick()
+    },
+    drawn: () => drawn,
+    tick,
+  }
+}
+
+const keep = () => true
+
+// CLI-27: only what a question says to remember is kept; a key and an approval never are.
+test('a line reader keeps only the answers it is told to, newest first', async () => {
+  const t = await fakeTerminal()
+  const added: string[] = []
+  const line = makeLine({ ...t, history: { prompts: ['older'], add: (p) => added.push(p) } })
+  const ask = async (q: string, typed: string, o = {}) => {
+    const answer = line.ask(q, o)
+    await t.tick()
+    await t.type(`${typed}\r`)
+    return answer
+  }
+  assert.equal(await ask('navi> ', 'what is here', { remember: keep }), 'what is here')
+  assert.equal(await ask('key: ', 'sk-secret', { secret: true }), 'sk-secret')
+  assert.equal(await ask('run? ', 'y'), 'y')
+  assert.equal(await ask('navi> ', ' private', { remember: keep }), ' private')
+  // Up arrow, past the approval answer and the key, to the prompt before.
+  const recalled = line.ask('navi> ', { remember: keep })
+  await t.tick()
+  await t.type('\x1b[A\x1b[A\r')
+  assert.equal(await recalled, 'older')
   line.close()
-  assert.deepEqual(saves.at(-1), ['older', 'what is here'])
-  assert.equal(saves.length, 2)
+  assert.deepEqual(added, ['what is here', 'older'])
+  assert.ok(!t.drawn().includes('sk-secret'))
+})
+
+// CLI-8, CLI-28: on a terminal, an approval takes only what is typed while it is open.
+test('a line entered or pasted during an answer never answers an approval', async () => {
+  const t = await fakeTerminal()
+  const line = makeLine(t)
+  line.listen()
+  // During the answer: a line entered, then a paste left waiting.
+  await t.type('y\r')
+  await t.type('\x1b[200~y\x1b[201~')
+  const approval = line.ask('run? ')
+  await t.tick()
+  await t.type('\r')
+  assert.equal(await approval, '')
+  // The entered line waits for the prompt it was typed towards.
+  assert.equal(await line.ask('navi> ', { remember: keep }), 'y')
+  line.close()
+})
+
+test('a key question takes nothing typed before it', async () => {
+  const t = await fakeTerminal()
+  const line = makeLine(t)
+  line.listen()
+  await t.type('typed ahead\r')
+  const key = line.ask('key: ', { secret: true })
+  await t.tick()
+  await t.type('sk-real\r')
+  assert.equal(await key, 'sk-real')
+  line.close()
+})
+
+// Two approvals at once: each answer goes to the question drawn.
+test('questions asked at once are asked one after the other', async () => {
+  const t = await fakeTerminal()
+  const line = makeLine(t)
+  const first = line.ask('run? echo one ')
+  const second = line.ask('run? rm -rf x ')
+  await t.tick()
+  assert.ok(t.drawn().includes('echo one') && !t.drawn().includes('rm -rf x'))
+  await t.type('y\r')
+  assert.equal(await first, 'y')
+  await t.tick()
+  assert.ok(t.drawn().includes('rm -rf x'))
+  await t.type('n\r')
+  assert.equal(await second, 'n')
+  line.close()
+})
+
+// CLI-25, CLI-28: ^C during a turn discards what was typed during it, entered or not.
+test('^C during a turn discards lines entered during it', async () => {
+  const t = await fakeTerminal()
+  let stopped = 0
+  const line = makeLine({ ...t, onInterrupt: () => (stopped++, true) })
+  line.listen()
+  await t.type('rm everything\r')
+  await t.type('half typed')
+  await t.type('\x03')
+  assert.equal(stopped, 1)
+  const next = line.ask('navi> ', { remember: keep })
+  await t.tick()
+  await t.type('fresh\r')
+  assert.equal(await next, 'fresh')
+  line.close()
+})
+
+// CLI-26: a paste that never says it ended is undone by ^C.
+test('^C ends a paste that never ended', async () => {
+  const t = await fakeTerminal()
+  const line = makeLine(t)
+  const asked = line.ask('navi> ', { remember: keep })
+  await t.tick()
+  await t.type('\x1b[200~half a paste\r')
+  await t.type('\x03')
+  await t.type('hello\r')
+  assert.equal(await asked, 'hello')
+  line.close()
+})
+
+// CLI-27: two sessions adding prompts keep each other's.
+test('prompts added by two sessions are all kept, newest first, escaped', async () => {
+  const { addPrompt, loadPrompts } = await import('../src/session.ts')
+  const { mkdtemp } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const home = await mkdtemp(join(tmpdir(), 'navi-prompts-'))
+  await addPrompt(home, 'from session a')
+  await addPrompt(home, 'two\nlines and a \\n')
+  await addPrompt(home, 'from session a')
+  assert.deepEqual(await loadPrompts(home), ['from session a', 'two\nlines and a \\n'])
 })

@@ -1,6 +1,6 @@
-import { chmod, readFile, readdir, rm, stat, writeFile, mkdir } from 'node:fs/promises'
+import { chmod, readFile, readdir, rename, rm, stat, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { ModelMessage } from 'ai'
 import { configDir, sessionsDir } from 'neorouter'
 
@@ -102,14 +102,18 @@ export async function loadPrompts(home: string): Promise<string[]> {
     .slice(0, PROMPTS_KEPT)
 }
 
-/** Writes the prompts, newest first as given, oldest first in the file, 0600 (CLI-27). */
-export async function savePrompts(home: string, prompts: string[]): Promise<void> {
+/**
+ * Adds a prompt to the file, merged with what is there now, so two sessions
+ * at once keep both of theirs; written aside and renamed, so a crash never
+ * leaves half a file (CLI-27).
+ */
+export async function addPrompt(home: string, prompt: string): Promise<void> {
   const file = promptsFile(home)
   await mkdir(dirname(file), { recursive: true, mode: 0o700 })
-  const lines = prompts
-    .slice(0, PROMPTS_KEPT)
-    .reverse()
-    .map((p) => p.replace(/\\/g, '\\\\').replace(/\n/g, '\\n'))
-  await writeFile(file, lines.map((l) => `${l}\n`).join(''), { mode: 0o600 })
+  const prompts = [prompt, ...(await loadPrompts(home)).filter((p) => p !== prompt)].slice(0, PROMPTS_KEPT)
+  const lines = prompts.reverse().map((p) => p.replace(/\\/g, '\\\\').replace(/\n/g, '\\n'))
+  const tmp = `${file}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
+  await writeFile(tmp, lines.map((l) => `${l}\n`).join(''), { mode: 0o600 })
+  await rename(tmp, file)
   await chmod(file, 0o600)
 }

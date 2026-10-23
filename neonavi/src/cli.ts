@@ -9,7 +9,7 @@ import { makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
 import { serveMcp, type Ask } from './mcp.ts'
 import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } from './serve.ts'
-import { ago, clearAllSessions, clearSession, listSessions, loadPrompts, loadSession, savePrompts, saveSession, sessionFile } from './session.ts'
+import { ago, clearAllSessions, clearSession, listSessions, addPrompt, loadPrompts, loadSession, saveSession, sessionFile } from './session.ts'
 import { attachStdin } from './attach.ts'
 import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
 import { readConfig, reset } from 'neorouter'
@@ -298,6 +298,7 @@ async function main() {
   const stored = anew ? [] : await loadSession(file)
   if (stored.length) console.error(dim(`· continuing (${stored.length} messages)`))
 
+  let adding: Promise<void> = Promise.resolve()
   // The turn running now, which ^C stops (CLI-25).
   let running = null as AbortController | null
   const line = makeLine({
@@ -309,8 +310,15 @@ async function main() {
       return true
     },
     // A history that cannot be written is only a convenience lost.
-    history: { prompts: await loadPrompts(homedir()), save: (p) => void savePrompts(homedir(), p).catch(() => {}) },
+    // One write at a time, each merged with the file; one that fails is only a convenience lost.
+    history: { prompts: await loadPrompts(homedir()), add: (p) => void (adding = adding.then(() => addPrompt(homedir(), p)).catch(() => {})) },
   })
+  // Killed rather than left: the terminal gets its normal paste mode back (CLI-26).
+  for (const [signal, code] of [['SIGTERM', 143], ['SIGHUP', 129]] as const)
+    process.once(signal, () => {
+      line.close()
+      process.exit(code)
+    })
   const spin = makeSpinner(process.stderr)
   const asker = makeApprover({ line })
   // On a terminal the answer is written as it arrives; a pipe gets exactly the

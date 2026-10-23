@@ -52,8 +52,8 @@ export function makeLine({
 }: {
   input: Readable
   output: Writable
-  /** Earlier prompts, newest first, and where to keep them when one is added (CLI-27). */
-  history?: { prompts: string[]; save: (prompts: string[]) => void }
+  /** Earlier prompts, newest first, and where to add one when it is kept (CLI-27). */
+  history?: { prompts: string[]; add: (prompt: string) => void }
   /** ^C on an empty line: true when it was handled (a turn stopped), false to leave (CLI-7, CLI-25). */
   onInterrupt?: () => boolean
 }): Line {
@@ -62,25 +62,25 @@ export function makeLine({
   // first tool call seconds later — by which time piped input is long gone.
   let rl: Interface | null = null
   let closed = false
+  const terminal = (input as { isTTY?: boolean }).isTTY === true && (output as { isTTY?: boolean }).isTTY === true
   // Lines arrive whenever the stream delivers them, not when we ask — a pipe
   // hands over the answer and the next question in one chunk. Queue them so
-  // nothing typed ahead is lost.
+  // nothing typed ahead is lost (CLI-8).
   const lines: string[] = []
   const waiting: ((line: string | null) => void)[] = []
   // A paste's lines, held until the Enter that sends them (CLI-26).
   let pasting = false
   let pasted: string[] = []
-  const terminal = (input as { isTTY?: boolean }).isTTY === true && (output as { isTTY?: boolean }).isTTY === true
-  const recalled = () => (rl as unknown as { history: string[] }).history
-  const forget = (l: string) => {
-    if (recalled()[0] === l) recalled().shift()
-  }
+  // Up-arrow recall is ours, not readline's: readline would keep every answer,
+  // keys included, and push real prompts out to make room (CLI-27).
+  const recall = [...(history?.prompts ?? [])]
   const remember = (l: string) => {
     if (!history || !l.trim() || l.startsWith(' ')) return
-    const kept = [l, ...recalled().filter((p) => p !== l)].slice(0, PROMPTS_KEPT)
-    recalled().splice(0, Infinity, ...kept)
-    history.save(kept)
+    recall.splice(0, Infinity, ...[l, ...recall.filter((p) => p !== l)].slice(0, PROMPTS_KEPT))
+    history.add(l)
   }
+  // One question at a time: two drawn at once would take each other's answers.
+  let turn: Promise<unknown> = Promise.resolve()
   const deliver = (l: string) => (waiting.length ? waiting.shift()!(l) : lines.push(l))
   // What readline draws reaches the terminal only while a question is open:
   // keys typed during an answer would otherwise land in the middle of it, and
@@ -98,19 +98,24 @@ export function makeLine({
   })
   Object.defineProperty(screen, 'columns', { get: () => (output as { columns?: number }).columns })
   output.on('resize', () => screen.emit('resize'))
+  /** Drops what is typed but not yet asked for: the line being edited and any paste. */
+  const clearTyped = () => {
+    pasting = false
+    pasted = []
+    if (!rl || !terminal) return
+    rl.write(null, { ctrl: true, name: 'u' })
+    rl.write(null, { ctrl: true, name: 'k' })
+  }
   const open = () => {
     if (!rl) {
       rl = createInterface({
         input,
         output: screen,
         terminal: (output as { isTTY?: boolean }).isTTY === true,
-        history: [...(history?.prompts ?? [])],
-        historySize: PROMPTS_KEPT,
+        history: recall,
+        historySize: 0,
       })
       rl.on('line', (l) => {
-        // readline has already kept the line; whether it should be is decided
-        // by the question it answers (remember, below).
-        forget(l)
         if (pasting) return void pasted.push(l)
         const whole = [...pasted, l].join('\n')
         pasted = []
@@ -129,64 +134,72 @@ export function makeLine({
         })
       }
       rl.on('SIGINT', () => {
-        const typed = !!rl!.line || pasted.length > 0
-        const clear = () => {
-          pasted = []
-          rl!.write(null, { ctrl: true, name: 'u' })
-          rl!.write(null, { ctrl: true, name: 'k' })
-        }
+        const typed = !!rl!.line || pasted.length > 0 || pasting
         // Something typed at a question: ^C clears it, as a shell does (CLI-7).
-        if (typed && shows !== 'nothing') return clear()
-        // A turn running: ^C stops it, and what was typed ahead goes with it
-        // (CLI-25, CLI-28).
-        if (onInterrupt?.()) return void (typed && clear())
+        if (typed && shows !== 'nothing') return clearTyped()
+        // A turn running: ^C stops it, and everything typed during it goes
+        // too, lines already entered included (CLI-25, CLI-28).
+        if (onInterrupt?.()) {
+          lines.length = 0
+          return clearTyped()
+        }
         // Otherwise it ends the session instead of killing the process mid-write.
         rl!.close()
       })
     }
     return rl
   }
+
+  /** One question, asked once the one before it is answered. */
+  async function question(
+    prompt: string,
+    { secret = false, signal, remember: keep }: { secret?: boolean; signal?: AbortSignal; remember?: (line: string) => boolean },
+  ): Promise<string | null> {
+    const r = open()
+    // A question other than the prompt takes only what is typed while it is
+    // open: a line entered during the answer, or a paste, was meant for
+    // something else (CLI-8, CLI-28). A pipe has no such moment; it answers
+    // in order.
+    const fresh = terminal && (secret || !keep)
+    const kept = (l: string | null) => {
+      if (l !== null && keep?.(l)) remember(l)
+      return l
+    }
+    if (!fresh && lines.length) return kept(lines.shift()!)
+    // Input already at EOF, or read to its end by someone else (`-a -`):
+    // waiting would stall the agent instead of refusing.
+    if (closed || signal?.aborted || input.readableEnded) return null
+    if (fresh) clearTyped()
+    shows = 'all'
+    r.setPrompt(prompt)
+    // The cursor stays at the end of anything typed ahead.
+    r.prompt(true)
+    // A key shows nothing as it is typed but the newline that ends it.
+    if (secret) shows = 'newline'
+    // A question given up on (the turn stopped) must not take the next line typed.
+    const answered = await new Promise<string | null>((resolve) => {
+      const answer = (l: string | null) => {
+        shows = 'nothing'
+        signal?.removeEventListener('abort', gaveUp)
+        resolve(l)
+      }
+      const gaveUp = () => {
+        const at = waiting.indexOf(answer)
+        if (at >= 0) waiting.splice(at, 1)
+        output.write('\n')
+        answer(null)
+      }
+      signal?.addEventListener('abort', gaveUp, { once: true })
+      waiting.push(answer)
+    })
+    return secret ? answered : kept(answered)
+  }
+
   return {
-    ask: async (prompt, { secret = false, signal, remember: keep } = {}) => {
-      const r = open()
-      const kept = (l: string | null) => {
-        if (l !== null && keep?.(l)) remember(l)
-        return l
-      }
-      if (lines.length) return kept(lines.shift()!)
-      // Input already at EOF, or read to its end by someone else (`-a -`):
-      // waiting would stall the agent instead of refusing.
-      if (closed || signal?.aborted || input.readableEnded) return null
-      // Typed ahead of a key's question: it would show, and is no key anyway.
-      if (secret && (output as { isTTY?: boolean }).isTTY) {
-        r.write(null, { ctrl: true, name: 'u' })
-        r.write(null, { ctrl: true, name: 'k' })
-      }
-      shows = 'all'
-      r.setPrompt(prompt)
-      // The cursor stays at the end of anything typed ahead.
-      r.prompt(true)
-      if (secret) shows = 'newline'
-      // A question given up on (the turn stopped) must not take the next line typed.
-      const waitFor = (after: (l: string | null) => void = () => {}) =>
-        new Promise<string | null>((resolve) => {
-          const answer = (l: string | null) => {
-            shows = 'nothing'
-            signal?.removeEventListener('abort', gaveUp)
-            after(l)
-            resolve(l)
-          }
-          const gaveUp = () => {
-            const at = waiting.indexOf(answer)
-            if (at >= 0) waiting.splice(at, 1)
-            output.write('\n')
-            answer(null)
-          }
-          signal?.addEventListener('abort', gaveUp, { once: true })
-          waiting.push(answer)
-        })
-      // A key shows nothing as it is typed but the newline that ends it.
-      return waitFor().then(secret ? (l) => l : kept)
+    ask: (prompt, opts = {}) => {
+      const asked = turn.then(() => question(prompt, opts))
+      turn = asked.catch(() => {})
+      return asked
     },
     listen: () => void open(),
     close: () => rl?.close(),

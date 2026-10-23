@@ -56,11 +56,17 @@
   `navi>` is kept; answers to approvals, setup questions and keys never are,
   nor is a line starting with a space.
 - CLI-28: Keys typed while a turn runs are not drawn over the answer; they
-  show at the next prompt, ready to edit or send. ^C during the turn stops it
-  (CLI-25) and discards them. A key typed at a hidden question (SET-6) is
-  never drawn, and text typed ahead of that question is dropped.
+  show at the next `navi>` prompt, ready to edit or send, and a line entered
+  then is sent there. ^C during the turn stops it (CLI-25) and discards all
+  of them. On a terminal, an approval or any other question takes only what
+  is typed while it is shown: anything typed or pasted before it is dropped
+  when it appears. A key typed at a hidden question (SET-6) is never drawn.
+  Questions asked at once (two commands in one step) are shown one after the
+  other, each with its own answer.
 - CLI-8: The interactive prompt and shell approval share one stdin reader, so
-  input typed ahead is never lost and never read by the wrong question.
+  input typed ahead is never lost and never read by the wrong question. From
+  a pipe, lines answer the questions in the order they are asked; on a
+  terminal, CLI-28 says which question a line belongs to.
 
 ## Turns
 
