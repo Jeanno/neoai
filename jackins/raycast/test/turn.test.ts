@@ -52,7 +52,10 @@ test('RAY-2: failed, judged-safe and compacted steps are marked', () => {
     { type: 'tool-call', id: '2', name: 'read_file', input: { path: 'nope' } },
     { type: 'tool-result', id: '2', name: 'read_file', output: 'ENOENT', error: true },
   ])
-  assert.equal(md(t), '- _compacted 12 earlier messages_\n- `run_shell ls` — approved automatically\n- `read_file nope` — failed')
+  assert.equal(
+    md(t),
+    '- _compacted 12 earlier messages_\n- `run_shell ls` — approved automatically\n- `read_file nope` — failed',
+  )
 })
 
 test('RAY-2: backticks in arguments cannot break out of the code span', () => {

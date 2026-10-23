@@ -123,7 +123,12 @@ test('RAY-10: a check cancelled by leaving its view is told apart from a failure
 // MOD-21, RAY-7: the status lists each failed link with why.
 test('the status says why each link failed', () => {
   const md = statusMarkdown(
-    status(remote, { failures: [{ index: 0, label: 'qwen3.8 on Darkbloom', why: 'Darkbloom could not be reached at http://box/v1' }] }),
+    status(remote, {
+      failures: [{ index: 0, label: 'qwen3.8 on Darkbloom', why: 'Darkbloom could not be reached at http://box/v1' }],
+    }),
   )
-  assert.match(md, /fallback \(REMOTE[^]*\n- The primary, qwen3\.8 on Darkbloom: Darkbloom could not be reached at http:\/\/box\/v1\./)
+  assert.match(
+    md,
+    /fallback \(REMOTE[^]*\n- The primary, qwen3\.8 on Darkbloom: Darkbloom could not be reached at http:\/\/box\/v1\./,
+  )
 })

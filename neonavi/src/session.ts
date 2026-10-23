@@ -51,14 +51,15 @@ export async function listSessions(home: string): Promise<SavedSession[]> {
   const dir = sessionsDir(home)
   const names = (await readdir(dir).catch(() => [])).filter((n) => /^[0-9a-f]{16}\.json$/.test(n))
   const all = await Promise.all(
-    names.map(async (name): Promise<SavedSession> => {
+    names.map(async (name): Promise<SavedSession | null> => {
       const file = join(dir, name)
-      const [text, info] = await Promise.all([readFile(file, 'utf8').catch(() => ''), stat(file)])
+      // Another navi may clear it between the listing and this.
+      const [text, info] = await Promise.all([readFile(file, 'utf8').catch(() => ''), stat(file).catch(() => null)])
       const { cwd, messages } = parse(text)
-      return { file, ...(cwd && { cwd }), messages: messages.length, used: info.mtime }
+      return info && { file, ...(cwd && { cwd }), messages: messages.length, used: info.mtime }
     }),
   )
-  return all.sort((a, b) => b.used.getTime() - a.used.getTime())
+  return all.filter((s): s is SavedSession => !!s).sort((a, b) => b.used.getTime() - a.used.getTime())
 }
 
 /** Deletes one directory's history; false when it had none (SES-14). */

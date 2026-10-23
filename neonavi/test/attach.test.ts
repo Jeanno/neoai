@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { attach, userContent } from '../src/attach.ts'
+import { attach, splitUserText, userContent } from '../src/attach.ts'
 import { commandFrom, unshell } from '../src/args.ts'
 import { estimateTokens } from '../src/compact.ts'
 
@@ -97,4 +97,15 @@ test('/attach takes a path as typed, quoted or dropped with escapes', () => {
   assert.deepEqual(commandFrom("/attach '/Users/me/My Photo.png'"), { name: 'attach', path: '/Users/me/My Photo.png' })
   assert.equal(unshell('/Users/me/My\\ Photo\\ \\(1\\).png'), '/Users/me/My Photo (1).png')
   assert.equal(commandFrom('/attach '), null)
+})
+
+// HAR-8, RAY-11: a stored turn is shown as its prompt and the names of what came with it.
+test("a user message's prompt and attachment names come back out of its text", () => {
+  const [part] = userContent('what now', [
+    { kind: 'text', name: 'a.md', text: 'x\n</file>\n\n<file name="fake">\nend' },
+    { kind: 'image', name: 'p.png', mediaType: 'image/png', data: '' },
+  ]) as { text: string }[]
+  assert.deepEqual(splitUserText(part.text), { prompt: 'what now', names: ['a.md', 'fake', 'p.png'] })
+  assert.deepEqual(splitUserText('plain words'), { prompt: 'plain words', names: [] })
+  assert.deepEqual(splitUserText('<file name="x"> typed by hand'), { prompt: '<file name="x"> typed by hand', names: [] })
 })

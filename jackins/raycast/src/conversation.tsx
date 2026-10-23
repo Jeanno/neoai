@@ -40,7 +40,7 @@ export function Conversation({ initialChat }: { initialChat?: Chat }) {
   }
 
   const shown: Exchange[] = exchanges(chat.history)
-  if (pending) shown.unshift({ id: 'pending', question: pending, turn })
+  if (pending) shown.unshift({ id: 'pending', question: pending, attached: [], turn })
 
   const actions = (exchange?: Exchange) => {
     const answer = exchange && answerOf(exchange.turn)
@@ -97,6 +97,17 @@ export function Conversation({ initialChat }: { initialChat?: Chat }) {
             key={exchange.id}
             id={exchange.id}
             title={exchange.question}
+            accessories={
+              exchange.attached.length
+                ? [
+                    {
+                      icon: Icon.Paperclip,
+                      text: String(exchange.attached.length),
+                      tooltip: exchange.attached.join(', '),
+                    },
+                  ]
+                : undefined
+            }
             detail={
               <List.Item.Detail
                 markdown={turnMarkdown(exchange.turn, {

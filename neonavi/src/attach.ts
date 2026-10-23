@@ -93,3 +93,18 @@ export function userContent(prompt: string, attachments: Attachment[] = []): str
   )
   return [{ type: 'text', text: [...texts, prompt].join('\n\n') }, ...images]
 }
+
+/**
+ * The prompt and attachment names back out of a user message's text as
+ * userContent wrote it, for showing a stored turn without the files' text.
+ */
+export function splitUserText(text: string): { prompt: string; names: string[] } {
+  if (!/^<(file|image) name="/.test(text)) return { prompt: text, names: [] }
+  // The prompt follows the last block, however much a file's own text looks like one.
+  const ends = [...text.matchAll(/\n<\/file>\n\n|<image name="[^"]*" \/>\n\n/g)]
+  const last = ends.at(-1)
+  if (!last) return { prompt: text, names: [] }
+  const head = text.slice(0, last.index + last[0].length)
+  const names = [...head.matchAll(/(?:^|<\/file>\n\n|" \/>\n\n)<(?:file|image) name="([^"]*)"/g)].map((m) => m[1])
+  return { prompt: text.slice(head.length), names }
+}

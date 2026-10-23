@@ -10,7 +10,7 @@ import { turnFromHistory, userText, type Turn } from './turn'
 export type Chat = { id: string; title: string; history: ModelMessage[]; updatedAt: number }
 
 /** A question paired with the turn that answered it. */
-export type Exchange = { id: string; question: string; turn: Turn }
+export type Exchange = { id: string; question: string; attached: string[]; turn: Turn }
 
 export function newChat(history: ModelMessage[] = []): Chat {
   return { id: randomUUID(), title: titleFrom(history), history, updatedAt: Date.now() }
@@ -18,7 +18,7 @@ export function newChat(history: ModelMessage[] = []): Chat {
 
 export function titleFrom(history: ModelMessage[]): string {
   const first = history.find((m) => m.role === 'user')
-  const text = (first ? userText(first) : '').trim() || 'New Chat'
+  const text = (first ? userText(first).prompt : '').trim() || 'New Chat'
   return text.length > 60 ? `${text.slice(0, 57)}…` : text
 }
 
@@ -95,9 +95,11 @@ export function exchanges(history: ModelMessage[]): Exchange[] {
   let start = -1
   const close = (end: number) => {
     if (start < 0) return
+    const { prompt, names } = userText(history[start])
     out.push({
       id: String(start),
-      question: userText(history[start]),
+      question: prompt,
+      attached: names,
       turn: turnFromHistory(history.slice(start + 1, end)),
     })
   }

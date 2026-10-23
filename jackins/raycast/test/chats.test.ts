@@ -116,3 +116,25 @@ test('reasoning is not stored, and an assistant message left empty is dropped', 
     ],
   )
 })
+
+// RAY-11: a turn that came with files shows its question and the files' names, not their text.
+test('a question asked about files shows without their text', () => {
+  const asked: ModelMessage[] = [
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: '<file name="notes.txt">\nmilk\neggs\n</file>\n\n<image name="p.png" />\n\nDescribe these files.',
+        },
+        { type: 'file', mediaType: 'image/png', data: 'AAAA', filename: 'p.png' },
+      ],
+    },
+    { role: 'assistant', content: 'A list and a picture.' },
+  ]
+  assert.equal(titleFrom(asked), 'Describe these files.')
+  assert.deepEqual(
+    exchanges(asked).map((e) => [e.question, e.attached]),
+    [['Describe these files.', ['notes.txt', 'p.png']]],
+  )
+})

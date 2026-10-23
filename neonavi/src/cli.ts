@@ -2,6 +2,7 @@
 import { auto } from 'neorouter'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
+import { realpath } from 'node:fs/promises'
 import { commandFrom, promptFrom, startsFresh } from './args.ts'
 import { parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
 import { makeApprover, makeLine } from './approve.ts'
@@ -10,7 +11,7 @@ import { serveMcp, type Ask } from './mcp.ts'
 import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } from './serve.ts'
 import { ago, clearAllSessions, clearSession, listSessions, loadSession, saveSession, sessionFile } from './session.ts'
 import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
-import { readConfig } from 'neorouter'
+import { readConfig, reset } from 'neorouter'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 import { describe, entryLabel, modelLabel } from './setup-core.ts'
 
@@ -190,7 +191,9 @@ async function sessions(argv: string[]) {
       console.log(n ? `Deleted ${n} saved conversation${n === 1 ? '' : 's'}.` : 'There were no saved conversations.')
       return 0
     }
-    const dir = resolve(cwd, argv[1] ?? '.')
+    // Saved under the real path, as process.cwd() gives it: /tmp is /private/tmp on macOS.
+    const typed = resolve(cwd, argv[1] ?? '.')
+    const dir = await realpath(typed).catch(() => typed)
     const had = await clearSession(dir, home)
     console.log(had ? `Deleted the conversation saved for ${tilde(dir)}.` : `No conversation is saved for ${tilde(dir)}.`)
     return 0
@@ -245,7 +248,8 @@ async function main() {
   // --model overrides the config file for one run; both take the same values.
   const config = await readConfig()
   const custom = Object.keys(config.custom ?? {})
-  const chain = parseModelSpec(model.value ?? config.model, custom)
+  const saved = parseModelSpec(config.model, custom)
+  let chain = model.value === undefined ? saved : parseModelSpec(model.value, custom)
   const { chosen, failures } = await walkChain(chain)
   if (!chosen) {
     console.error('navi has no model to answer with:')
@@ -298,17 +302,22 @@ async function main() {
   const switchModel = async (spec: string) => {
     if (!spec) {
       console.error(describe({ ...answering, label: modelLabel(answering) }))
-      console.error(dim(`chain: ${chain.map(entryLabel).join(' → ')}`))
+      console.error(dim(`saved chain: ${saved.map(entryLabel).join(' → ')}`))
+      if (chain !== saved) console.error(dim(`this session: ${chain.map(entryLabel).join(' → ')}`))
       console.error(dim('switch with /model <provider>:<model>, local, best, or a list separated by commas'))
       return
     }
-    const next = await walkChain(parseModelSpec(spec, custom))
+    // Looked at afresh: the user may have just started the server that failed.
+    reset()
+    const wanted = parseModelSpec(spec, custom)
+    const next = await walkChain(wanted)
     if (!next.chosen) {
       console.error(`nothing in ${spec} answers, so the model stays ${modelLabel(answering)}:`)
       for (const line of failedLines(next.failures)) console.error(`  ${line}`)
       return
     }
     answering = next.chosen
+    chain = wanted
     session = (await harnessFor(answering)).session(session.history)
     console.error(describe({ ...answering, label: modelLabel(answering) }))
   }
@@ -379,6 +388,7 @@ async function main() {
       const command = commandFrom(prompt)
       if (command?.name === 'model') await switchModel(command.spec)
       else if (command?.name === 'help') console.error(HELP)
+      else if (command?.name === 'attach' && !command.path) console.error('usage: /attach <file>')
       else if (command?.name === 'attach') {
         try {
           const a = await attach(command.path)

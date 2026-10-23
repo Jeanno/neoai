@@ -79,8 +79,8 @@ export function unshell(path: string): string {
 /** A line at the `navi>` prompt that is a command rather than a prompt (CLI-19). */
 export function commandFrom(line: string): Command | null {
   if (line === '/model' || line.startsWith('/model ')) return { name: 'model', spec: line.slice('/model'.length).trim() }
-  if (line.startsWith('/attach ') && line.slice('/attach '.length).trim())
-    return { name: 'attach', path: unshell(line.slice('/attach '.length)) }
+  // Alone, it is still the command, answered with its usage rather than sent to the model.
+  if (line === '/attach' || line.startsWith('/attach ')) return { name: 'attach', path: unshell(line.slice('/attach'.length)) }
   if (line === '/help') return { name: 'help' }
   return null
 }

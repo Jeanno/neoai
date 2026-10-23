@@ -123,6 +123,9 @@ test('without a terminal navi answers once: the answer on stdout, everything els
   const saved = JSON.parse(await readFile(join(home, '.neoai', 'sessions', file), 'utf8'))
   assert.equal(saved.cwd.endsWith(home.split('/').pop()!), true)
   assert.deepEqual(saved.messages.map((m: any) => m.role), ['user', 'assistant', 'tool', 'assistant'])
+  // SES-14: cleared by the path as typed, though it was saved under the real one (/var is /private/var).
+  const cleared = await navi(['sessions', 'clear', home], { home })
+  assert.match(cleared.stdout, /^Deleted the conversation saved for /)
 })
 
 /**
@@ -157,14 +160,16 @@ async function naviOnTerminal(args: string[], lines: string[], config: object) {
 // the model shown and switched, then leaving.
 test('on a terminal navi keeps asking until told to leave', { skip: process.platform !== 'darwin' }, async () => {
   const fake = await fakeModel()
-  const r = await naviOnTerminal([], ['what is here', '', '/model', '/model box:nope', 'QUIT'], fake.config)
+  const r = await naviOnTerminal([], ['what is here', '', '/model', '/model box:nope', '/model', '/attach', 'QUIT'], fake.config)
   fake.close()
   assert.equal(r.code, 0, JSON.stringify(r.shown))
   assert.match(r.shown, /^navi · ask anything; \/help for commands; exit, \^C or \^D to leave/)
   assert.match(r.shown, /It holds \.neoai\./)
-  assert.match(r.shown, /\/model\r?\r\n\r\nnavi answers with fake-1 on box, the primary \(on this computer\)\.\r\nchain: fake-1 on box/)
+  assert.match(r.shown, /\/model\r?\r\n\r\nnavi answers with fake-1 on box, the primary \(on this computer\)\.\r\nsaved chain: fake-1 on box\r\n/)
   // A pin the endpoint no longer serves falls to what it does (MOD-19).
   assert.match(r.shown, /The pinned nope is gone/)
+  assert.match(r.shown, /\/model\r?\r\n\r\n[^\n]*\r\nsaved chain: fake-1 on box\r\nthis session: nope on box\r\n/)
   // The blank line is ignored and QUIT leaves: one prompt per line sent.
-  assert.equal(r.shown.split('navi>').length - 1, 5)
+  assert.match(r.shown, /usage: \/attach <file>/)
+  assert.equal(r.shown.split('navi>').length - 1, 7)
 })

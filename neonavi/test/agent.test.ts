@@ -102,6 +102,8 @@ test('only /model and /help at the prompt are commands', () => {
   assert.deepEqual(commandFrom('/model'), { name: 'model', spec: '' })
   assert.deepEqual(commandFrom('/model anthropic:claude-sonnet-5-5, local'), { name: 'model', spec: 'anthropic:claude-sonnet-5-5, local' })
   assert.deepEqual(commandFrom('/help'), { name: 'help' })
+  // CLI-23: alone, /attach is still the command, never a prompt.
+  assert.deepEqual(commandFrom('/attach'), { name: 'attach', path: '' })
   for (const line of ['/models', '/Users/me/file.txt what is this', 'model', 'what does /model do'])
     assert.equal(commandFrom(line), null, line)
 })
