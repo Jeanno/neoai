@@ -48,6 +48,7 @@ choose, nothing leaves your machine.
 ```bash
 navi setup
 navi -p "where is shell approval handled"
+git diff | navi -a - -p "write a commit message"
 ```
 
 ### navi in Raycast

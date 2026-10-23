@@ -154,8 +154,9 @@ export function makeLine({
         return l
       }
       if (lines.length) return kept(lines.shift()!)
-      // Input already at EOF: waiting would stall the agent instead of refusing.
-      if (closed || signal?.aborted) return null
+      // Input already at EOF, or read to its end by someone else (`-a -`):
+      // waiting would stall the agent instead of refusing.
+      if (closed || signal?.aborted || input.readableEnded) return null
       // Typed ahead of a key's question: it would show, and is no key anyway.
       if (secret && (output as { isTTY?: boolean }).isTTY) {
         r.write(null, { ctrl: true, name: 'u' })

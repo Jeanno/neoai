@@ -97,8 +97,8 @@ test('sessions with nothing saved says so', async () => {
  * An OpenAI-compatible server that lists one model and streams scripted
  * steps: a list_dir call first, then a plain answer.
  */
-/** With `hang`, each answer starts with "Part one." and never finishes until the client leaves. */
-async function fakeModel({ hang = false } = {}) {
+/** Its first step calls `tool`. With `hang`, each answer starts with "Part one." and never finishes until the client leaves. */
+async function fakeModel({ hang = false, tool = { name: 'list_dir', args: '{"path":"."}' } } = {}) {
   let calls = 0
   const sse = (chunks: object[]) => chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('') + 'data: [DONE]\n\n'
   const server = createServer((req, res) => {
@@ -111,7 +111,7 @@ async function fakeModel({ hang = false } = {}) {
       res.end(
         step === 0
           ? sse([
-              { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: 'list_dir', arguments: '{"path":"."}' } }] } }] },
+              { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: tool.name, arguments: tool.args } }] } }] },
               { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
             ])
           : sse([{ choices: [{ delta: { content: 'It holds .neoai.' } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }]),
@@ -298,4 +298,31 @@ test('typing during an answer draws nothing until the next prompt', { skip: proc
   const [file] = await readdir(join(r.home, '.neoai', 'sessions'))
   const saved = JSON.parse(await readFile(join(r.home, '.neoai', 'sessions', file), 'utf8'))
   assert.deepEqual(saved.messages.filter((m: any) => m.role === 'user').map((m: any) => m.content), ['what is here', 'later'])
+})
+
+// CLI-22: -a - attaches what is piped in; stdin then answers no approval.
+test('-a - attaches stdin as text, and what needs approval is declined', async () => {
+  const fake = await fakeModel({ tool: { name: 'run_shell', args: '{"command":"touch made-by-navi"}' } })
+  const home = await mkdtemp(join(tmpdir(), 'navi-cli-'))
+  const r = await navi(['-p', 'summarise this', '-a', '-'], {
+    config: { ...fake.config, approve: 'ask' },
+    home,
+    input: 'line one of a diff\ny\n',
+  })
+  fake.close()
+  assert.equal(r.code, 0, r.stderr)
+  // The "y" in the piped text approved nothing.
+  await assert.rejects(stat(join(home, 'made-by-navi')))
+  const [file] = await readdir(join(home, '.neoai', 'sessions'))
+  const saved = JSON.parse(await readFile(join(home, '.neoai', 'sessions', file), 'utf8'))
+  assert.deepEqual(saved.messages[0].content.slice(0, 2), [
+    { type: 'text', text: '<file name="stdin">\nline one of a diff\ny\n\n</file>\n\n' },
+    { type: 'text', text: 'summarise this' },
+  ])
+})
+
+test('-a - with nothing that is text is reported, and navi exits 1', async () => {
+  const r = await navi(['-p', 'x', '-a', '-'], { input: 'a\u0000b' })
+  assert.equal(r.code, 1)
+  assert.match(r.stderr, /stdin is not text/)
 })

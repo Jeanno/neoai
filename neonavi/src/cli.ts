@@ -10,6 +10,7 @@ import { makeSpinner } from './spinner.ts'
 import { serveMcp, type Ask } from './mcp.ts'
 import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } from './serve.ts'
 import { ago, clearAllSessions, clearSession, listSessions, loadPrompts, loadSession, savePrompts, saveSession, sessionFile } from './session.ts'
+import { attachStdin } from './attach.ts'
 import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
 import { readConfig, reset } from 'neorouter'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
@@ -95,7 +96,7 @@ const ABOUT = [
   'navi                 a new conversation in this directory',
   'navi -p "…"          ask, continuing this directory\'s conversation; on a pipe,',
   '                     answer and exit with only the answer on stdout',
-  '  -a, --attach FILE  send an image, PDF or text file with the prompt',
+  '  -a, --attach FILE  send an image, PDF or text file with the prompt; - sends what is piped in',
   '  -r, --resume       bare navi continues the saved conversation too',
   '  --model SPEC       use another model chain for this run',
   '  --max-steps N      model responses per turn (default 32)',
@@ -268,7 +269,7 @@ async function main() {
   let pending: Attachment[] = []
   for (const path of attaching.values) {
     try {
-      pending.push(await attach(path))
+      pending.push(path === '-' ? await attachStdin(process.stdin) : await attach(path))
     } catch (e) {
       console.error(`navi: ${(e as Error).message}`)
       return 1

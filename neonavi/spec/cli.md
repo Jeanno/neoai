@@ -17,7 +17,11 @@
 - CLI-22: `-a <file>` or `--attach <file>`, repeatable, attaches files
   (HAR-7) to the `-p` prompt, or to the first prompt typed when there is
   none. A file that cannot be attached is reported and navi exits 1 before
-  resolving a model.
+  resolving a model. `-a -` attaches what is piped in on stdin as a text
+  file named `stdin` (`git diff | navi -p "write a commit message" -a -`);
+  stdin then has no answers left, so a command or change that needs
+  approval is declined (TL-14). Input that is not text, more than 50 MB,
+  or a terminal rather than a pipe is reported and navi exits 1.
 
 ## Modes
 

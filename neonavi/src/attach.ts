@@ -188,3 +188,18 @@ export function splitUserContent(content: string | readonly { type: string; text
   if (names.length !== texts.length - 1) return { prompt: texts.join(''), names: [] }
   return { prompt: texts.at(-1) ?? '', names }
 }
+
+/** What is piped in, as a text file named `stdin` (CLI-22). */
+export async function attachStdin(input: NodeJS.ReadableStream & { isTTY?: boolean }): Promise<Attachment> {
+  if (input.isTTY) throw new Error('-a - attaches what is piped in, and nothing is: stdin is a terminal')
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of input) {
+    size += chunk.length
+    if (size > MAX_FILE) throw new Error(`stdin is more than ${mb(MAX_FILE)}; navi attaches up to ${mb(MAX_FILE)}`)
+    chunks.push(Buffer.from(chunk))
+  }
+  const text = Buffer.concat(chunks).toString('utf8')
+  if (text.includes('\u0000') || text.includes('\ufffd')) throw new Error('stdin is not text; save it to a file and attach that')
+  return { kind: 'text', name: 'stdin', text: cut(text) }
+}
