@@ -34,8 +34,18 @@
 - CLI-6: With no `-p` prompt and a terminal stdin, navi starts a new session
   (SES-3), prints a one-line hint naming `/help` and how to leave, then opens
   the prompt.
-- CLI-7: `exit`, `quit`, `q` (case-insensitive), ^C at the prompt, or EOF all
-  leave with exit 0. Blank lines are ignored.
+- CLI-7: `exit`, `quit`, `q` (case-insensitive), ^C at an empty prompt, or
+  EOF all leave with exit 0. Blank lines are ignored. ^C with something typed
+  clears the line instead.
+- CLI-25: ^C while a turn runs stops it, as Raycast's Stop does (RAY-1): the
+  model call is cut off, a command waiting for approval is declined, what was
+  said so far is kept in the history, a dim `· stopped` is printed and the
+  `navi>` prompt comes back. This holds for the first `-p` turn of an
+  interactive session too.
+- CLI-26: Text pasted at a prompt is one answer, however many lines it holds:
+  the terminal is asked to mark pastes (bracketed paste), the lines inside a
+  paste are kept together, and Enter sends them. A terminal that does not
+  mark pastes sends each line as before.
 - CLI-8: The interactive prompt and shell approval share one stdin reader, so
   input typed ahead is never lost and never read by the wrong question.
 

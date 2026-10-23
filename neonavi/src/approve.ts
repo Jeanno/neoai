@@ -21,19 +21,34 @@ export interface Line {
    * The line typed, or null when input is gone (EOF, ^C, ^D). A secret answer
    * is not echoed as it is typed.
    */
-  ask: (prompt: string, opts?: { secret?: boolean }) => Promise<string | null>
+  ask: (prompt: string, opts?: { secret?: boolean; signal?: AbortSignal }) => Promise<string | null>
+  /** Starts reading now, so ^C reaches `onInterrupt` before the first question (CLI-25). */
+  listen: () => void
   close: () => void
 }
 
 export interface Approver {
   /** `[y/N/a]`, or `[y/N]` for a command that could never be allowed (TL-43). */
-  approve: (command: string) => Promise<Answer>
+  approve: (command: string, signal?: AbortSignal) => Promise<Answer>
   /** Shows the diff, then asks about the change by its summary (TL-38). */
-  approveChange: (summary: string, change: FileChange) => Promise<boolean>
+  approveChange: (summary: string, change: FileChange, signal?: AbortSignal) => Promise<boolean>
   close: () => void
 }
 
-export function makeLine({ input, output }: { input: Readable; output: Writable }): Line {
+/** What a terminal sends around a paste when bracketed paste is on (CLI-26). */
+const PASTE_ON = '\x1b[?2004h'
+const PASTE_OFF = '\x1b[?2004l'
+
+export function makeLine({
+  input,
+  output,
+  onInterrupt,
+}: {
+  input: Readable
+  output: Writable
+  /** ^C on an empty line: true when it was handled (a turn stopped), false to leave (CLI-7, CLI-25). */
+  onInterrupt?: () => boolean
+}): Line {
   // Built on first use, not at construction: a readline interface starts
   // draining its input immediately, and the CLI does not ask until the model's
   // first tool call seconds later — by which time piped input is long gone.
@@ -44,28 +59,73 @@ export function makeLine({ input, output }: { input: Readable; output: Writable 
   // nothing typed ahead is lost.
   const lines: string[] = []
   const waiting: ((line: string | null) => void)[] = []
+  // A paste's lines, held until the Enter that sends them (CLI-26).
+  let pasting = false
+  let pasted: string[] = []
+  const terminal = (input as { isTTY?: boolean }).isTTY === true && (output as { isTTY?: boolean }).isTTY === true
+  const deliver = (l: string) => (waiting.length ? waiting.shift()!(l) : lines.push(l))
   const open = () => {
     if (!rl) {
       rl = createInterface({ input, output })
-      rl.on('line', (l) => (waiting.length ? waiting.shift()!(l) : lines.push(l)))
+      rl.on('line', (l) => {
+        if (pasting) return void pasted.push(l)
+        const whole = [...pasted, l].join('\n')
+        pasted = []
+        deliver(whole)
+      })
       rl.on('close', () => {
         closed = true
+        if (terminal) output.write(PASTE_OFF)
         for (const w of waiting.splice(0)) w(null)
       })
-      // ^C at a prompt ends the session instead of killing the process mid-write.
-      rl.on('SIGINT', () => rl?.close())
+      if (terminal) {
+        output.write(PASTE_ON)
+        input.on('keypress', (_s: string, key?: { name?: string }) => {
+          if (key?.name === 'paste-start') pasting = true
+          else if (key?.name === 'paste-end') pasting = false
+        })
+      }
+      rl.on('SIGINT', () => {
+        // Something typed: ^C clears it, as a shell does (CLI-7).
+        if (rl!.line || pasted.length) {
+          pasted = []
+          rl!.write(null, { ctrl: true, name: 'u' })
+          rl!.write(null, { ctrl: true, name: 'k' })
+          return
+        }
+        // A turn running: ^C stops it (CLI-25). Otherwise it ends the session
+        // instead of killing the process mid-write.
+        if (!onInterrupt?.()) rl!.close()
+      })
     }
     return rl
   }
   return {
-    ask: async (prompt, { secret = false } = {}) => {
+    ask: async (prompt, { secret = false, signal } = {}) => {
       const r = open()
       if (lines.length) return lines.shift()!
       // Input already at EOF: waiting would stall the agent instead of refusing.
-      if (closed) return null
+      if (closed || signal?.aborted) return null
       r.setPrompt(prompt)
       r.prompt()
-      if (!secret) return new Promise((resolve) => waiting.push(resolve))
+      // A question given up on (the turn stopped) must not take the next line typed.
+      const waitFor = (after: (l: string | null) => void = () => {}) =>
+        new Promise<string | null>((resolve) => {
+          const answer = (l: string | null) => {
+            signal?.removeEventListener('abort', gaveUp)
+            after(l)
+            resolve(l)
+          }
+          const gaveUp = () => {
+            const at = waiting.indexOf(answer)
+            if (at >= 0) waiting.splice(at, 1)
+            output.write('\n')
+            answer(null)
+          }
+          signal?.addEventListener('abort', gaveUp, { once: true })
+          waiting.push(answer)
+        })
+      if (!secret) return waitFor()
       // Everything readline draws while the key is typed is dropped, except the
       // newline that ends it. Muting the stream rather than readline itself
       // holds across Node versions, whose internals have moved.
@@ -76,13 +136,9 @@ export function makeLine({ input, output }: { input: Readable; output: Writable 
         done?.()
         return true
       }) as typeof output.write
-      return new Promise((resolve) =>
-        waiting.push((l) => {
-          output.write = write
-          resolve(l)
-        }),
-      )
+      return waitFor(() => (output.write = write))
     },
+    listen: () => void open(),
     close: () => rl?.close(),
   }
 }
@@ -96,14 +152,14 @@ export function makeApprover(
 ): Approver {
   const line = 'line' in io ? io.line : makeLine(io)
   return {
-    approve: async (command) => {
+    approve: async (command, signal) => {
       // Shown as typed: an escape sequence in it could otherwise redraw the question.
       const always = allowable(command)
-      const answer = (await line.ask(`\n${bold('run?')} ${visible(command)}\n${dim(always ? '[y/N/a]' : '[y/N]')} `))?.trim().toLowerCase()
+      const answer = (await line.ask(`\n${bold('run?')} ${visible(command)}\n${dim(always ? '[y/N/a]' : '[y/N]')} `, { signal }))?.trim().toLowerCase()
       return answer === 'y' || (always && answer === 'a' ? 'always' : false)
     },
-    approveChange: async (summary, change) => {
-      const answer = await line.ask(`\n${colorDiff(change.diff)}\n${bold('write?')} ${visible(summary)}\n${dim('[y/N]')} `)
+    approveChange: async (summary, change, signal) => {
+      const answer = await line.ask(`\n${colorDiff(change.diff)}\n${bold('write?')} ${visible(summary)}\n${dim('[y/N]')} `, { signal })
       return (answer ?? '').trim().toLowerCase() === 'y'
     },
     close: () => line.close(),

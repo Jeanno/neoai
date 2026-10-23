@@ -3,7 +3,8 @@
 `navi` — a command-line agent. Bare `navi` in a terminal opens a conversation
 at a `navi>` prompt; `navi -p "<what you want done>"` answers that first and then
 keeps the prompt open. Each turn runs a tool loop until it has an answer, then
-prints it. `exit`, ^C or ^D leave.
+prints it. ^C stops an answer midway and keeps what was said; at an empty
+prompt `exit`, ^C or ^D leave. A pasted block of lines is one prompt.
 
     navi
     navi -p "where is shell approval handled"

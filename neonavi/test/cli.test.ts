@@ -97,7 +97,8 @@ test('sessions with nothing saved says so', async () => {
  * An OpenAI-compatible server that lists one model and streams scripted
  * steps: a list_dir call first, then a plain answer.
  */
-async function fakeModel() {
+/** With `hang`, each answer starts with "Part one." and never finishes until the client leaves. */
+async function fakeModel({ hang = false } = {}) {
   let calls = 0
   const sse = (chunks: object[]) => chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('') + 'data: [DONE]\n\n'
   const server = createServer((req, res) => {
@@ -106,6 +107,7 @@ async function fakeModel() {
     req.on('end', () => {
       const step = calls++
       res.writeHead(200, { 'content-type': 'text/event-stream' })
+      if (hang) return void res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'Part one.' } }] })}\n\n`)
       res.end(
         step === 0
           ? sse([
@@ -118,7 +120,11 @@ async function fakeModel() {
   })
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`
-  return { config: { model: 'box:fake-1', custom: { box: { baseURL: url } } }, steps: () => calls, close: () => server.close() }
+  return {
+    config: { model: 'box:fake-1', custom: { box: { baseURL: url } } },
+    steps: () => calls,
+    close: () => (server.closeAllConnections(), server.close()),
+  }
 }
 
 // CLI-4, CLI-10, CLI-11, CLI-13, CLI-15, MOD-20
@@ -145,7 +151,13 @@ test('without a terminal navi answers once: the answer on stdout, everything els
  * Runs navi on a terminal (a pty from script(1)), answering each `navi>`
  * prompt with the next of `lines`. Returns everything the terminal showed.
  */
-async function naviOnTerminal(args: string[], lines: string[], config: object) {
+async function naviOnTerminal(
+  args: string[],
+  lines: string[],
+  config: object,
+  /** Called with all shown so far on each output, to type keys that are not a line. */
+  react?: (shown: string, type: (keys: string) => void) => void,
+) {
   const home = await mkdtemp(join(tmpdir(), 'navi-cli-'))
   await mkdir(join(home, '.neoai'), { recursive: true })
   await writeFile(join(home, '.neoai', 'config.json'), JSON.stringify(config))
@@ -156,6 +168,7 @@ async function naviOnTerminal(args: string[], lines: string[], config: object) {
   let prompts = 0
   child.stdout.on('data', (c) => {
     shown += c
+    react?.(shown, (keys) => child.stdin.write(keys))
     // One line per prompt shown, sent once it is.
     const seen = shown.split('navi>').length - 1
     while (prompts < seen) {
@@ -165,7 +178,10 @@ async function naviOnTerminal(args: string[], lines: string[], config: object) {
       if (prompts >= lines.length) child.stdin.end()
     }
   })
+  // A navi that never leaves fails the test rather than hanging the run.
+  const limit = setTimeout(() => child.kill(), 30_000)
   const code = await new Promise<number>((resolve) => child.on('close', (c) => resolve(c ?? -1)))
+  clearTimeout(limit)
   return { code, raw: shown, shown: shown.replace(/\x1b\[[0-9;]*m/g, ''), home }
 }
 
@@ -197,4 +213,49 @@ test('on a terminal navi keeps asking until told to leave', { skip: process.plat
   // The prompt is gray with bright text, and what is typed after it bold until the line ends.
   assert.match(r.raw, /\x1b\[100;97mnavi>\x1b\[0m \x1b\[1m[^\n]*what is here\r\r?\n(\x1b\[0m)?/)
   assert.equal(r.shown.split('navi>').length - 1, 7)
+})
+
+// CLI-25: ^C during a turn stops it and keeps what was said; ^C at an empty prompt leaves.
+test('^C stops a turn, keeps its words, and the prompt comes back', { skip: process.platform !== 'darwin' }, async () => {
+  const fake = await fakeModel({ hang: true })
+  let pressed = 0
+  const r = await naviOnTerminal(['-p', 'tell me slowly'], [], fake.config, (shown, type) => {
+    // Once mid-answer, then once at the prompt that follows.
+    if (pressed === 0 && shown.includes('Part one.')) (pressed++, type('\x03'))
+    if (pressed === 1 && shown.includes('stopped') && shown.split('navi>').length > 1) (pressed++, type('\x03'))
+  })
+  fake.close()
+  assert.equal(r.code, 0, r.shown)
+  assert.match(r.shown, /Part one\.[\s\S]*· stopped[\s\S]*navi>/)
+  const [file] = await readdir(join(r.home, '.neoai', 'sessions'))
+  const saved = JSON.parse(await readFile(join(r.home, '.neoai', 'sessions', file), 'utf8'))
+  assert.deepEqual(saved.messages.at(-1), { role: 'assistant', content: 'Part one.' })
+})
+
+// CLI-7: ^C with something typed clears it rather than leaving.
+test('^C clears a typed line; the next line is asked as typed', { skip: process.platform !== 'darwin' }, async () => {
+  const fake = await fakeModel()
+  let typed = false
+  const r = await naviOnTerminal([], ['what is here', 'exit'], fake.config, (shown, type) => {
+    // Typed and wiped before the real first line is sent.
+    if (!typed && shown.includes('navi>')) (typed = true, type('never sent\x03'))
+  })
+  fake.close()
+  assert.equal(r.code, 0, r.shown)
+  const [file] = await readdir(join(r.home, '.neoai', 'sessions'))
+  const saved = JSON.parse(await readFile(join(r.home, '.neoai', 'sessions', file), 'utf8'))
+  assert.equal(saved.messages[0].content, 'what is here')
+})
+
+// CLI-26: a paste is one prompt, sent by the Enter after it.
+test('a pasted block of lines is one prompt', { skip: process.platform !== 'darwin' }, async () => {
+  const fake = await fakeModel()
+  const r = await naviOnTerminal([], ['\x1b[200~first line\nsecond line\x1b[201~', 'exit'], fake.config)
+  fake.close()
+  assert.equal(r.code, 0, r.shown)
+  assert.ok(r.raw.includes('\x1b[?2004h'), 'bracketed paste is asked for')
+  const [file] = await readdir(join(r.home, '.neoai', 'sessions'))
+  const saved = JSON.parse(await readFile(join(r.home, '.neoai', 'sessions', file), 'utf8'))
+  const asked = saved.messages.filter((m: any) => m.role === 'user').map((m: any) => m.content)
+  assert.deepEqual(asked, ['first line\nsecond line'])
 })

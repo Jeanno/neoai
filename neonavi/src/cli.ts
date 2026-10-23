@@ -78,7 +78,8 @@ const HELP = [
   '/model <spec>      switch for this session: <provider>:<model>, local, best, or a list',
   '/attach <file>     send an image, PDF or text file with the next prompt',
   '/help              this list',
-  'exit, quit, ^C, ^D leave',
+  '^C                 stop an answer; at an empty prompt, leave',
+  'exit, quit, ^D     leave',
 ].join('\n')
 
 const USAGE = [
@@ -296,7 +297,17 @@ async function main() {
   const stored = anew ? [] : await loadSession(file)
   if (stored.length) console.error(dim(`· continuing (${stored.length} messages)`))
 
-  const line = makeLine({ input: process.stdin, output: process.stdout })
+  // The turn running now, which ^C stops (CLI-25).
+  let running = null as AbortController | null
+  const line = makeLine({
+    input: process.stdin,
+    output: process.stdout,
+    onInterrupt: () => {
+      if (!running || running.signal.aborted) return false
+      running.abort()
+      return true
+    },
+  })
   const spin = makeSpinner(process.stderr)
   const asker = makeApprover({ line })
   // On a terminal the answer is written as it arrives; a pipe gets exactly the
@@ -316,10 +327,10 @@ async function main() {
     config,
     maxSteps,
     // The question would otherwise be drawn beside a spinning frame.
-    approve: async (command, { change }) => {
+    approve: async (command, { change, signal }) => {
       spin.stop()
       endLine()
-      const ok = change ? await asker.approveChange(command, change) : await asker.approve(command)
+      const ok = change ? await asker.approveChange(command, change, signal) : await asker.approve(command, signal)
       spin.start()
       return ok
     },
@@ -360,12 +371,14 @@ async function main() {
   /** One question in, one answer out. Returns whether the model said anything. */
   const turn = async (prompt: string) => {
     let done: Extract<HarnessEvent, { type: 'done' }> | undefined
+    const stop = new AbortController()
+    running = stop
     spin.start()
     try {
       // Attachments go with the next prompt only (CLI-22, CLI-23).
       const attachments = pending
       pending = []
-      for await (const e of session.turn(prompt, { attachments })) {
+      for await (const e of session.turn(prompt, { attachments, signal: stop.signal })) {
         if (e.type === 'done') done = e
         else if (e.type === 'text') {
           // Unstreamed text waits for the end; the spinner keeps going meanwhile.
@@ -392,12 +405,18 @@ async function main() {
         }
       }
     } finally {
+      running = null
       spin.stop()
     }
     endLine()
     // Saved even when the answer came out empty: the tool results are the part
     // worth carrying forward, and a follow-up is how you recover from a bad turn.
     await saveSession(file, done!.history, cwd)
+    if (done!.stopped) {
+      if (!streaming && !done!.empty) console.log(done!.text)
+      console.error(dim('· stopped'))
+      return !done!.empty
+    }
     if (!done!.empty) {
       if (!streaming) console.log(done!.text)
       return true
@@ -407,11 +426,13 @@ async function main() {
   }
 
   try {
+    if (!first) console.error(dim('navi · ask anything; /help for commands; exit, ^C or ^D to leave'))
+    // On a terminal, ^C during the first turn stops it rather than killing navi (CLI-25).
+    if (interactive) line.listen()
     if (first) {
       const answered = await turn(first)
       if (!interactive) return answered ? 0 : 1
     }
-    if (!first) console.error(dim('navi · ask anything; /help for commands; exit, ^C or ^D to leave'))
     for (;;) {
       // The marker gets a lighter background; bold is opened as part of the
       // prompt so the typed line inherits it.
