@@ -111,3 +111,28 @@ test('still returns plain text when no tool was called', () => {
 
   assert.deepEqual(fromChoice(choice), [{ type: 'text', text: 'hello' }])
 })
+
+// HAR-7: a user's image reaches a vision model as an OpenAI image part.
+test('a user image is sent as an image_url part beside the text', () => {
+  const { messages, warnings } = toMessages([
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'what colour?' },
+        { type: 'file', mediaType: 'image/png', data: 'iVBORw0K' },
+        { type: 'file', mediaType: 'image/jpeg', data: new Uint8Array([1, 2, 3]) },
+      ],
+    },
+  ] as any)
+  assert.deepEqual(messages, [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'what colour?' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0K' } },
+        { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,AQID' } },
+      ],
+    },
+  ])
+  assert.deepEqual(warnings, [])
+})

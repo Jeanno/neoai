@@ -11,6 +11,9 @@ import { summarize, type FileChange } from './diff.ts'
 
 export type { FileChange } from './diff.ts'
 import { compact, estimateTokens } from './compact.ts'
+import { userContent, type Attachment } from './attach.ts'
+
+export { attach, type Attachment } from './attach.ts'
 
 /**
  * navi's harness as a library (harness.md): everything between a prompt and
@@ -97,7 +100,7 @@ export interface Session {
    * the loop early, stops the turn and keeps what was said so far. One turn
    * at a time.
    */
-  turn: (prompt: string, o?: { signal?: AbortSignal }) => AsyncIterable<HarnessEvent>
+  turn: (prompt: string, o?: { signal?: AbortSignal; attachments?: Attachment[] }) => AsyncIterable<HarnessEvent>
 }
 
 export interface Harness {
@@ -141,7 +144,10 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
     let history = start
     let busy = false
 
-    async function* turn(prompt: string, { signal }: { signal?: AbortSignal } = {}): AsyncGenerator<HarnessEvent> {
+    async function* turn(
+      prompt: string,
+      { signal, attachments }: { signal?: AbortSignal; attachments?: Attachment[] } = {},
+    ): AsyncGenerator<HarnessEvent> {
       if (busy) throw new Error('a turn is already running in this session')
       busy = true
       const stop = new AbortController()
@@ -149,7 +155,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       if (signal?.aborted) onAbort()
       else signal?.addEventListener('abort', onAbort, { once: true })
       const events = channel<HarnessEvent>()
-      const work = run(prompt, stop.signal, events.push).then(events.close, events.fail)
+      const work = run(prompt, attachments, stop.signal, events.push).then(events.close, events.fail)
       try {
         yield* events
       } finally {
@@ -161,10 +167,10 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       }
     }
 
-    async function run(prompt: string, signal: AbortSignal, emit: (e: HarnessEvent) => void) {
+    async function run(prompt: string, attachments: Attachment[] | undefined, signal: AbortSignal, emit: (e: HarnessEvent) => void) {
       const packed = await compact(o.model, history, { contextWindow: o.contextWindow, extraTokens: systemTokens })
       if (packed.compacted) emit({ type: 'compacted', messages: packed.compacted })
-      const sent: ModelMessage[] = [...packed.messages, { role: 'user', content: prompt }]
+      const sent: ModelMessage[] = [...packed.messages, { role: 'user', content: userContent(prompt, attachments) }]
 
       const approve = (command: string, toolSignal?: AbortSignal) =>
         gated({

@@ -144,7 +144,9 @@ export function turnMarkdown(
   if (o.approval?.change)
     blocks.push(`**${capitalized(o.approval.command)}?**\n\n${fence(o.approval.change.diff, 'diff')}`)
   else if (o.approval)
-    blocks.push(`**Run this command?**\n\n${fence(o.approval.command, 'sh')}\n\nnavi wants to run it in ~/.navi-raycast.`)
+    blocks.push(
+      `**Run this command?**\n\n${fence(o.approval.command, 'sh')}\n\nnavi wants to run it in ~/.navi-raycast.`,
+    )
   return blocks.join('\n\n') || '…'
 }
 

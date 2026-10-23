@@ -25,11 +25,20 @@ interface OaiToolCall {
   function: { name: string; arguments: string }
 }
 
+type OaiPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+
 interface OaiMessage {
   role: string
-  content: string
+  content: string | OaiPart[]
   tool_calls?: OaiToolCall[]
   tool_call_id?: string
+}
+
+/** An image as a URL a chat API takes: a link stays a link, bytes become a data URL. */
+function imageURL(data: URL | Uint8Array | string, mediaType: string): string {
+  if (data instanceof URL) return data.href
+  if (typeof data === 'string') return /^(https?|data):/.test(data) ? data : `data:${mediaType};base64,${data}`
+  return `data:${mediaType};base64,${Buffer.from(data).toString('base64')}`
 }
 
 export function toMessages(prompt: LanguageModelV2CallOptions['prompt']): {
@@ -50,9 +59,15 @@ export function toMessages(prompt: LanguageModelV2CallOptions['prompt']): {
       continue
     }
     const calls: OaiToolCall[] = []
+    // A user image goes as an OpenAI image part, so a vision model sees it.
+    const images: OaiPart[] = []
     const text = m.content
       .map((p) => {
         if (p.type === 'text') return p.text
+        if (p.type === 'file' && m.role === 'user' && p.mediaType.startsWith('image/')) {
+          images.push({ type: 'image_url', image_url: { url: imageURL(p.data, p.mediaType) } })
+          return ''
+        }
         if (p.type === 'tool-call') {
           calls.push({
             id: p.toolCallId,
@@ -71,6 +86,7 @@ export function toMessages(prompt: LanguageModelV2CallOptions['prompt']): {
     // An assistant turn that only called a tool still has to appear in history,
     // or the tool result that follows refers to a call the model never made.
     if (calls.length) messages.push({ role: m.role, content: text, tool_calls: calls })
+    else if (images.length) messages.push({ role: m.role, content: [...(text ? [{ type: 'text' as const, text }] : []), ...images] })
     else if (text) messages.push({ role: m.role, content: text })
   }
   return { messages, warnings }

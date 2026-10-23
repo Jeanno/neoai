@@ -28,10 +28,11 @@ add the requirement there first.
 - [x] `write_file` and `edit_file`, each change shown as a diff; a new file
       here is made without asking, any other change asks. (TL-36 to TL-40)
 - [x] `/model` mid-session, without leaving the loop, and `/help`. (CLI-19 to CLI-21)
-- [ ] Image and PDF input: attach files to a turn (CLI path argument,
-      Raycast selected Finder files); images go to vision models, PDFs as
-      extracted text. (`spec/harness.md`, `spec/cli.md`,
-      `jackins/raycast/spec.md`)
+- [x] Image and PDF input: `-a`, `/attach`, and Raycast's Ask About Selected
+      Files; images go to the model, PDFs as text. (HAR-7, HAR-8, CLI-22,
+      CLI-23, RAY-11)
+- [ ] A PDF that is only scanned pages: render its pages as images for a
+      vision model instead of refusing it. (`spec/harness.md`)
 - [ ] `navi --sessions` to list and clear per-directory history. (`spec/session.md`)
 
 ### 3. Everywhere: navi in the apps I already use

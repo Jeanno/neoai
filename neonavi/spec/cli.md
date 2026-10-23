@@ -1,6 +1,6 @@
 # CLI
 
-    navi [-p <prompt>] [-r|--resume] [--model <spec>] [--max-steps N]
+    navi [-p <prompt>] [-a <file>]... [-r|--resume] [--model <spec>] [--max-steps N]
     navi setup [--check]
 
 ## Prompt
@@ -10,7 +10,12 @@
   The one exception is `setup` as the first argument, which runs setup
   (`setup.md`) instead of a session.
 - CLI-2: Flags may appear anywhere in argv. `--resume` and its short form `-r`
-  are bare; `-p`, `--model` and `--max-steps` take the next argument.
+  are bare; `-p`, `--model`, `--max-steps` and `-a`/`--attach` take the next
+  argument.
+- CLI-22: `-a <file>` or `--attach <file>`, repeatable, attaches files
+  (HAR-7) to the `-p` prompt, or to the first prompt typed when there is
+  none. A file that cannot be attached is reported and navi exits 1 before
+  resolving a model.
 
 ## Modes
 
@@ -43,13 +48,17 @@
 ## Commands
 
 - CLI-19: At the `navi>` prompt, a line that is exactly `/model`, or starts
-  with `/model ` or `/help`, is a command, not a prompt.
+  with `/model ` or `/attach `, or is `/help`, is a command, not a prompt.
 - CLI-20: `/model` prints the model answering, as SET-1 words it, and the
   saved chain. `/model <spec>` takes what `--model` takes and switches to it
   for the rest of the session, keeping the conversation; nothing is saved.
   When nothing in it answers, each link's reason is printed (MOD-21) and the
   current model stays.
 - CLI-21: `/help` lists the commands and how to leave.
+- CLI-23: `/attach <file>` attaches a file to the next prompt (HAR-7); it may
+  be given more than once. A path may be quoted, or have its spaces escaped
+  as a terminal's drag and drop writes them. A file that cannot be attached
+  is reported and nothing is attached.
 
 ## Feedback
 

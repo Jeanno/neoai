@@ -41,6 +41,10 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
   relabel them.
 - RAY-10: Leaving a Set Up Navi view (Escape) cancels the check it started
   (SET-26), and opening Set Up Navi starts no local runtime (SET-24).
+- RAY-11: Ask About Selected Files attaches the files selected in Finder
+  (HAR-7) to a question, `Describe these files.` when none is typed. With
+  nothing selected, or a file that cannot be attached, it says which and asks
+  nothing. The answer shows the files beside the question.
 
 ## Open
 

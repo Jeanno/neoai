@@ -1,6 +1,6 @@
 import { showToast, Toast } from '@raycast/api'
 import type { ModelMessage } from 'ai'
-import { createHarness, type FileChange, type Harness } from 'neonavi/harness'
+import { createHarness, type Attachment, type FileChange, type Harness } from 'neonavi/harness'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { errorMessage, forgetNavi, naviHome, resolveNavi, type Navi } from './model'
 import { waitForAnswer, type Approval } from './approval'
@@ -65,35 +65,38 @@ export function useNavi() {
     return harness.current.harness
   }
 
-  const run = useCallback(async (prompt: string, history: ModelMessage[] = []): Promise<Answered | undefined> => {
-    controller.current?.abort()
-    const current = new AbortController()
-    controller.current = current
-    const live = () => controller.current === current
-    let t = emptyTurn()
-    let stored: ModelMessage[] | undefined
-    setTurn(t)
-    setStreaming(true)
-    try {
-      const n = await resolveNavi()
-      setNavi(n)
-      if (!n) return undefined
-      const session = (await harnessFor(n)).session(history)
-      for await (const e of session.turn(prompt, { signal: current.signal })) {
-        t = applyEvent(t, e)
+  const run = useCallback(
+    async (prompt: string, history: ModelMessage[] = [], attachments?: Attachment[]): Promise<Answered | undefined> => {
+      controller.current?.abort()
+      const current = new AbortController()
+      controller.current = current
+      const live = () => controller.current === current
+      let t = emptyTurn()
+      let stored: ModelMessage[] | undefined
+      setTurn(t)
+      setStreaming(true)
+      try {
+        const n = await resolveNavi()
+        setNavi(n)
+        if (!n) return undefined
+        const session = (await harnessFor(n)).session(history)
+        for await (const e of session.turn(prompt, { signal: current.signal, attachments })) {
+          t = applyEvent(t, e)
+          if (live()) setTurn(t)
+          if (e.type === 'done') stored = e.history
+        }
+      } catch (error) {
+        t = { ...t, errors: [...t.errors, errorMessage(error)] }
         if (live()) setTurn(t)
-        if (e.type === 'done') stored = e.history
+      } finally {
+        if (live()) setStreaming(false)
       }
-    } catch (error) {
-      t = { ...t, errors: [...t.errors, errorMessage(error)] }
-      if (live()) setTurn(t)
-    } finally {
-      if (live()) setStreaming(false)
-    }
-    if (t.errors.length && !current.signal.aborted)
-      await showToast({ style: Toast.Style.Failure, title: 'Navi could not answer', message: t.errors[0] })
-    return stored && { turn: t, history: stored }
-  }, [])
+      if (t.errors.length && !current.signal.aborted)
+        await showToast({ style: Toast.Style.Failure, title: 'Navi could not answer', message: t.errors[0] })
+      return stored && { turn: t, history: stored }
+    },
+    [],
+  )
 
   const stop = useCallback(() => controller.current?.abort(), [])
 

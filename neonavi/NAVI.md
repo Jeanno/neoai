@@ -2,13 +2,20 @@
 
 `navi` — a command-line agent. Bare `navi` in a terminal opens a conversation
 at a `navi>` prompt; `navi -p "<what you want done>"` answers that first and then
-keeps the prompt open, and bare words without `-p` work too. Each turn runs a
-tool loop until
-it has an answer, then prints it. `exit`, ^C or ^D leave.
+keeps the prompt open. Each turn runs a tool loop until it has an answer, then
+prints it. `exit`, ^C or ^D leave.
 
     navi
     navi -p "where is shell approval handled"
     navi -p "what changed in this file" --model best
+    navi -a screenshot.png -p "what is this error"
+    navi -a paper.pdf -a notes.md -p "does my summary miss anything"
+
+`-a` attaches a file to the prompt: an image goes to the model as an image
+(scaled to 1600 px), a PDF as its text, any other text file as it is. At the
+prompt, `/attach <file>` (drag a file in) sends one with your next message,
+`/model <spec>` switches model for the rest of the conversation, and `/help`
+lists these.
 
 When stdin is not a terminal (a pipe, a script) navi answers once and exits, so
 it still composes: `echo | navi -p "summarize this"` prints one answer.

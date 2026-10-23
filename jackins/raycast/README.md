@@ -66,6 +66,10 @@ LM Studio's settings you can have it start when you log in.
 
 - **Ask Navi** — a quick question. Open Raycast, type **Ask Navi**, press
   **Tab**, type your question, and press **Return**.
+- **Ask About Selected Files** — select images, PDFs or text files in
+  Finder, open Raycast, type **Ask About Selected Files**, press **Tab**, type
+  your question (or leave it empty to have them described), and press
+  **Return**.
 - **Navi Chat** — a conversation you can come back to. Open Raycast, type
   **Navi Chat**, choose **New Chat**, type, and press **Return**.
 - **Fix Spelling and Grammar** — select some text in any app, open Raycast,
@@ -86,8 +90,9 @@ answer: search the web, look through files, or run a command, working in a
 folder of its own (`~/.navi-raycast`). Each step shows as a short line above
 the answer. Before Navi runs a command
 that could change something, it stops and shows you the command: choose
-**Run Command** to let it, or **Don't Run** (**⌘ D**). Leaving the answer or
-stopping it also means don't run.
+**Run Command** to let it, or **Don't Run** (**⌘ D**). Before it changes a
+file it shows the change, with **Write File** and **Don't Write**. Leaving
+the answer or stopping it also means no.
 
 While an answer or summary is showing:
 

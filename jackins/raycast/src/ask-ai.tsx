@@ -1,5 +1,6 @@
 import { Action, ActionPanel, Detail, getPreferenceValues, Icon, Keyboard, LaunchProps, List } from '@raycast/api'
 import type { ModelMessage } from 'ai'
+import type { Attachment } from 'neonavi/harness'
 import { useEffect, useState } from 'react'
 import { ApprovalSection, NoModel } from './common'
 import { Conversation } from './conversation'
@@ -8,13 +9,14 @@ import { whereLabel } from './lib/labels'
 import { answerOf, turnMarkdown } from './lib/turn'
 import { useNavi } from './lib/use-navi'
 
-function Answer({ question }: { question: string }) {
+/** One question and its streamed answer; `attachments` go with it (RAY-11). */
+export function Answer({ question, attachments }: { question: string; attachments?: Attachment[] }) {
   const { showReasoning } = getPreferenceValues<Preferences>()
   const { navi, turn, streaming, approval, run, stop, recheck } = useNavi()
   const [history, setHistory] = useState<ModelMessage[]>()
   const ask = async () => {
     setHistory(undefined)
-    setHistory((await run(question))?.history)
+    setHistory((await run(question, [], attachments))?.history)
   }
 
   // No run-once guard: React's dev-mode remount aborts the first request, so it must be sent again.
@@ -35,6 +37,13 @@ function Answer({ question }: { question: string }) {
       metadata={
         <Detail.Metadata>
           <Detail.Metadata.Label title="Question" text={question} />
+          {attachments?.length ? (
+            <Detail.Metadata.TagList title="Files">
+              {attachments.map((a) => (
+                <Detail.Metadata.TagList.Item key={a.name} text={a.name} />
+              ))}
+            </Detail.Metadata.TagList>
+          ) : null}
           <Detail.Metadata.Label title="Model" text={navi ? whereLabel(navi) : 'resolving…'} />
         </Detail.Metadata>
       }

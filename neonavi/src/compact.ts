@@ -4,9 +4,21 @@ import { generateText, type LanguageModel, type ModelMessage } from 'ai'
 export const RESERVE = 0.3
 const TAIL_SHARE = 1 / 3
 
+/** What an image counts as, whatever its size in bytes (HAR-8). */
+const IMAGE_TOKENS = 1000
+
 /** Four characters a token: crude, but a tokenizer per backend is not worth it. */
 export function estimateTokens(messages: ModelMessage[]): number {
-  return Math.ceil(JSON.stringify(messages).length / 4)
+  let images = 0
+  const json = JSON.stringify(messages, function (key, value) {
+    // An attached image's base64 would read as hundreds of thousands of tokens.
+    if (key === 'data' && typeof value === 'string' && String(this?.mediaType ?? '').startsWith('image/')) {
+      images++
+      return ''
+    }
+    return value
+  })
+  return Math.ceil(json.length / 4) + images * IMAGE_TOKENS
 }
 
 export function budget(contextWindow: number): number {

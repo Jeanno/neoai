@@ -64,11 +64,23 @@ export function startsFresh(o: { prompt: string | null; resume: boolean }): bool
   return o.prompt === null && !o.resume
 }
 
-export type Command = { name: 'model'; spec: string } | { name: 'help' }
+export type Command = { name: 'model'; spec: string } | { name: 'attach'; path: string } | { name: 'help' }
+
+/**
+ * A path as typed or dropped into a terminal (CLI-23): quoted, or with its
+ * spaces and other specials escaped by a backslash.
+ */
+export function unshell(path: string): string {
+  const p = path.trim()
+  const quoted = /^(['"])(.*)\1$/.exec(p)
+  return quoted ? quoted[2] : p.replace(/\\(.)/g, '$1')
+}
 
 /** A line at the `navi>` prompt that is a command rather than a prompt (CLI-19). */
 export function commandFrom(line: string): Command | null {
   if (line === '/model' || line.startsWith('/model ')) return { name: 'model', spec: line.slice('/model'.length).trim() }
+  if (line.startsWith('/attach ') && line.slice('/attach '.length).trim())
+    return { name: 'attach', path: unshell(line.slice('/attach '.length)) }
   if (line === '/help') return { name: 'help' }
   return null
 }

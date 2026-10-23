@@ -3,8 +3,14 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "bin": { "navi": "./src/cli.ts" },
-  "exports": { "./spec": "./src/spec.ts", "./harness": "./src/harness.ts", "./setup": "./src/setup-core.ts" },
+  "bin": {
+    "navi": "./src/cli.ts"
+  },
+  "exports": {
+    "./spec": "./src/spec.ts",
+    "./harness": "./src/harness.ts",
+    "./setup": "./src/setup-core.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts"
@@ -12,6 +18,7 @@
   "dependencies": {
     "ai": "^5.0.240",
     "neorouter": "*",
+    "unpdf": "^1.9.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

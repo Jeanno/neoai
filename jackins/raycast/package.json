@@ -7,14 +7,38 @@
   "author": "jeanno",
   "license": "MIT",
   "private": true,
-  "categories": ["Productivity", "Developer Tools"],
+  "categories": [
+    "Productivity",
+    "Developer Tools"
+  ],
   "commands": [
     {
       "name": "ask-ai",
       "title": "Ask Navi",
       "description": "Ask a one-off question and get a streamed answer.",
       "mode": "view",
-      "arguments": [{ "name": "prompt", "placeholder": "Ask anything", "type": "text", "required": false }]
+      "arguments": [
+        {
+          "name": "prompt",
+          "placeholder": "Ask anything",
+          "type": "text",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "ask-files",
+      "title": "Ask About Selected Files",
+      "description": "Ask about the files selected in Finder: images, PDFs or text.",
+      "mode": "view",
+      "arguments": [
+        {
+          "name": "prompt",
+          "placeholder": "Describe these files",
+          "type": "text",
+          "required": false
+        }
+      ]
     },
     {
       "name": "chat",

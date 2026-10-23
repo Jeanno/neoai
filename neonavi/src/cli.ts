@@ -6,7 +6,7 @@ import { parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
 import { makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
 import { loadSession, saveSession, sessionFile } from './session.ts'
-import { createHarness, DEFAULT_STEPS, type HarnessEvent } from './harness.ts'
+import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
 import { readConfig } from 'neorouter'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 import { describe, entryLabel, modelLabel } from './setup-core.ts'
@@ -21,6 +21,17 @@ const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
 const highlight = (s: string) => `\x1b[100;97m${s}\x1b[0m`
 
 /** Pulls `--flag value` (or a bare `--flag`) out of argv, leaving the prompt. */
+/** Every value of a repeatable flag, under any of its names (CLI-22). */
+function takeAll(argv: string[], names: string[]) {
+  const values: string[] = []
+  const rest: string[] = []
+  for (let i = 0; i < argv.length; i++) {
+    if (names.includes(argv[i]) && i + 1 < argv.length) values.push(argv[++i])
+    else rest.push(argv[i])
+  }
+  return { values, rest }
+}
+
 function takeFlag(argv: string[], flag: string, hasValue: boolean) {
   const at = argv.indexOf(flag)
   if (at === -1) return { value: undefined, rest: argv }
@@ -61,6 +72,7 @@ const QUIT = new Set(['exit', 'quit', 'q'])
 const HELP = [
   '/model             the model answering, and the saved chain',
   '/model <spec>      switch for this session: <provider>:<model>, local, best, or a list',
+  '/attach <file>     send an image, PDF or text file with the next prompt',
   '/help              this list',
   'exit, quit, ^C, ^D leave',
 ].join('\n')
@@ -82,6 +94,8 @@ async function main() {
   const resuming = resume.value !== undefined || r.value !== undefined
   const model = takeFlag(argv, '--model', true)
   argv = model.rest
+  const attaching = takeAll(argv, ['-a', '--attach'])
+  argv = attaching.rest
 
   // A terminal gets a conversation; a pipe gets one answer and the prompt is
   // the only place it can come from.
@@ -91,9 +105,20 @@ async function main() {
   if (stray.length || (!first && !interactive)) {
     if (stray.length) console.error(`unexpected: ${stray.join(' ')}`)
     console.error(
-      'usage: navi [-p "what you want done"] [-r|--resume] [--model local|best|<provider>:<model>[,...]] [--max-steps N]\n       navi setup [--check]',
+      'usage: navi [-p "what you want done"] [-a file]... [-r|--resume] [--model local|best|<provider>:<model>[,...]] [--max-steps N]\n       navi setup [--check]',
     )
     return 1
+  }
+
+  // Read before any model is looked for: a bad path should not cost a model start (CLI-22).
+  let pending: Attachment[] = []
+  for (const path of attaching.values) {
+    try {
+      pending.push(await attach(path))
+    } catch (e) {
+      console.error(`navi: ${(e as Error).message}`)
+      return 1
+    }
   }
 
   // --model overrides the config file for one run; both take the same values.
@@ -178,7 +203,10 @@ async function main() {
     let done: Extract<HarnessEvent, { type: 'done' }> | undefined
     spin.start()
     try {
-      for await (const e of session.turn(prompt)) {
+      // Attachments go with the next prompt only (CLI-22, CLI-23).
+      const attachments = pending
+      pending = []
+      for await (const e of session.turn(prompt, { attachments })) {
         if (e.type === 'done') done = e
         else if (e.type === 'text') {
           // Unstreamed text waits for the end; the spinner keeps going meanwhile.
@@ -230,6 +258,15 @@ async function main() {
       const command = commandFrom(prompt)
       if (command?.name === 'model') await switchModel(command.spec)
       else if (command?.name === 'help') console.error(HELP)
+      else if (command?.name === 'attach') {
+        try {
+          const a = await attach(command.path)
+          pending.push(a)
+          console.error(dim(`· attached ${a.name}; it goes with your next prompt`))
+        } catch (e) {
+          console.error(`can't attach: ${(e as Error).message}`)
+        }
+      }
       else await turn(prompt)
     }
   } finally {
