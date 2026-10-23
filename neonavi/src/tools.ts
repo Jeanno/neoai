@@ -2,11 +2,15 @@ import { tool } from 'ai'
 import { z } from 'zod'
 import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises'
 import { exec } from 'node:child_process'
-import { dirname, join, relative, resolve, isAbsolute, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, isAbsolute, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { fetchUrl, webSearch } from './web.ts'
 import { makeSearch } from './search.ts'
-import { diffLines, summarize, type FileChange } from './diff.ts'
+import { diffLines, hasUnseen, summarize, type FileChange } from './diff.ts'
+import { CONTEXT_FILE } from './context.ts'
+
+/** Files agents read into their instructions: navi's own, and Claude Code's and others'. */
+const CONTEXT_NAMES = new Set([CONTEXT_FILE, 'CLAUDE.md', 'AGENTS.md', 'GEMINI.md'])
 
 const run = promisify(exec)
 
@@ -50,33 +54,47 @@ export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.
   const at = (path: string) => resolve(cwd, path)
 
   /**
-   * Whether `file` really lands in the working directory: a symbolic link on
-   * the way, or at the file itself, can lead out of it however the path reads.
+   * Where `file` really lands, and whether that is a place a new file is safe
+   * to make unasked: a symbolic link on the way, or at the file itself, can
+   * lead out of the working directory however the path reads.
    */
-  const landsInside = async (file: string) => {
+  const landing = async (file: string): Promise<{ real: string; inside: boolean; moved: boolean }> => {
     const home = await realpath(cwd).catch(() => cwd)
-    if (await lstat(file).then((s) => s.isSymbolicLink(), () => false)) return false
-    // The nearest part of the path that exists is where links are resolved.
-    let dir = dirname(file)
+    // A link at the file itself is written through, wherever it points.
+    const link = await lstat(file).then((s) => s.isSymbolicLink(), () => false)
+    // The nearest part of the path that exists is where links are resolved;
+    // one that exists but cannot be resolved (a dangling link) leads nowhere known.
+    let dir = link ? file : dirname(file)
     while (!(await lstat(dir).then(() => true, () => false)) && dirname(dir) !== dir) dir = dirname(dir)
-    const real = join(await realpath(dir).catch(() => dir), relative(dir, file))
+    const resolved = await realpath(dir).catch(() => null)
+    if (!resolved) return { real: file, inside: false, moved: false }
+    const real = join(resolved, relative(dir, file))
     const rel = relative(home, real)
+    const within = !!rel && !rel.startsWith('..') && !isAbsolute(rel)
     // A hidden name (.git/hooks, .github/workflows, .envrc) is one that tools
-    // and shells load on their own, so making one is never taken as safe.
-    return !!rel && !rel.startsWith('..') && !isAbsolute(rel) && !rel.split(sep).some((part) => part.startsWith('.'))
+    // and shells run on their own, and a context file is read into every later
+    // session's instructions, so making either is never taken as safe.
+    const loaded = rel.split(sep).some((part) => part.startsWith('.')) || CONTEXT_NAMES.has(basename(real))
+    // Moved: a link took it somewhere the path, read from the working directory, does not say.
+    const moved = real !== join(home, relative(cwd, file))
+    return { real, inside: within && !loaded && !link, moved }
   }
 
   /** Shows the change, asks, and makes it only when approved (TL-38, TL-39). */
   const apply = async (path: string, before: string | null, after: string, signal?: AbortSignal) => {
+    // A path no one can read on the question line is not one to approve.
+    if (hasUnseen(path)) return 'The path has control or invisible characters in it; nothing was written. Use a plain path.'
     const file = at(path)
-    const change: FileChange = { path, created: before === null, ...diffLines(before ?? '', after) }
     if (before === after) return `${path} already reads that way; nothing changed.`
-    const inside = await landsInside(file)
+    const { real, inside, moved } = await landing(file)
+    const change: FileChange = { path, created: before === null, ...(moved && { lands: real }), ...diffLines(before ?? '', after) }
     if (!gate.change || !(await gate.change({ ...change, inside }, signal)))
       return `The user declined to ${summarize(change)}. Do not retry it; try another approach.`
     try {
-      // Approval can take minutes; a file changed meanwhile is not overwritten with the old read.
+      // Approval can take minutes: a file changed meanwhile is not overwritten
+      // with the old read, and a path that now leads elsewhere is not followed.
       if ((await current(path)) !== before) return `${path} changed since it was read; nothing was written. Read it again.`
+      if ((await landing(file)).real !== real) return `${path} now leads somewhere else; nothing was written.`
       await mkdir(dirname(file), { recursive: true })
       await writeFile(file, after, { flag: before === null ? 'wx' : 'w' })
     } catch (e: any) {

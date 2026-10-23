@@ -4,6 +4,8 @@ export interface FileChange {
   path: string
   /** True when the file does not exist yet. */
   created: boolean
+  /** Where it really lands, when a symbolic link takes it somewhere the path does not say. */
+  lands?: string
   /** Changed lines marked `-` and `+`, with unchanged ones around them. */
   diff: string
   added: number
@@ -16,12 +18,21 @@ const CONTEXT = 3
  * Control characters shown as symbols: written raw, an escape sequence in the
  * model's text could move the cursor and paint over the lines being approved.
  */
-function visible(line: string): string {
-  return line.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, (c) => {
+export function visible(line: string): string {
+  return line.replace(UNSEEN, (c) => {
     const code = c.charCodeAt(0)
-    return code < 0x20 ? String.fromCharCode(0x2400 + code) : code === 0x7f ? '\u2421' : '\ufffd'
+    if (code < 0x20) return String.fromCharCode(0x2400 + code)
+    if (code === 0x7f) return '\u2421'
+    // Bidi controls and zero-width characters would reorder or hide text unseen.
+    return code > 0x9f ? `<U+${code.toString(16).toUpperCase()}>` : '\ufffd'
   })
 }
+
+/** Characters a terminal acts on or hides rather than shows (TL-38). */
+const UNSEEN = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g
+
+/** Whether text holds any character `visible` would have to stand in for. */
+export const hasUnseen = (text: string) => new RegExp(UNSEEN.source).test(text.replace(/\t/g, ''))
 
 function lines(text: string): string[] {
   if (!text) return []
@@ -63,5 +74,6 @@ export function diffLines(before: string, after: string): { diff: string; added:
 /** One line for a change: `edit src/a.ts (+2 -1)`, `create notes.md (+12)`. */
 export function summarize(change: FileChange): string {
   const counts = change.created ? `+${change.added}` : `+${change.added} -${change.removed}`
-  return `${change.created ? 'create' : 'edit'} ${change.path} (${counts})`
+  const lands = change.lands ? ` → ${change.lands}` : ''
+  return visible(`${change.created ? 'create' : 'edit'} ${change.path}${lands} (${counts})`)
 }

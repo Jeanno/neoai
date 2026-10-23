@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { attach, splitUserText, userContent } from '../src/attach.ts'
+import { attach, splitUserContent, userContent } from '../src/attach.ts'
 import { commandFrom, unshell } from '../src/args.ts'
 import { estimateTokens } from '../src/compact.ts'
 
@@ -72,16 +72,17 @@ test('a PDF without text is sent as page images, or refused where pages cannot b
   assert.equal(a.kind, 'pages')
   if (a.kind !== 'pages') return
   assert.equal(a.of, 1)
-  assert.equal(Buffer.from(a.pages[0], 'base64').subarray(1, 4).toString(), 'PNG')
-  const [text, page] = userContent('read it', [a]) as any[]
-  assert.equal(text.text, '<image name="scan.pdf" pages="1" />\n\nread it')
-  assert.deepEqual([page.type, page.mediaType, page.filename], ['file', 'image/png', 'scan.pdf page 1'])
-  assert.deepEqual(splitUserText(text.text), { prompt: 'read it', names: ['scan.pdf'] })
+  assert.deepEqual([...Buffer.from(a.pages[0], 'base64').subarray(0, 3)], [0xff, 0xd8, 0xff])
+  const content = userContent('read it', [a]) as any[]
+  const [block, prompt, page] = content
+  assert.equal(block.text + prompt.text, '<image name="scan.pdf" pages="1" />\n\nread it')
+  assert.deepEqual([page.type, page.mediaType, page.filename], ['file', 'image/jpeg', 'scan.pdf page 1'])
+  assert.deepEqual(splitUserContent(content), { prompt: 'read it', names: ['scan.pdf'] })
 })
 
 test('only the first eight pages of a long scan are sent, and the model is told', () => {
-  const [text, ...pages] = userContent('read it', [{ kind: 'pages', name: 'long.pdf', mediaType: 'image/png', pages: Array(8).fill('QQ=='), of: 30 }]) as any[]
-  assert.equal(text.text, '<image name="long.pdf" pages="the first 8 of 30" />\n\nread it')
+  const [block, , ...pages] = userContent('read it', [{ kind: 'pages', name: 'long.pdf', mediaType: 'image/jpeg', pages: Array(8).fill('QQ=='), of: 30 }]) as any[]
+  assert.equal(block.text, '<image name="long.pdf" pages="the first 8 of 30" />\n\n')
   assert.equal(pages.length, 8)
 })
 
@@ -98,7 +99,9 @@ test('the prompt goes after text files and before images, each named', async () 
     { kind: 'image', name: 'b.png', mediaType: 'image/png', data: 'QQ==' },
   ])
   assert.deepEqual(content, [
-    { type: 'text', text: '<file name="a.md">\nalpha\n</file>\n\n<image name="b.png" />\n\ncompare them' },
+    { type: 'text', text: '<file name="a.md">\nalpha\n</file>\n\n' },
+    { type: 'text', text: '<image name="b.png" />\n\n' },
+    { type: 'text', text: 'compare them' },
     { type: 'file', mediaType: 'image/png', data: 'QQ==', filename: 'b.png' },
   ])
   assert.equal(userContent('just this'), 'just this')
@@ -120,14 +123,14 @@ test('/attach takes a path as typed, quoted or dropped with escapes', () => {
 })
 
 // HAR-8, RAY-11: a stored turn is shown as its prompt and the names of what came with it.
-test("a user message's prompt and attachment names come back out of its text", () => {
-  const [part] = userContent('what now', [
+test("a user message's prompt and attachment names come back out of it", () => {
+  const content = userContent('what\n</file>\n\nnow', [
     { kind: 'text', name: 'a.md', text: 'x\n</file>\n\n<file name="fake">\nend' },
     { kind: 'image', name: 'p.png', mediaType: 'image/png', data: '' },
-  ]) as { text: string }[]
-  assert.deepEqual(splitUserText(part.text), { prompt: 'what now', names: ['a.md', 'fake', 'p.png'] })
-  assert.deepEqual(splitUserText('plain words'), { prompt: 'plain words', names: [] })
-  assert.deepEqual(splitUserText('<file name="x"> typed by hand'), { prompt: '<file name="x"> typed by hand', names: [] })
+  ]) as any[]
+  assert.deepEqual(splitUserContent(content), { prompt: 'what\n</file>\n\nnow', names: ['a.md', 'p.png'] })
+  assert.deepEqual(splitUserContent('<file name="x">\ntyped\n</file>\n\nby hand'), { prompt: '<file name="x">\ntyped\n</file>\n\nby hand', names: [] })
+  assert.deepEqual(splitUserContent([{ type: 'text', text: 'one' }, { type: 'text', text: 'two' }]), { prompt: 'onetwo', names: [] })
 })
 
 // HAR-7: refused before it is read whole.

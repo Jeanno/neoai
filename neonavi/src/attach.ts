@@ -12,7 +12,7 @@ export type Attachment =
   | { kind: 'image'; name: string; mediaType: string; data: string }
   | { kind: 'text'; name: string; text: string }
   /** A PDF of scanned pages, each page an image; `of` is how many it has. */
-  | { kind: 'pages'; name: string; mediaType: 'image/png'; pages: string[]; of: number }
+  | { kind: 'pages'; name: string; mediaType: 'image/jpeg'; pages: string[]; of: number }
 
 const IMAGES: Record<string, string> = {
   '.png': 'image/png',
@@ -61,33 +61,50 @@ async function scaled(file: string, ext: string, bytes: Buffer): Promise<Buffer>
 /** Pages past this are left out: each costs the model as much as an image. */
 const MAX_PAGES = 8
 
-/** Draws a PDF's first pages as PNGs with PDFKit, from JavaScript for Automation: nothing to install. */
+/** A page over this is drawn smaller: providers refuse an image much past 5 MB. */
+const MAX_PAGE = 4 * 1024 * 1024
+
+/** Draws a PDF's first pages as JPEGs with PDFKit, from JavaScript for Automation: nothing to install. */
 const RENDER = `ObjC.import('PDFKit'); ObjC.import('AppKit')
-function run([file, dir, most, side]) {
+function run([file, dir, most, side, cap]) {
   const doc = $.PDFDocument.alloc.initWithURL($.NSURL.fileURLWithPath(file))
   if (!doc || doc.isNil()) return '0'
   for (let i = 0; i < Math.min(doc.pageCount, Number(most)); i++) {
     const page = doc.pageAtIndex(i)
     const box = page.boundsForBox($.kPDFDisplayBoxMediaBox).size
-    const scale = Number(side) / Math.max(box.width, box.height)
-    const image = page.thumbnailOfSizeForBox($.NSMakeSize(Math.round(box.width * scale), Math.round(box.height * scale)), $.kPDFDisplayBoxMediaBox)
-    const png = $.NSBitmapImageRep.imageRepWithData(image.TIFFRepresentation).representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({}))
-    png.writeToFileAtomically(dir + '/' + (i + 1) + '.png', true)
+    // A noisy scan can outweigh the cap at full size; each try is smaller.
+    for (let longest = Number(side); ; longest = Math.round(longest * 0.7)) {
+      const scale = longest / Math.max(box.width, box.height)
+      const image = page.thumbnailOfSizeForBox($.NSMakeSize(Math.round(box.width * scale), Math.round(box.height * scale)), $.kPDFDisplayBoxMediaBox)
+      const jpeg = $.NSBitmapImageRep.imageRepWithData(image.TIFFRepresentation)
+        .representationUsingTypeProperties($.NSBitmapImageFileTypeJPEG, $({ NSImageCompressionFactor: 0.75 }))
+      if (jpeg.length <= Number(cap) || longest < 400) {
+        jpeg.writeToFileAtomically(dir + '/' + (i + 1) + '.jpg', true)
+        break
+      }
+    }
   }
   return String(doc.pageCount)
 }`
 
-/** A scanned PDF's pages as PNGs, or null where they cannot be drawn (HAR-7). */
+/** A scanned PDF's pages as JPEGs, as many as fit in one image's allowance, or null where they cannot be drawn (HAR-7). */
 async function pdfPages(file: string): Promise<{ pages: string[]; of: number } | null> {
   if (process.platform !== 'darwin') return null
   const dir = await mkdtemp(join(tmpdir(), 'navi-pages-'))
   try {
-    const { stdout } = await run('osascript', ['-l', 'JavaScript', '-e', RENDER, file, dir, String(MAX_PAGES), String(MAX_SIDE)])
+    const args = ['-l', 'JavaScript', '-e', RENDER, file, dir, String(MAX_PAGES), String(MAX_SIDE), String(MAX_PAGE)]
+    // A pathological PDF must not hang the prompt.
+    const { stdout } = await run('osascript', args, { timeout: 60_000 })
     const of = Number(stdout.trim())
     if (!of) return null
-    const pages = await Promise.all(
-      Array.from({ length: Math.min(of, MAX_PAGES) }, (_, i) => readFile(join(dir, `${i + 1}.png`)).then((b) => b.toString('base64'))),
-    )
+    const pages: string[] = []
+    let total = 0
+    for (let i = 1; i <= Math.min(of, MAX_PAGES); i++) {
+      const page = await readFile(join(dir, `${i}.jpg`))
+      total += page.length
+      if (total > MAX_IMAGE && pages.length) break
+      pages.push(page.toString('base64'))
+    }
     return { pages, of }
   } catch {
     return null
@@ -125,7 +142,7 @@ export async function attach(path: string, cwd = process.cwd()): Promise<Attachm
       // Scanned pages: shown to the model as the images they are.
       const drawn = await pdfPages(file)
       if (!drawn) throw new Error(`${path} has no text to read, and its pages could not be drawn as images here`)
-      return { kind: 'pages', name, mediaType: 'image/png', ...drawn }
+      return { kind: 'pages', name, mediaType: 'image/jpeg', ...drawn }
     }
     return { kind: 'text', name, text: cut(text) }
   }
@@ -135,17 +152,23 @@ export async function attach(path: string, cwd = process.cwd()): Promise<Attachm
   return { kind: 'text', name, text: cut(text) }
 }
 
-/** The user message for a prompt and its attachments: text files first, then the prompt, then images. */
+/**
+ * The user message for a prompt and its attachments: text files first, then
+ * the prompt, then images. Each file is a text part of its own and the prompt
+ * the last, so a stored turn can be shown as what was asked (splitUserContent).
+ */
 export function userContent(prompt: string, attachments: Attachment[] = []): string | (TextPart | ImagePart | FilePart)[] {
   if (!attachments.length) return prompt
   // Images are named too, so the model can tell which is which.
-  const texts = attachments.map((a) =>
-    a.kind === 'text'
-      ? `<file name="${a.name}">\n${a.text}\n</file>`
-      : a.kind === 'pages'
-        ? `<image name="${a.name}" pages="${a.pages.length < a.of ? `the first ${a.pages.length} of ${a.of}` : a.of}" />`
-        : `<image name="${a.name}" />`,
-  )
+  const blocks = attachments.map((a): TextPart => ({
+    type: 'text',
+    text:
+      (a.kind === 'text'
+        ? `<file name="${a.name}">\n${a.text}\n</file>`
+        : a.kind === 'pages'
+          ? `<image name="${a.name}" pages="${a.pages.length < a.of ? `the first ${a.pages.length} of ${a.of}` : a.of}" />`
+          : `<image name="${a.name}" />`) + '\n\n',
+  }))
   const images = attachments.flatMap((a): FilePart[] =>
     a.kind === 'image'
       ? [{ type: 'file', mediaType: a.mediaType, data: a.data, filename: a.name }]
@@ -153,20 +176,15 @@ export function userContent(prompt: string, attachments: Attachment[] = []): str
         ? a.pages.map((data, i) => ({ type: 'file', mediaType: a.mediaType, data, filename: `${a.name} page ${i + 1}` }))
         : [],
   )
-  return [{ type: 'text', text: [...texts, prompt].join('\n\n') }, ...images]
+  return [...blocks, { type: 'text', text: prompt }, ...images]
 }
 
-/**
- * The prompt and attachment names back out of a user message's text as
- * userContent wrote it, for showing a stored turn without the files' text.
- */
-export function splitUserText(text: string): { prompt: string; names: string[] } {
-  if (!/^<(file|image) name="/.test(text)) return { prompt: text, names: [] }
-  // The prompt follows the last block, however much a file's own text looks like one.
-  const ends = [...text.matchAll(/\n<\/file>\n\n|<image name="[^"]*"[^>\n]* \/>\n\n/g)]
-  const last = ends.at(-1)
-  if (!last) return { prompt: text, names: [] }
-  const head = text.slice(0, last.index + last[0].length)
-  const names = [...head.matchAll(/(?:^|<\/file>\n\n|" \/>\n\n)<(?:file|image) name="([^"]*)"/g)].map((m) => m[1])
-  return { prompt: text.slice(head.length), names }
+/** The prompt and attachment names back out of a user message userContent made, for showing a stored turn. */
+export function splitUserContent(content: string | readonly { type: string; text?: string }[]): { prompt: string; names: string[] } {
+  if (typeof content === 'string') return { prompt: content, names: [] }
+  const texts = content.flatMap((p) => (p.type === 'text' && typeof p.text === 'string' ? [p.text] : []))
+  const names = texts.slice(0, -1).flatMap((t) => /^<(?:file|image) name="([^"]*)"/.exec(t)?.[1] ?? [])
+  // Anything else is a message userContent did not make: shown as it is.
+  if (names.length !== texts.length - 1) return { prompt: texts.join(''), names: [] }
+  return { prompt: texts.at(-1) ?? '', names }
 }

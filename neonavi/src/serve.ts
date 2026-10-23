@@ -91,6 +91,8 @@ export function serveHandler(chain: Entry[], d: ServeDeps) {
     res.once('close', () => stop.abort())
     const failed: string[] = []
     for (const [index, entry] of chain.entries()) {
+      // No one is waiting: the next link is not started, let alone asked.
+      if (stop.signal.aborted) return
       const name = linkName(entry, index)
       const r = await d.route(entry)
       if (!r) {

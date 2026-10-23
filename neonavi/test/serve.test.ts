@@ -224,3 +224,26 @@ test('it listens on loopback only', async () => {
   assert.match(s.base, /^http:\/\/127\.0\.0\.1:\d+$/)
   s.close()
 })
+
+// SRV-4: an app that left is not answered by the next link either.
+test('an app that leaves while a link fails stops the walk down the chain', async () => {
+  let release: () => void
+  const held = new Promise<void>((r) => (release = r))
+  const s = await serving([
+    async () => {
+      await held
+      return new Response('busy', { status: 503 })
+    },
+    ok,
+  ])
+  const leave = new AbortController()
+  const asked = post(s.base, { messages: [] }, {}, leave.signal).catch(() => null)
+  await new Promise((r) => setTimeout(r, 30))
+  leave.abort()
+  await asked
+  await new Promise((r) => setTimeout(r, 30))
+  release!()
+  await new Promise((r) => setTimeout(r, 30))
+  assert.deepEqual(s.sent.map((x) => x.url), ['http://link0/chat/completions'])
+  s.close()
+})

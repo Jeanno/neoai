@@ -1,6 +1,6 @@
 import { createInterface, type Interface } from 'node:readline/promises'
 import type { Readable, Writable } from 'node:stream'
-import type { FileChange } from './diff.ts'
+import { visible, type FileChange } from './diff.ts'
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
@@ -96,11 +96,12 @@ export function makeApprover(
   const line = 'line' in io ? io.line : makeLine(io)
   return {
     approve: async (command) => {
-      const answer = await line.ask(`\n${bold('run?')} ${command}\n${dim('[y/N]')} `)
+      // Shown as typed: an escape sequence in it could otherwise redraw the question.
+      const answer = await line.ask(`\n${bold('run?')} ${visible(command)}\n${dim('[y/N]')} `)
       return (answer ?? '').trim().toLowerCase() === 'y'
     },
     approveChange: async (summary, change) => {
-      const answer = await line.ask(`\n${colorDiff(change.diff)}\n${bold('write?')} ${summary}\n${dim('[y/N]')} `)
+      const answer = await line.ask(`\n${colorDiff(change.diff)}\n${bold('write?')} ${visible(summary)}\n${dim('[y/N]')} `)
       return (answer ?? '').trim().toLowerCase() === 'y'
     },
     close: () => line.close(),

@@ -58,18 +58,23 @@ anything off the machine.
 - TL-38: Every change is shown as a diff before it is made: the changed lines
   marked `-` and `+`, with up to 3 unchanged lines around them. The diff is
   never cut short, and control characters in it are shown as symbols, so what
-  is approved is all of what is shown. Creating a new
-  file inside the working directory is what TL-21 calls safe, so with judging
-  on (TL-24) it runs without asking and is reported as auto-approved like a
-  command (TL-22). Changing an existing file, or writing anywhere outside the
-  working directory, always asks, and so does every change under
-  `"approve": "ask"`. Only `y` approves (TL-14). A path that leads out of the working
-  directory through a symbolic link counts as outside. So does a hidden one,
-  a name starting with `.` anywhere in the path (`.git/hooks/…`,
-  `.github/workflows/…`, `.envrc`): tools and shells run many of those on
-  their own. A file that changed, or
-  appeared, while the question was open is not written; the model is told to
-  read it again.
+  is approved is all of what is shown. Creating a new file inside the working
+  directory is what TL-21 calls safe, so with judging on (TL-24) it runs
+  without asking and is reported as auto-approved like a command (TL-22).
+  Changing an existing file, or writing anywhere outside the working
+  directory, always asks, and so does every change under `"approve": "ask"`.
+  Only `y` approves (TL-14). A path that leads out of the working directory
+  through a symbolic link counts as outside. So does a hidden one, a name
+  starting with `.` anywhere in the path (`.git/hooks/…`,
+  `.github/workflows/…`, `.envrc`), which tools and shells run on their own,
+  and a context file (`NAVI.md`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`), which
+  agents read into their instructions. When a link takes the path somewhere it
+  does not say, the question names where it really lands. A path with control
+  or invisible characters is refused unasked, and commands and summaries are
+  shown with such characters as symbols, so nothing in them can redraw the
+  question. A path that leads somewhere else by the time it is approved is not
+  written. A file that changed, or appeared, while the question was open is
+  not written; the model is told to read it again.
 - TL-39: A decline returns a message telling the model not to retry it
   (TL-15). A change made returns the path and how many lines were added and
   removed.

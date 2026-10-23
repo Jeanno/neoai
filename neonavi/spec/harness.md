@@ -37,13 +37,15 @@ jack-ins are others (`jackins/NAVI.md`).
   as an image, scaled down first so its longer side is at most 1600 pixels
   where the system can (`sips` on macOS). A PDF is sent as its text, headed by
   its file name. A PDF with no text layer is scanned pages: where the system
-  can draw them (PDFKit on macOS), its first 8 pages are sent as images at
-  most 1600 pixels on a side, and the model is told how many of how many it
-  sees. Any other file that reads as UTF-8 text is sent as text, headed by its
-  name. Text attachments are cut at 100,000 characters, marked. A missing
-  file, a directory, a file over 50 MB, an image still over 20 MB once scaled,
-  a PDF with no text whose pages cannot be drawn, or anything else is refused
-  with a message naming the file, before any model call.
+  can draw them (PDFKit on macOS), its first 8 pages are sent as JPEG images
+  at most 1600 pixels on a side (smaller where a page would pass 4 MB, and
+  fewer pages where they would pass 20 MB together), and the model is told how
+  many of how many it sees. Any other file that reads as UTF-8 text is sent as
+  text, headed by its name. Text attachments are cut at 100,000 characters,
+  marked. A missing file, a directory, a file over 50 MB, an image still over
+  20 MB once scaled, a PDF with no text whose pages cannot be drawn, or
+  anything else is refused with a message naming the file, before any model
+  call.
 - HAR-8: Attachments are kept in the history like the prompt they came with.
   For the history's size (SES-8) an image counts as 1,000 tokens, however
   many bytes it holds.

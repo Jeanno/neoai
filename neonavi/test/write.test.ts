@@ -86,13 +86,36 @@ test('a path through a symbolic link that leads out, or to a hidden name, counts
   await w.call('write_file', { path: 'here/fine.txt', content: 'x' })
   await w.call('write_file', { path: '.git/hooks/pre-commit', content: 'x' })
   await w.call('write_file', { path: '.envrc', content: 'x' })
+  await w.call('write_file', { path: 'NAVI.md', content: 'x' })
+  await w.call('write_file', { path: 'docs/CLAUDE.md', content: 'x' })
+  // A link to a directory that does not exist yet leads nowhere known.
+  await symlink(join(elsewhere, 'later'), join(w.cwd, 'out'))
+  await w.call('write_file', { path: 'out/x.txt', content: 'x' })
   assert.deepEqual(w.asked.map((c) => [c.path, c.inside]), [
     ['link/evil.sh', false],
     ['note.txt', false],
     ['here/fine.txt', true],
     ['.git/hooks/pre-commit', false],
     ['.envrc', false],
+    ['NAVI.md', false],
+    ['docs/CLAUDE.md', false],
+    ['out/x.txt', false],
   ])
+  // Where a link really takes it is said; a plain path inside says nothing more.
+  assert.match(summarize(w.asked[0]), /^create link\/evil\.sh → \/.*navi-elsewhere-\w+\/evil\.sh \(\+1\)$/)
+  assert.equal(summarize(w.asked[2]), 'create here/fine.txt → ' + w.asked[2].lands + ' (+1)')
+  assert.equal(summarize(w.asked[3]), 'create .git/hooks/pre-commit (+1)')
+})
+
+// TL-38: what is approved is what is shown, the question line included.
+test('a path with control or invisible characters is refused, and summaries show them', async () => {
+  const w = await setup()
+  const out = await w.call('write_file', { path: 'notes\x1b[2K\rwrite? create notes.md (+1)/../../.zshrc', content: 'x' })
+  assert.match(out, /control or invisible characters/)
+  assert.match(await w.call('write_file', { path: 'a\u202eb.txt', content: 'x' }), /control or invisible characters/)
+  assert.equal(w.asked.length, 0)
+  assert.equal(summarize({ path: 'a\x1bb', created: true, diff: '', added: 1, removed: 0 }), 'create a␛b (+1)')
+  assert.equal(diffLines('', 'ok \u202eevil\n').diff, '@@ line 1 @@\n+ ok <U+202E>evil')
 })
 
 // TL-38: approval can take minutes.

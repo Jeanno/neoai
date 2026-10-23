@@ -123,10 +123,9 @@ test('a question asked about files shows without their text', () => {
     {
       role: 'user',
       content: [
-        {
-          type: 'text',
-          text: '<file name="notes.txt">\nmilk\neggs\n</file>\n\n<image name="p.png" />\n\nDescribe these files.',
-        },
+        { type: 'text', text: '<file name="notes.txt">\nmilk\neggs\n</file>\n\n' },
+        { type: 'text', text: '<image name="p.png" />\n\n' },
+        { type: 'text', text: 'Describe these files.' },
         { type: 'file', mediaType: 'image/png', data: 'AAAA', filename: 'p.png' },
       ],
     },

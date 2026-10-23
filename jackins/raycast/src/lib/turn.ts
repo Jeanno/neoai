@@ -1,5 +1,5 @@
 import type { ModelMessage } from 'ai'
-import { splitUserText, type HarnessEvent } from 'neonavi/harness'
+import { splitUserContent, type HarnessEvent } from 'neonavi/harness'
 import { splitThinking } from './think'
 import type { Approval } from './approval'
 
@@ -154,8 +154,7 @@ const capitalized = (s: string) => s[0].toUpperCase() + s.slice(1)
 
 /** What a user message asked, without the text of any files that came with it, and those files' names (RAY-11). */
 export function userText(m: ModelMessage): { prompt: string; names: string[] } {
-  if (typeof m.content === 'string') return splitUserText(m.content)
-  return splitUserText(m.content.map((p) => (p.type === 'text' ? p.text : '')).join(''))
+  return splitUserContent(m.content as Parameters<typeof splitUserContent>[0])
 }
 
 /**

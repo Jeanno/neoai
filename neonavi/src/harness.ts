@@ -13,7 +13,7 @@ export type { FileChange } from './diff.ts'
 import { compact, estimateTokens } from './compact.ts'
 import { userContent, type Attachment } from './attach.ts'
 
-export { attach, splitUserText, type Attachment } from './attach.ts'
+export { attach, splitUserContent, type Attachment } from './attach.ts'
 
 /**
  * navi's harness as a library (harness.md): everything between a prompt and
