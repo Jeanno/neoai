@@ -61,9 +61,11 @@ safe — read-only, or writing new files inside the directory, nothing over the
 network, no sudo. Safe commands run and are echoed as auto-approved; anything
 else, or anything the judge cannot tell, shows the command and waits for `y`.
 Answer `a` instead to run it and allow it from then on: it is added to
-`"allow"` in the config, and that command, with any further arguments, runs
-without asking (`"allow": ["npm test", "git status"]`). A command that chains
-or redirects (`;`, `&&`, `|`, `>`, `$(…)`) is never allowed this way.
+`"allow"` in the config, and that exact command runs without asking from
+then on. An entry ending in ` *`, written by hand, also covers further
+arguments: `"allow": ["git status", "npm test *"]` lets `npm test -- --watch`
+run. A command that chains or redirects (`;`, `&&`, `|`, `>`, `$(…)`) is never
+allowed this way.
 `"approve": "ask"` in the config asks for everything else.
 
 Which model answers is set by `model` in `~/.neoai/config.json`, or `--model`

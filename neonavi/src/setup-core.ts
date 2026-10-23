@@ -1,4 +1,5 @@
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { chmod, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { generateText } from 'ai'
 import {
@@ -43,6 +44,8 @@ export interface CoreDeps {
   /** The config file's contents, {} when absent. Throws when it is not valid JSON. */
   load: () => Promise<Record<string, any>>
   save: (config: Record<string, any>) => Promise<void>
+  /** Read, change and write as one step, queued behind other writes; load then save when left out. */
+  update?: (change: (config: Record<string, any>) => Record<string, any>) => Promise<void>
   /** Where provider keys are looked for first (MOD-10). */
   env: Record<string, string | undefined>
   /**
@@ -251,8 +254,8 @@ function cleanURL(url: string): string {
 export function setupCore(d: CoreDeps) {
   /** Read, change, write: only the fields setup sets are touched (SET-9). */
   const update = async (change: (config: Record<string, any>) => Record<string, any>) => {
-    const config = await d.load()
-    await d.save(change(config))
+    if (d.update) return d.update(change)
+    await d.save(change(await d.load()))
   }
 
   const keyFor = (config: Record<string, any>, id: string): { key: string; from: 'env' | 'saved' } | null => {
@@ -563,15 +566,38 @@ export async function loadConfig(dir = configDir()): Promise<Record<string, any>
   return parsed as Record<string, any>
 }
 
-/** Writes the config file with mode 0600, since it may hold a key (SET-10). */
+/**
+ * Writes the config file with mode 0600, since it may hold a key (SET-10).
+ * A config.json that is a link is written where it points, so the link stays.
+ */
 export async function saveConfig(config: Record<string, any>, dir = configDir()): Promise<void> {
-  const file = join(dir, 'config.json')
   await mkdir(dir, { recursive: true, mode: 0o700 })
-  // Written aside and renamed, so a crash never leaves half a config.
-  const tmp = `${file}.${process.pid}.tmp`
-  await writeFile(tmp, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
-  await rename(tmp, file)
+  const file = await realpath(join(dir, 'config.json')).catch(() => join(dir, 'config.json'))
+  // Written aside and renamed, so a crash never leaves half a config; the
+  // name is unique, so two saves at once never take each other's file.
+  const tmp = `${file}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
+  try {
+    await writeFile(tmp, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
+    await rename(tmp, file)
+  } catch (e) {
+    await rm(tmp, { force: true })
+    throw e
+  }
   await chmod(file, 0o600)
+}
+
+/** One read-change-write at a time per process, so no change is lost to another. */
+let writing: Promise<unknown> = Promise.resolve()
+
+/**
+ * Reads the config, changes it and writes it back, after any other change
+ * this process is making (SET-9). The file is read just before it is written,
+ * so a save from another process a moment ago is kept too.
+ */
+export function updateConfig(change: (config: Record<string, any>) => Record<string, any>, dir = configDir()): Promise<void> {
+  const next = writing.then(async () => saveConfig(change(await loadConfig(dir)), dir))
+  writing = next.catch(() => {})
+  return next
 }
 
 /** The real filesystem, network and models behind the core. */
@@ -579,6 +605,7 @@ export function realDeps(dir = configDir()): CoreDeps {
   return {
     load: () => loadConfig(dir),
     save: (config) => saveConfig(config, dir),
+    update: (change) => updateConfig(change, dir),
     env: process.env,
     resolve: async (chain, { launch }) => {
       // Failures are memoised too, and setup asks again after things change.

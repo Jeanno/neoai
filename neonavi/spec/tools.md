@@ -36,10 +36,12 @@ anything off the machine.
 
 ## run_shell
 
-- TL-13: Every call is judged first (see below); anything not judged safe asks
-  the user, showing the exact command. Nothing is remembered between calls.
-- TL-14: Only a line reading `y` (case-insensitive, trimmed) approves. Any
-  other input, or no input at all (closed or redirected stdin), declines.
+- TL-13: A call the allowlist names runs (TL-41); every other call is judged
+  first (see below), and anything not judged safe asks the user, showing the
+  exact command. Only an "always" answer (TL-43) is remembered between calls.
+- TL-14: Only a line reading `y` (case-insensitive, trimmed) approves, or `a`
+  where "always" is offered (TL-43). Any other input, or no input at all
+  (closed or redirected stdin), declines.
 - TL-15: A decline returns a message telling the model not to retry and to try
   another approach.
 - TL-16: Commands run through the shell with a 120s timeout. Output is stdout,
@@ -63,7 +65,7 @@ anything off the machine.
   without asking and is reported as auto-approved like a command (TL-22).
   Changing an existing file, or writing anywhere outside the working
   directory, always asks, and so does every change under `"approve": "ask"`.
-  Only `y` approves (TL-14). A path that leads out of the working directory
+  Only `y` approves (TL-14); a file change is never offered `a`. A path that leads out of the working directory
   through a symbolic link counts as outside. So does a hidden one, a name
   starting with `.` anywhere in the path (`.git/hooks/…`,
   `.github/workflows/…`, `.envrc`), which tools and shells run on their own,
@@ -119,16 +121,20 @@ Commands the user has said always to run, so a daily `npm test` stops asking.
 
 - TL-41: `"allow": ["npm test", "git status"]` in `~/.neoai/config.json`
   lists commands that run without the judge or a question, under any
-  `approve` setting. A command is allowed when it is an entry, or an entry
-  followed by a space and more arguments, and holds none of `;`, `&`, `|`,
-  `<`, `>`, a backquote, `$(` or a line break: so `npm test -- --watch` is
-  allowed by `npm test`, and `npm test; rm -rf ~` is not. Leading and
-  trailing spaces are ignored.
+  `approve` setting. A command is allowed when it is an entry exactly, or,
+  for an entry ending in ` *` such as `"npm test *"`, what comes before the
+  `*` followed by more arguments; and when it holds none of `;`, `&`, `|`,
+  `<`, `>`, a backquote, `$(` or a line break. So `npm test -- --watch` is
+  allowed by `npm test *` but not by `npm test`, and `npm test; rm -rf ~` by
+  neither. Leading and trailing spaces and tabs are ignored.
 - TL-42: An allowed command is reported like an auto-approved one (TL-22),
   saying it was allowed rather than judged.
 - TL-43: Where a command is asked about, the user may answer "always": it
-  runs, and is added to `allow` in `~/.neoai/config.json` (kept 0600, every
-  other setting left as it was) for this and every later session. A command
+  runs, and is added to `allow` in `~/.neoai/config.json` exactly as shown,
+  never as a ` *` entry (kept 0600, every other setting left as it was), for
+  this and every later session. Saves made at once are all kept. When the
+  file cannot be saved, the command is allowed for this session only, and
+  the user is told so. A command
   that could never be allowed (TL-41) is not offered "always". The CLI takes
   `a` at its `[y/N/a]` prompt; file changes are never offered it.
 
@@ -141,7 +147,7 @@ A model call that decides whether a shell command needs the user's approval.
 - TL-23: `unsafe` and `unknown` both fall to the `[y/N]` prompt, so a closed
   stdin still declines them (TL-14).
 - TL-24: `"approve": "ask"` in `~/.neoai/config.json` skips the judge and
-  asks for everything. Any other value, or none, means judge first.
+  asks for everything the allowlist does not name (TL-41). Any other value, or none, means judge first.
 - TL-25: The judge uses the session's model. No separate model is configured.
 
 - TL-18: `judge(model, command, intent)` returns `safe`, `unsafe` or

@@ -86,6 +86,11 @@ export type HarnessEvent =
    */
   /** `allowed` when the allowlist let it through rather than the judge (TL-42). */
   | { type: 'auto-approved'; command: string; change?: FileChange; allowed?: true }
+  /**
+   * A command answered "always" (TL-43): allowed from now on, or, with
+   * `problem`, for this session only, since the config could not be saved.
+   */
+  | { type: 'remembered'; command: string; problem?: string }
   /** What the tool returned; `error` when it threw and the model got the message. */
   | { type: 'tool-result'; id: string; name: string; output: unknown; error: boolean }
   /** The model call failed. The turn still ends with `done`. */
@@ -116,7 +121,8 @@ export interface Harness {
 }
 
 export async function createHarness(o: HarnessOptions): Promise<Harness> {
-  const config = o.config ?? ((await readConfig()) as HarnessConfig)
+  // Read from where an "always" is saved (TL-43), so the two never differ.
+  const config = o.config ?? ((await readConfig(configDir(o.home ?? homedir()))) as HarnessConfig)
   const maxSteps = o.maxSteps ?? DEFAULT_STEPS
   const native = o.streamsToolCalls ?? ((o.model as { streamsToolCalls?: boolean }).streamsToolCalls === true || !o.model.provider.startsWith('neorouter'))
   const model = native ? o.model : generatedAsStream(o.model)
@@ -198,7 +204,11 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           // Kept for this session at once, and in the config file for the next.
           remember: async (c) => {
             config.allow = [...(Array.isArray(config.allow) ? config.allow : []), c.trim()]
-            await allowCommand(c, configDir(o.home ?? homedir())).catch((e) => emit({ type: 'error', error: e }))
+            const saved = await allowCommand(c, configDir(o.home ?? homedir())).then(
+              () => undefined,
+              (e) => (e instanceof Error ? e.message : String(e)),
+            )
+            emit({ type: 'remembered', command: c, ...(saved && { problem: saved }) })
           },
           onAuto: (c, how) => emit({ type: 'auto-approved', command: c, ...(how === 'allowed' && { allowed: true }) }),
           ask: (c) => ask(c, toolSignal ?? signal),

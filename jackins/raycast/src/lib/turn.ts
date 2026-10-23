@@ -71,6 +71,14 @@ export function applyEvent(turn: Turn, e: HarnessEvent): Turn {
       if (at >= 0) items[at] = { ...(items[at] as Extract<Item, { kind: 'tool' }>), state: e.error ? 'failed' : 'done' }
       return { ...turn, items }
     }
+    case 'remembered':
+      items.push({
+        kind: 'note',
+        line: e.problem
+          ? `allowed for this session only: ${e.command} (could not save it: ${e.problem})`
+          : `allowed from now on: ${e.command}`,
+      })
+      return { ...turn, items }
     case 'compacted':
       items.push({ kind: 'note', line: `compacted ${e.messages} earlier messages` })
       return { ...turn, items }

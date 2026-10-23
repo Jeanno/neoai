@@ -16,7 +16,7 @@ const run = promisify(exec)
 
 export interface Gate {
   /**
-   * Returns true to let the command run. Asked once per call, never cached.
+   * Returns true to let the command run. Asked once per call; only an allowed command (TL-41) skips asking.
    * The signal aborts when the turn is stopped, which should decline.
    */
   approve: (command: string, signal?: AbortSignal, toolCallId?: string) => Promise<boolean>

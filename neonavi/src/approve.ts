@@ -118,26 +118,38 @@ export type Answer = boolean | 'always'
 /** Chaining, redirection and substitution: a command holding any can run more than its prefix says (TL-41). */
 const COMPOUND = /[;&|<>`\n\r]|\$\(/
 
-/** Whether a command could ever be allowed: one plain command with arguments (TL-41). */
-export const allowable = (command: string) => !!command.trim() && !COMPOUND.test(command)
+/** Spaces and tabs only, as the shell splits on: other blanks are part of an argument. */
+const trimmed = (s: string) => s.replace(/^[ \t]+|[ \t]+$/g, '')
 
-/** Whether `command` is one the user said always to run (TL-41). */
+/** Whether a command could ever be allowed: one plain command with arguments (TL-41). */
+export const allowable = (command: string) => !!trimmed(command) && !COMPOUND.test(command)
+
+/**
+ * Whether `command` is one the user said always to run (TL-41): an entry
+ * exactly, or, for an entry ending in ` *`, what comes before it followed by
+ * more arguments. Only an entry written by hand has a `*`; "always" saves
+ * the command as it was shown.
+ */
 export function allowed(command: string, allow: unknown): boolean {
   if (!Array.isArray(allow) || !allowable(command)) return false
-  const c = command.trim()
+  const c = trimmed(command)
   return allow.some((entry) => {
-    const e = typeof entry === 'string' ? entry.trim() : ''
-    return !!e && (c === e || c.startsWith(`${e} `))
+    const e = typeof entry === 'string' ? trimmed(entry) : ''
+    if (!e) return false
+    if (!e.endsWith(' *')) return c === e
+    const head = trimmed(e.slice(0, -1))
+    return !!head && (c === head || c.startsWith(`${head} `))
   })
 }
 
 /** Adds a command to `allow` in config.json, leaving everything else as it was (TL-43). */
 export async function allowCommand(command: string, dir: string): Promise<void> {
-  const { loadConfig, saveConfig } = await import('./setup-core.ts')
-  const config = await loadConfig(dir)
-  const allow: unknown[] = Array.isArray(config.allow) ? config.allow : []
-  if (!allow.includes(command.trim())) config.allow = [...allow, command.trim()]
-  await saveConfig(config, dir)
+  const { updateConfig } = await import('./setup-core.ts')
+  const c = trimmed(command)
+  await updateConfig((config) => {
+    const allow: unknown[] = Array.isArray(config.allow) ? config.allow : []
+    return allow.includes(c) ? config : { ...config, allow: [...allow, c] }
+  }, dir)
 }
 
 /**

@@ -428,21 +428,43 @@ test('the harness writes nothing to stdout or stderr', async () => {
 })
 
 // HAR-4, TL-43: "always" runs the command, lets it through from then on, and saves it.
-test('an "always" answer is kept for the session and in the config file', async () => {
+test('an "always" answer is kept for the session and in the config file, for that command exactly', async () => {
   const { readFile: read } = await import('node:fs/promises')
   const asked: string[] = []
   const model = fake([
     [call('c1', 'run_shell', { command: 'echo risky' }), finish('tool-calls')],
-    [call('c2', 'run_shell', { command: 'echo risky again' }), finish('tool-calls')],
+    [call('c2', 'run_shell', { command: 'echo risky' }), finish('tool-calls')],
+    [call('c3', 'run_shell', { command: 'echo risky again' }), finish('tool-calls')],
     [...text('t', 'ok'), finish('stop')],
   ])
-  const h = await harness(model, { approve: async (c) => (asked.push(c), 'always') })
+  const h = await harness(model, { approve: async (c) => (asked.push(c), c === 'echo risky' ? 'always' : false) })
   const events = await collect(h.session().turn('run it'))
-  assert.deepEqual(asked, ['echo risky'])
-  assert.ok(events.some((e) => e.type === 'auto-approved' && e.command === 'echo risky again' && e.allowed))
+  assert.deepEqual(asked, ['echo risky', 'echo risky again'])
+  assert.ok(events.some((e) => e.type === 'remembered' && e.command === 'echo risky' && !e.problem))
+  assert.ok(events.some((e) => e.type === 'auto-approved' && e.command === 'echo risky' && e.allowed))
   const home = h.system.match(/The working directory is (\S+)/)![1]
   const saved = JSON.parse(await read(join(home, '.neoai', 'config.json'), 'utf8'))
   assert.deepEqual(saved.allow, ['echo risky'])
+})
+
+// TL-43: a config that cannot be saved leaves the command allowed for this session, and says so.
+test('an "always" that cannot be saved is said to be for this session only', async () => {
+  const { mkdtemp, mkdir, writeFile, readFile: read } = await import('node:fs/promises')
+  const home = await mkdtemp(join(tmpdir(), 'navi-home-'))
+  await mkdir(join(home, '.neoai'))
+  await writeFile(join(home, '.neoai', 'config.json'), '{ not json')
+  const asked: string[] = []
+  const model = fake([
+    [call('c1', 'run_shell', { command: 'echo risky' }), finish('tool-calls')],
+    [call('c2', 'run_shell', { command: 'echo risky' }), finish('tool-calls')],
+    [...text('t', 'ok'), finish('stop')],
+  ])
+  const h = await createHarness({ model, contextWindow: 100_000, cwd: home, home, config: { web_search: false }, approve: async (c) => (asked.push(c), 'always') })
+  const events = await collect(h.session().turn('run it'))
+  assert.deepEqual(asked, ['echo risky'])
+  const r = events.find((e) => e.type === 'remembered')
+  assert.ok(r?.type === 'remembered' && /not valid JSON/.test(r.problem ?? ''), JSON.stringify(r))
+  assert.equal(await read(join(home, '.neoai', 'config.json'), 'utf8'), '{ not json')
 })
 
 // HAR-2, TL-42: what is said about a call comes after the call itself, without waiting.

@@ -320,7 +320,6 @@ async function main() {
       spin.stop()
       endLine()
       const ok = change ? await asker.approveChange(command, change) : await asker.approve(command)
-      if (ok === 'always') console.error(dim(`· allowed from now on: ${command} (\`allow\` in ~/.neoai/config.json)`))
       spin.start()
       return ok
     },
@@ -380,6 +379,12 @@ async function main() {
           if (e.type === 'compacted') note(`· compacted ${e.messages} messages`)
           else if (e.type === 'tool-call') note(`· ${e.name}(${echo(e.input)})`)
           else if (e.type === 'auto-approved') note(`· ${e.allowed ? 'allowed' : 'auto-approved'}: ${e.command}`)
+          else if (e.type === 'remembered')
+            note(
+              e.problem
+                ? `· allowed for this session only: ${e.command} (could not save it: ${e.problem})`
+                : `· allowed from now on: ${e.command} (\`allow\` in ~/.neoai/config.json)`,
+            )
           else if (e.type === 'error') note(`error: ${e.error instanceof Error ? e.error.message : String(e.error)}`)
           // The model or a tool is busy again.
           endLine()
