@@ -48,8 +48,10 @@ export function useNavi() {
 
   // Shows the command and waits; Stop or leaving the view declines (RAY-3).
   const approve = useCallback(
-    (command: string, { signal, change }: { signal: AbortSignal; change?: FileChange }) =>
-      waitForAnswer(command, signal, setApproval, change),
+    (
+      command: string,
+      { signal, change, action }: { signal: AbortSignal; change?: FileChange; action?: { url: string } },
+    ) => waitForAnswer(command, signal, setApproval, change, action),
     [],
   )
 

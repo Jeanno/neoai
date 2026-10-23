@@ -43,6 +43,13 @@ add the requirement there first.
       chain, with fallback, and `--install` to keep it running. (SRV-1 to SRV-8)
 - [x] `navi mcp`: an MCP server whose `ask_navi` tool runs a navi turn.
       (MCP-1 to MCP-5)
+- [x] navi's own browser: a separate Chromium with its own logins, read as
+      text with refs (never screenshots), each action answering with what
+      changed; reading is free, acting is judged and asked. (BRW-1 to BRW-15)
+- [ ] The browser in Raycast: approval is ready, but Raycast's bundler
+      cannot pack Playwright. (`jackins/raycast/spec.md` Open)
+- [ ] The browser over MCP, with the client's own approval for actions.
+      (`spec/browser.md` Open)
 
 ## Done
 

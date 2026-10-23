@@ -15,6 +15,7 @@ import { userContent, type Attachment } from './attach.ts'
 
 export { attach, splitUserContent, type Attachment } from './attach.ts'
 import { searchBackend } from './web.ts'
+import type { Tab } from './browser.ts'
 export { allowable, type Answer } from './approve.ts'
 
 /**
@@ -43,6 +44,8 @@ export interface HarnessConfig {
   write?: boolean
   /** Commands that run without the judge or a question (TL-41). */
   allow?: string[]
+  /** false removes the browser tools (BRW-13); `{ executable }` is for the front end (BRW-4). */
+  browser?: unknown
 }
 
 export interface HarnessOptions {
@@ -57,9 +60,16 @@ export interface HarnessOptions {
    * change, `command` is a one-line summary and `change` holds the diff. The
    * signal aborts when the turn is stopped; a throw, or no answer before
    * then, declines. Leaving it out declines every such request. `'always'`
-   * runs a command and adds it to the allowlist (TL-43).
+   * runs a command and adds it to the allowlist (TL-43). For a browser action
+   * (BRW-11), `command` is its one-line description and `action` says on
+   * which page; it is never remembered.
    */
-  approve?: (command: string, o: { signal: AbortSignal; change?: FileChange }) => Promise<Answer>
+  approve?: (command: string, o: { signal: AbortSignal; change?: FileChange; action?: { url: string } }) => Promise<Answer>
+  /**
+   * Makes a tab in navi's browser (`makeTab` from `neonavi/browser`), once per
+   * session on first use. Left out, there are no browser tools (BRW-13).
+   */
+  browser?: () => Tab
   /** Read from `~/.neoai/config.json` when left out. */
   config?: HarnessConfig
   /** Model responses per turn (CLI-9). */
@@ -133,13 +143,14 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
   const web = config.web_search !== false
   const fetch = web && config.fetch_url !== false
   const write = config.write !== false
+  const browsing = !!o.browser && web && config.browser !== false
   const entries = await readdir(o.cwd).catch(() => [])
   const context = await collectContext(o.cwd, o.home ?? homedir())
-  const system = systemPrompt(o.cwd, entries, context, web, fetch, write)
+  const system = systemPrompt(o.cwd, entries, context, web, fetch, write, browsing)
   const systemTokens = estimateTokens([{ role: 'system', content: system }])
 
   /** The front end's answer, or a decline if it throws or the turn stops first. */
-  const ask = (command: string, signal: AbortSignal, change?: FileChange) =>
+  const ask = (command: string, signal: AbortSignal, change?: FileChange, action?: { url: string }) =>
     new Promise<Answer>((resolve) => {
       if (!o.approve || signal.aborted) return resolve(false)
       // Removed once answered: a long turn would otherwise pile listeners on one signal.
@@ -150,13 +161,15 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       const declined = () => settle(false)
       signal.addEventListener('abort', declined, { once: true })
       Promise.resolve()
-        .then(() => o.approve!(command, change ? { signal, change } : { signal }))
+        .then(() => o.approve!(command, { signal, ...(change && { change }), ...(action && { action }) }))
         .then((ok) => settle(ok === true || ok === 'always' ? ok : false), declined)
     })
 
   const session = (start: ModelMessage[] = []): Session => {
     let history = start
     let busy = false
+    let tab: Tab | null = null
+    const browser = browsing ? () => (tab ??= o.browser!()) : undefined
 
     async function* turn(
       prompt: string,
@@ -228,7 +241,19 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         // Never kept: "always" is for commands, so here it is a plain yes.
         return (await ask(summarize(c), toolSignal ?? signal, c)) !== false
       }
-      const tools = makeTools({ approve, change }, { web, fetch, write, cwd: o.cwd, ripgrep: o.ripgrep, search: searchBackend(config.search) })
+      // Judged as shell commands are (BRW-11), but never remembered: "always" is a plain yes.
+      const act = async ({ line, url }: { line: string; url: string }, toolSignal?: AbortSignal, id?: string) => {
+        await after(id)
+        if (config.approve !== 'ask' && (await judge(o.model, line, prompt, { url })) === 'safe') {
+          emit({ type: 'auto-approved', command: line })
+          return true
+        }
+        return (await ask(line, toolSignal ?? signal, undefined, { url })) !== false
+      }
+      const tools = makeTools(
+        { approve, change, act },
+        { web, fetch, write, cwd: o.cwd, ripgrep: o.ripgrep, search: searchBackend(config.search), browser },
+      )
 
       // Messages of the finished steps; the step in flight only adds its text.
       let finished: ModelMessage[] = []

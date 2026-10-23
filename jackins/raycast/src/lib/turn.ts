@@ -129,7 +129,7 @@ function toolMarkdown(i: Extract<Item, { kind: 'tool' }>): string {
  */
 export function turnMarkdown(
   turn: Turn,
-  o: { streaming: boolean; showReasoning: boolean; approval?: Pick<Approval, 'command' | 'change'> | null },
+  o: { streaming: boolean; showReasoning: boolean; approval?: Pick<Approval, 'command' | 'change' | 'action'> | null },
 ): string {
   const blocks: string[] = []
   let tools: string[] = []
@@ -151,6 +151,10 @@ export function turnMarkdown(
   if (turn.stopped) blocks.push('_Stopped._')
   if (o.approval?.change)
     blocks.push(`**${capitalized(o.approval.command)}?**\n\n${fence(o.approval.change.diff, 'diff')}`)
+  else if (o.approval?.action)
+    blocks.push(
+      `**Do this in navi's browser?**\n\n${fence(o.approval.command, 'text')}\n\nOn this page:\n\n${fence(o.approval.action.url, 'text')}`,
+    )
   else if (o.approval)
     blocks.push(
       `**Run this command?**\n\n${fence(o.approval.command, 'sh')}\n\nnavi wants to run it in ~/.navi-raycast.`,

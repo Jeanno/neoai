@@ -7,7 +7,8 @@ Run language models locally with no configuration.
   hosted provider you chose.
 - **[neonavi](neonavi/NAVI.md)** — `navi`, a command-line agent built on top of it, with file-search and
   file-editing tools (every change shown as a diff), model-judged shell approval, images and PDFs
-  as input, `navi serve`, which gives any app that takes an OpenAI base URL the same model, and
+  as input, a browser of its own that it reads as text and drives with your approval,
+  `navi serve`, which gives any app that takes an OpenAI base URL the same model, and
   `navi mcp`, which lets Claude Code or any MCP client hand navi a task.
 - **[jack-ins](jackins/NAVI.md)** — navi jacked into the apps you already use, starting with
   [Raycast](jackins/raycast/NAVI.md).

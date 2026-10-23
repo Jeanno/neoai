@@ -9,7 +9,8 @@ The spec is the source of truth for what `navi` does. Code and tests follow it.
 | `cli.md` | Invocation, flags, interactive loop, exit codes |
 | `models.md` | Model chain: providers, custom endpoints, local, fallback |
 | `prompt.md` | What the model is told before every turn |
-| `tools.md` | The seven tools, their limits, and shell approval |
+| `tools.md` | The tools, their limits, and shell approval |
+| `browser.md` | navi's own browser: pages as text, actions judged and asked |
 | `session.md` | Per-directory history |
 | `context.md` | NAVI.md discovery |
 | `setup.md` | Setup: choosing models, shared by `navi setup` and Raycast |

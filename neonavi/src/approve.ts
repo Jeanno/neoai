@@ -37,6 +37,8 @@ export interface Approver {
   approve: (command: string, signal?: AbortSignal) => Promise<Answer>
   /** Shows the diff, then asks about the change by its summary (TL-38). */
   approveChange: (summary: string, change: FileChange, signal?: AbortSignal) => Promise<boolean>
+  /** A browser action by its one-line description and its page (BRW-11); never "always". */
+  approveAction: (line: string, url: string, signal?: AbortSignal) => Promise<boolean>
   close: () => void
 }
 
@@ -223,6 +225,10 @@ export function makeApprover(
     },
     approveChange: async (summary, change, signal) => {
       const answer = await line.ask(`\n${colorDiff(change.diff)}\n${bold('write?')} ${visible(summary)}\n${dim('[y/N]')} `, { signal })
+      return (answer ?? '').trim().toLowerCase() === 'y'
+    },
+    approveAction: async (action, url, signal) => {
+      const answer = await line.ask(`\n${bold('do?')} ${visible(action)}\n${dim(visible(url))}\n${dim('[y/N]')} `, { signal })
       return (answer ?? '').trim().toLowerCase() === 'y'
     },
     close: () => line.close(),

@@ -25,7 +25,14 @@ jack-ins are others (`jackins/NAVI.md`).
   callback: the command is a one-line summary such as `edit src/a.ts (+2 -1)`,
   and the options carry the change itself (path, whether it creates the
   file, and the diff) for a front end that can show it. A callback may answer
-  `'always'` for a command: it runs, and is allowed from then on (TL-43).
+  `'always'` for a command: it runs, and is allowed from then on (TL-43). A
+  browser action (BRW-11) goes through it too, judged first by the browser's
+  rules: the command is its one-line description and the options carry the
+  page's URL; it is never remembered, so `'always'` is a plain yes.
+- HAR-9: A front end that wants the browser tools passes a way to make a
+  tab (`makeTab` from `neonavi/browser`); the harness makes one per session
+  on first use. Without it there are no browser tools, and Playwright is
+  never loaded.
 - HAR-5: The harness never writes to stdout or stderr itself; everything a user
   might see is an event or a callback, so a front end with no terminal works.
 - HAR-6: The CLI is built on the library, with its behaviour in `cli.md`

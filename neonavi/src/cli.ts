@@ -13,6 +13,7 @@ import { ago, clearAllSessions, clearSession, listSessions, addPrompt, loadPromp
 import { attachStdin } from './attach.ts'
 import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
 import { readConfig, reset } from 'neorouter'
+import { configuredBrowser, disconnect, findBrowser, installBrowser, makeTab, showBrowser } from './browser.ts'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 import { describe, entryLabel, modelLabel } from './setup-core.ts'
 
@@ -89,6 +90,7 @@ const USAGE = [
   '       navi sessions [clear [<directory> | --all]]',
   '       navi serve [--port N] [--install | --uninstall]',
   '       navi mcp',
+  '       navi browser [--install]',
 ].join('\n')
 
 /** What each form does, for --help (CLI-24). */
@@ -104,6 +106,7 @@ const ABOUT = [
   'navi sessions        list saved conversations; clear one or --all',
   'navi serve           an OpenAI-compatible server on 127.0.0.1 for other apps',
   'navi mcp             navi as a tool for MCP clients such as Claude Code',
+  "navi browser         open navi's browser to sign in to sites; --install gets Chromium for it",
 ].join('\n')
 
 /** Each link that did not answer, and why (MOD-21). */
@@ -192,6 +195,44 @@ async function serve(argv: string[]) {
   return new Promise<number>(() => {})
 }
 
+/** `navi browser [--install]`: opens navi's browser for signing in, or installs Chromium for it (BRW-12). */
+async function browser(argv: string[]) {
+  const install = takeFlag(argv, '--install', false)
+  if (install.rest.length) {
+    console.error(`unexpected: ${install.rest.join(' ')}`)
+    console.error('usage: navi browser [--install]')
+    return 1
+  }
+  const config = await readConfig()
+  const executable = await configuredBrowser(homedir())
+  // A configured browser that is missing is the user's to fix, not a reason to install another.
+  const found = await findBrowser(executable).catch((e: Error) => e)
+  if (found instanceof Error) {
+    console.error(found.message)
+    return 1
+  }
+  if (install.value !== undefined || !found) {
+    console.error('Installing Chromium for navi…')
+    if (!(await installBrowser())) {
+      console.error('Chromium could not be installed; the reason is above.')
+      return 1
+    }
+    if (install.value !== undefined) return 0
+  }
+  try {
+    await showBrowser({ home: homedir(), executable })
+  } catch (e) {
+    console.error(`navi's browser did not open: ${(e as Error).message}`)
+    return 1
+  }
+  await disconnect(homedir())
+  console.log("navi's browser is open. Sign in to the sites you want navi to use; it keeps the logins.")
+  console.log(dim(`It is separate from your own browser, with its profile in ~/.neoai/browser.`))
+  if (config.browser === false || config.web_search === false)
+    console.error(dim(`Its tools are off in ~/.neoai/config.json ("${config.browser === false ? 'browser' : 'web_search'}": false).`))
+  return 0
+}
+
 /** `navi sessions [clear [<directory> | --all]]` (SES-13, SES-14). */
 async function sessions(argv: string[]) {
   const home = homedir()
@@ -240,6 +281,7 @@ async function main() {
   if (argv[0] === 'sessions') return sessions(argv.slice(1))
   if (argv[0] === 'serve') return serve(argv.slice(1))
   if (argv[0] === 'mcp') return mcp(argv.slice(1))
+  if (argv[0] === 'browser') return browser(argv.slice(1))
   const steps = takeFlag(argv, '--max-steps', true)
   argv = steps.rest
   const resume = takeFlag(argv, '--resume', false)
@@ -337,11 +379,16 @@ async function main() {
     cwd,
     config,
     maxSteps,
+    browser: () => makeTab({ home: homedir() }),
     // The question would otherwise be drawn beside a spinning frame.
-    approve: async (command, { change, signal }) => {
+    approve: async (command, { change, action, signal }) => {
       spin.stop()
       endLine()
-      const ok = change ? await asker.approveChange(command, change, signal) : await asker.approve(command, signal)
+      const ok = change
+        ? await asker.approveChange(command, change, signal)
+        : action
+          ? await asker.approveAction(command, action.url, signal)
+          : await asker.approve(command, signal)
       spin.start()
       return ok
     },

@@ -32,6 +32,9 @@
   exits.
 - CLI-5: With no `-p` prompt and a non-terminal stdin, navi prints usage to
   stderr and exits 1.
+- CLI-29: The CLI offers the browser tools (HAR-9). A browser action that
+  asks (BRW-11) shows `do?`, its one-line description and the page's URL,
+  and takes only `y`; `navi browser` is described in BRW-12.
 - CLI-24: `navi -h`, `--help` or `help` prints the usage and what each form
   does to stdout and exits 0. A `--max-steps` that is not a whole number of
   at least 1 is reported with the usage, exit 1.

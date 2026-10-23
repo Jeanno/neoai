@@ -1,8 +1,9 @@
 # Tools
 
-Nine tools. Nothing writes to disk except a shell command or a file change
-that was approved. Only web_search, fetch_url and the model itself send
-anything off the machine.
+Nine tools, and the browser's ten (`browser.md`) where a front end offers
+them. Nothing writes to disk except a shell command or a file change that
+was approved. Only web_search, fetch_url, the browser and the model itself
+send anything off the machine.
 
 ## Limits
 
@@ -105,8 +106,8 @@ anything off the machine.
   DuckDuckGo is asked instead, and a message from either names which
   backend could not be used and why. The query is still the only thing sent
   (TL-28), plus the key to Brave.
-- TL-30: `"web_search": false` in `~/.neoai/config.json` removes web_search
-  and fetch_url, for sessions where nothing but the model may leave the
+- TL-30: `"web_search": false` in `~/.neoai/config.json` removes web_search,
+  fetch_url and the browser tools (BRW-13), for sessions where nothing but the model may leave the
   machine.
 
 ## fetch_url

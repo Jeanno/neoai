@@ -40,6 +40,22 @@ MCP, so anything that would ask is declined (`spec/mcp.md`). To add it:
 
 or, in a client's JSON config, `{"command": "navi", "args": ["mcp"]}`.
 
+navi has a browser of its own for pages `fetch_url` cannot read: ones behind
+your logins, or drawn by scripts. Run `navi browser` once to open it (it
+installs Chromium the first time) and sign in to the sites you want navi to
+use; it is a separate window with its own profile in `~/.neoai/browser`, so
+your everyday browser is never touched. navi reads pages as text, with a ref
+on everything it can click or type into, and each action answers with what
+changed on the page, so it never has to take screenshots or reread the page
+to see what happened. Pages are read after their scripts run, and a task can
+spread over several tabs, including ones a site opens itself. Opening and reading pages runs freely; clicking,
+typing and choosing are judged like shell commands, and anything that could
+send, buy, post, delete or change a setting asks you first (`do? … [y/N]`).
+`"browser": false` in the config removes it (`spec/browser.md`).
+
+    navi browser
+    navi -p "what's on my GitHub notifications page"
+
 Each directory keeps its own conversation. `navi sessions` lists them, newest
 first; `navi sessions clear` forgets this directory's, `clear <directory>`
 another's, `clear --all` every one.
@@ -48,7 +64,10 @@ When stdin is not a terminal (a pipe, a script) navi answers once and exits, so
 it still composes: `echo | navi -p "summarize this"` prints one answer.
 
 Tools: `grep`, `glob`, `read_file` (numbered lines, pageable), `list_dir`,
-`write_file`, `edit_file`, `web_search`, `fetch_url` and `run_shell`. `web_search` needs no key
+`write_file`, `edit_file`, `web_search`, `fetch_url`, `run_shell`, and the
+browser's `browser_open`, `browser_tabs`, `browser_switch`,
+`browser_close_tab`, `browser_read`, `browser_back`, `browser_click`,
+`browser_type`, `browser_select` and `browser_press`. `web_search` needs no key
 (DuckDuckGo); the query is the only thing it sends. `fetch_url` reads one page
 as text and refuses this machine and the local network (`src/web.ts`).
 `"web_search": false` in the config removes both; `"fetch_url": false` only the

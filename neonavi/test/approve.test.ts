@@ -371,3 +371,23 @@ test('prompts added by two sessions are all kept, newest first, escaped', async 
   await addPrompt(home, 'from session a')
   assert.deepEqual(await loadPrompts(home), ['from session a', 'two\nlines and a \\n'])
 })
+
+// BRW-11: an action shows what and where, and takes only y; never "always".
+test('a browser action is asked about with its page, and a is no', async () => {
+  const shown: string[] = []
+  const capture = (typed: string) => {
+    const input = Readable.from([typed])
+    const output = new Writable({ write: (c, _e, cb) => (shown.push(String(c)), cb()) })
+    return { input, output }
+  }
+  const a = makeApprover(capture('y\n'))
+  assert.equal(await a.approveAction('click button "Buy" on shop.test', 'https://shop.test/\x1b[2J'), true)
+  a.close()
+  const b = makeApprover(capture('a\n'))
+  assert.equal(await b.approveAction('click button "Buy" on shop.test', 'https://shop.test/'), false)
+  b.close()
+  const all = shown.join('')
+  assert.match(all, /do\?\x1b\[0m click button "Buy" on shop\.test\n/)
+  assert.ok(!all.includes('\x1b[2J'))
+  assert.ok(!all.includes('[y/N/a]'))
+})

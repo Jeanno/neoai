@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { LanguageModelV2 } from '@ai-sdk/provider'
-import { judge, judgePrompt, parseVerdict } from '../src/judge.ts'
+import { actionPrompt, judge, judgePrompt, parseVerdict } from '../src/judge.ts'
 
 // A hand-rolled fake: `ai/test` drags in msw, which the repo does not need.
 function fake(doGenerate: LanguageModelV2['doGenerate']): LanguageModelV2 {
@@ -60,4 +60,20 @@ test('a model error is unknown, not a throw', async () => {
     throw new Error('network down')
   })
   assert.equal(await judge(broken, 'ls', 'list files'), 'unknown')
+})
+
+// BRW-11: an action is judged by the browser's rules, told that names may lie.
+test('a browser action is judged with its page, under its own rules', async () => {
+  const p = actionPrompt('click button "Place order" on shop.test', 'https://shop.test/cart', 'find me socks')
+  assert.match(p, /Place order/)
+  assert.match(p, /https:\/\/shop\.test\/cart/)
+  assert.match(p, /find me socks/)
+  let system = ''
+  const model = fake(async (o) => {
+    system = JSON.stringify(o.prompt)
+    return { content: [{ type: 'text', text: 'UNSAFE' }], finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, warnings: [] }
+  })
+  assert.equal(await judge(model, 'click button "Place order" on shop.test', 'find me socks', { url: 'https://shop.test/cart' }), 'unsafe')
+  assert.match(system, /signed in/)
+  assert.match(system, /may lie/)
 })

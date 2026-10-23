@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { simulateReadableStream, type ModelMessage } from 'ai'
 import { createHarness, type HarnessEvent, type HarnessOptions, type Model } from '../src/harness.ts'
+import type { Tab } from '../src/browser.ts'
 
 type Part = Awaited<ReturnType<Model['doStream']>>['stream'] extends ReadableStream<infer P> ? P : never
 
@@ -247,10 +248,11 @@ test('no callback at all declines', async () => {
 
   const events = await collect(h.session().turn('run it'))
 
-  const outputs = events.filter((e) => e.type === 'tool-result').map((e) => String((e as any).output))
-  assert.match(outputs[0], /declined/)
-  assert.match(outputs[1], /declined/)
-  assert.match(outputs[3], /safe-cmd/)
+  // By call: tools run at once, so their results can come in any order.
+  const outputs = Object.fromEntries(events.filter((e) => e.type === 'tool-result').map((e: any) => [e.id, String(e.output)]))
+  assert.match(outputs.c1, /declined/)
+  assert.match(outputs.c2, /declined/)
+  assert.match(outputs.c4, /safe-cmd/)
   const cwd = h.system.match(/The working directory is (\S+)/)![1]
   assert.equal(await readFile(join(cwd, 'a.txt'), 'utf8'), 'hello\n')
   assert.equal(await readFile(join(cwd, 'new.txt'), 'utf8'), 'fresh\n')
@@ -489,4 +491,126 @@ test('an approval event follows its tool call, promptly', async () => {
   const order = events.filter((e) => e.type === 'tool-call' || e.type === 'auto-approved').map((e) => (e.type === 'tool-call' ? `call ${e.id}` : `auto ${e.command}`))
   assert.ok(order.indexOf('call c1') < order.indexOf('auto echo listed'), order.join(', '))
   assert.ok(order.indexOf('call c2') < order.indexOf('auto create n.txt (+1)'), order.join(', '))
+})
+
+/** A browser tab that records what was done, its elements named by their refs. */
+function fakeTab(o: { moves?: boolean } = {}) {
+  const done: string[] = []
+  let looks = 0
+  const tab: Tab = {
+    open: async (url: string) => `opened ${url}`,
+    tabs: async () => '* t1',
+    switchTo: async (id: string) => `switched to ${id}`,
+    close: async (id: string) => `closed ${id}`,
+    read: async () => 'the page',
+    back: async () => 'went back',
+    describe: async (a: any) => {
+      looks++
+      // A page that moves on: the second look, after approval, differs.
+      const where = o.moves && looks > 1 ? 'elsewhere.test' : 'shop.test'
+      return a.ref === 'gone' ? { problem: 'No element [ref=gone] is on the page now; read the page again.' } : { line: `click link "${a.ref}" on ${where}`, url: `https://${where}/` }
+    },
+    // As the real tab does: done only while the page still describes it as approved.
+    act: async (a: any, approved) => {
+      const now: any = await tab.describe(a)
+      if (now.line !== approved.line) return 'The page changed since the action was approved; nothing was done. Read the page again.'
+      done.push(a.ref)
+      return `clicked ${a.ref}`
+    },
+    lock: (fn) => fn(tab),
+  }
+  return { tab, done }
+}
+
+// BRW-11: reading runs freely; an action is judged, then asked, with its page, and never remembered.
+test('browser actions are judged, then asked about with their page', async () => {
+  const { tab, done } = fakeTab()
+  const asked: { command: string; url?: string }[] = []
+  const model = fake([
+    [
+      call('c0', 'browser_open', { url: 'https://shop.test/' }),
+      call('c1', 'browser_click', { ref: 'safe-cmd' }),
+      call('c2', 'browser_click', { ref: 'Buy' }),
+      call('c3', 'browser_click', { ref: 'Delete' }),
+      finish('tool-calls'),
+    ],
+    [...text('t', 'done'), finish('stop')],
+  ])
+  const h = await harness(model, {
+    config: {},
+    browser: () => tab,
+    approve: async (command, { action }) => {
+      asked.push({ command, url: action?.url })
+      return command.includes('Buy') ? 'always' : false
+    },
+  })
+  const events = await collect(h.session().turn('shop'))
+  assert.deepEqual(asked, [
+    { command: 'click link "Buy" on shop.test', url: 'https://shop.test/' },
+    { command: 'click link "Delete" on shop.test', url: 'https://shop.test/' },
+  ])
+  assert.deepEqual(done.sort(), ['Buy', 'safe-cmd'])
+  assert.ok(events.some((e) => e.type === 'auto-approved' && e.command === 'click link "safe-cmd" on shop.test'))
+  assert.ok(!events.some((e) => e.type === 'remembered'))
+  const results = Object.fromEntries(events.filter((e) => e.type === 'tool-result').map((e: any) => [e.id, String(e.output)]))
+  assert.equal(results.c0, 'opened https://shop.test/')
+  assert.match(results.c3, /^The user declined to click link "Delete" on shop\.test\. Do not retry it/)
+})
+
+// BRW-11, TL-24
+test('approve: "ask" asks about every browser action', async () => {
+  const { tab } = fakeTab()
+  const asked: string[] = []
+  const model = fake([[call('c1', 'browser_click', { ref: 'safe-cmd' }), finish('tool-calls')], [...text('t', 'ok'), finish('stop')]])
+  const h = await harness(model, { config: { approve: 'ask' }, browser: () => tab, approve: async (c) => (asked.push(c), false) })
+  await collect(h.session().turn('click'))
+  assert.deepEqual(asked, ['click link "safe-cmd" on shop.test'])
+})
+
+// BRW-9, BRW-11: a gone ref asks nothing; a page that moved on while asked is left alone.
+test('a browser action on a gone element, or a page that moved on, is not done', async () => {
+  for (const [ref, moves, said] of [
+    ['gone', false, /^No element \[ref=gone\]/],
+    ['Buy', true, /^The page changed since the action was approved; nothing was done/],
+  ] as const) {
+    const { tab, done } = fakeTab({ moves })
+    let asked = 0
+    const model = fake([[call('c1', 'browser_click', { ref }), finish('tool-calls')], [...text('t', 'ok'), finish('stop')]])
+    const h = await harness(model, { config: { approve: 'ask' }, browser: () => tab, approve: async () => (asked++, true) })
+    const events = await collect(h.session().turn('click'))
+    assert.equal(asked, moves ? 1 : 0)
+    assert.deepEqual(done, [])
+    assert.match(String((events.find((e) => e.type === 'tool-result') as any).output), said)
+  }
+})
+
+// BRW-13, BRW-2: no tools without a front end's browser, or when switched off; one tab per session.
+test('browser tools come only with a browser, on, and one tab per session', async () => {
+  const names = async (o: Partial<HarnessOptions>) => {
+    const model = fake([[...text('t', 'ok'), finish('stop')]])
+    await collect((await harness(model, o)).session().turn('hi'))
+    return (model.doStreamCalls[0].tools ?? []).map((t) => t.name).filter((n) => n.startsWith('browser_'))
+  }
+  const { tab } = fakeTab()
+  assert.deepEqual(await names({ config: {} }), [])
+  assert.deepEqual(await names({ config: { browser: false }, browser: () => tab }), [])
+  assert.deepEqual(await names({ config: { web_search: false }, browser: () => tab }), [])
+  assert.deepEqual((await names({ config: {}, browser: () => tab })).sort(), [
+    'browser_back', 'browser_click', 'browser_close_tab', 'browser_open', 'browser_press', 'browser_read', 'browser_select',
+    'browser_switch', 'browser_tabs', 'browser_type',
+  ])
+
+  let made = 0
+  const model = fake([
+    [call('c1', 'browser_read', {}), finish('tool-calls')],
+    [...text('t', 'ok'), finish('stop')],
+    [call('c2', 'browser_read', {}), finish('tool-calls')],
+    [...text('t', 'ok'), finish('stop')],
+  ])
+  const h = await harness(model, { config: {}, browser: () => (made++, tab) })
+  const s = h.session()
+  await collect(s.turn('one'))
+  await collect(s.turn('two'))
+  assert.equal(made, 1)
+  assert.match(String(model.doStreamCalls[0].prompt.find((m) => m.role === 'system')?.content), /browser_open/)
 })

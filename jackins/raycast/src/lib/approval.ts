@@ -1,11 +1,13 @@
 import { allowable, type Answer, type FileChange } from 'neonavi/harness'
 
-/** A shell command or file change waiting for the user (RAY-3). */
+/** A shell command, file change or browser action waiting for the user (RAY-3). */
 export interface Approval {
-  /** The command, or a file change's one-line summary. */
+  /** The command, a file change's one-line summary, or what the browser would do. */
   command: string
   /** Set for a file change, whose diff is shown (TL-38). */
   change?: FileChange
+  /** Set for a browser action: the page it is on (BRW-11). */
+  action?: { url: string }
   /** Whether Always Allow is offered: only for a command that could be allowed (TL-43). */
   always: boolean
   answer: (run: Answer) => void
@@ -21,6 +23,7 @@ export function waitForAnswer(
   signal: AbortSignal,
   show: (approval: Approval | null) => void,
   change?: FileChange,
+  action?: { url: string },
 ): Promise<Answer> {
   return new Promise<Answer>((resolve) => {
     if (signal.aborted) return resolve(false)
@@ -34,6 +37,13 @@ export function waitForAnswer(
     }
     const declined = () => settle(false)
     signal.addEventListener('abort', declined, { once: true })
-    show({ command, ...(change && { change }), always: !change && allowable(command), answer: settle })
+    // A browser action is never remembered, so never offered "always" (BRW-11).
+    show({
+      command,
+      ...(change && { change }),
+      ...(action && { action }),
+      always: !change && !action && allowable(command),
+      answer: settle,
+    })
   })
 }

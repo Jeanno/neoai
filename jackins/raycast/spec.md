@@ -17,7 +17,10 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
   the answer declines. A file change waiting for approval shows its diff,
   with Write File and Don't Write actions (TL-38). A command that could be
   allowed (TL-41) also offers Always Run This Command, which runs it and adds
-  it to the allowlist shared with the CLI (TL-43).
+  it to the allowlist shared with the CLI (TL-43). A browser action that asks
+  (BRW-11), for when Raycast has the browser (see Open), shows what it would
+  do and on which page, with Do It and Don't Do It actions; it is never
+  offered Always.
 - RAY-4: Chats are kept in Raycast's own storage and continued through the
   harness (HAR-3).
 - RAY-5: Fix Spelling and Grammar and Translate and Replace use the model
@@ -50,5 +53,9 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
   nothing. The answer shows the files beside the question.
 
 ## Open
+
+- navi's browser (`neonavi/spec/browser.md`) in Raycast. Approval for a
+  browser action is ready (RAY-3), but Raycast's bundler cannot pack
+  Playwright, so the harness is not given the browser yet.
 
 - Opening Set Up Navi automatically on first run.

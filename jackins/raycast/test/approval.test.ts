@@ -58,3 +58,14 @@ test('always is offered only where the command could be allowed', async () => {
   })
   assert.equal(seen.at(-1)!.always, false)
 })
+
+test('RAY-3, BRW-11: a browser action shows its page and is never offered Always', async () => {
+  const { seen, show } = shown()
+  const answer = waitForAnswer('click button "Buy" on shop.test', new AbortController().signal, show, undefined, {
+    url: 'https://shop.test/',
+  })
+  assert.deepEqual(seen[0]?.action, { url: 'https://shop.test/' })
+  assert.equal(seen[0]?.always, false)
+  seen[0]!.answer(true)
+  assert.equal(await answer, true)
+})

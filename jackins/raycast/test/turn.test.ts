@@ -120,3 +120,15 @@ test('RAY-4: a stored turn is redrawn from history with its tool lines', () => {
   assert.equal(md(t), 'Looking.\n\n- `read_file x` — failed\n\nIt is missing.')
   assert.equal(answerOf(t), 'It is missing.')
 })
+
+test('RAY-3, BRW-11: a browser action awaiting approval is shown with its page', () => {
+  const md = turnMarkdown(emptyTurn(), {
+    streaming: true,
+    showReasoning: false,
+    approval: { command: 'click button "Buy" on shop.test', action: { url: 'https://shop.test/' } },
+  })
+  assert.match(
+    md,
+    /\*\*Do this in navi's browser\?\*\*\n\n```text\nclick button "Buy" on shop\.test\n```\n\nOn this page:\n\n```text\nhttps:\/\/shop\.test\/\n```/,
+  )
+})

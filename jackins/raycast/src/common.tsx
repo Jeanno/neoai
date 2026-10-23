@@ -37,6 +37,19 @@ export function SetUpAction({ onDone }: { onDone: () => void }) {
 /** RAY-3: the command or file change waiting for approval, as the first actions in the panel. */
 export function ApprovalSection({ approval }: { approval: Approval }) {
   const file = !!approval.change
+  if (approval.action)
+    return (
+      <ActionPanel.Section title="Do this in the browser?">
+        <Action title="Do It" icon={Icon.Globe} onAction={() => approval.answer(true)} />
+        <Action
+          title="Don't Do It"
+          icon={Icon.XMarkCircle}
+          style={Action.Style.Destructive}
+          shortcut={{ modifiers: ['cmd'], key: 'd' }}
+          onAction={() => approval.answer(false)}
+        />
+      </ActionPanel.Section>
+    )
   return (
     <ActionPanel.Section title={file ? 'Make this change?' : 'Run this command?'}>
       <Action
