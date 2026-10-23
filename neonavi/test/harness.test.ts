@@ -230,17 +230,30 @@ test('a callback that throws declines the command', async () => {
   assert.match(result.output, /declined/)
 })
 
-// HAR-4
+// HAR-4, MCP-4: with no one to ask, what would need a y is declined;
+// a safe command and a new file here still go ahead.
 test('no callback at all declines', async () => {
   const model = fake([
-    [call('c1', 'run_shell', { command: 'echo risky' }), finish('tool-calls')],
+    [
+      call('c1', 'run_shell', { command: 'echo risky' }),
+      call('c2', 'edit_file', { path: 'a.txt', old_text: 'hello', new_text: 'bye' }),
+      call('c3', 'write_file', { path: 'new.txt', content: 'fresh\n' }),
+      call('c4', 'run_shell', { command: 'echo safe-cmd' }),
+      finish('tool-calls'),
+    ],
     [...text('t', 'ok'), finish('stop')],
   ])
   const h = await harness(model)
 
   const events = await collect(h.session().turn('run it'))
 
-  assert.match((events.find((e) => e.type === 'tool-result') as any).output, /declined/)
+  const outputs = events.filter((e) => e.type === 'tool-result').map((e) => String((e as any).output))
+  assert.match(outputs[0], /declined/)
+  assert.match(outputs[1], /declined/)
+  assert.match(outputs[3], /safe-cmd/)
+  const cwd = h.system.match(/The working directory is (\S+)/)![1]
+  assert.equal(await readFile(join(cwd, 'a.txt'), 'utf8'), 'hello\n')
+  assert.equal(await readFile(join(cwd, 'new.txt'), 'utf8'), 'fresh\n')
 })
 
 // HAR-2, HAR-4: stopping while the question is open declines and ends the turn.

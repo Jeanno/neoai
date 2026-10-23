@@ -132,3 +132,14 @@ test('the LaunchAgent runs navi serve on its port, kept alive, logging to one fi
   assert.match(plist, /<key>KeepAlive<\/key>\s*<true\/>/)
   assert.match(plist, /<string>\/usr\/bin:\/a&amp;b<\/string>/)
 })
+
+// SRV-6
+test('each request is logged in one line, without the prompt or the key', async () => {
+  const s = await serving([() => new Response('busy', { status: 503 }), ok])
+  await (await post(s.base, { messages: [{ role: 'user', content: 'secret plans' }] })).json()
+  await new Promise((r) => setTimeout(r, 20))
+  assert.equal(s.logs.length, 1)
+  assert.match(s.logs[0], /^POST \/v1\/chat\/completions → b1 · model1 · 200 · \d+ ms$/)
+  assert.doesNotMatch(s.logs.join('\n'), /secret|key\d/)
+  s.close()
+})
