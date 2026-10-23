@@ -44,6 +44,14 @@ export function ApprovalSection({ approval }: { approval: Approval }) {
         icon={file ? Icon.Document : Icon.Terminal}
         onAction={() => approval.answer(true)}
       />
+      {approval.always && (
+        <Action
+          title="Always Run This Command"
+          icon={Icon.CheckCircle}
+          shortcut={{ modifiers: ['cmd', 'shift'], key: 'return' }}
+          onAction={() => approval.answer('always')}
+        />
+      )}
       <Action
         title={file ? "Don't Write" : "Don't Run"}
         icon={Icon.XMarkCircle}

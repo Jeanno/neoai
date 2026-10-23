@@ -24,7 +24,8 @@ jack-ins are others (`jackins/NAVI.md`).
   the turn is stopped declines. A file change (TL-38) goes through the same
   callback: the command is a one-line summary such as `edit src/a.ts (+2 -1)`,
   and the options carry the change itself (path, whether it creates the
-  file, and the diff) for a front end that can show it.
+  file, and the diff) for a front end that can show it. A callback may answer
+  `'always'` for a command: it runs, and is allowed from then on (TL-43).
 - HAR-5: The harness never writes to stdout or stderr itself; everything a user
   might see is an event or a callback, so a front end with no terminal works.
 - HAR-6: The CLI is built on the library, with its behaviour in `cli.md`

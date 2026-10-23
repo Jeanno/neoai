@@ -1,10 +1,10 @@
 import { stepCountIs, streamText, type LanguageModel, type ModelMessage } from 'ai'
-import { readConfig } from 'neorouter'
+import { configDir, readConfig } from 'neorouter'
 import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { systemPrompt } from './args.ts'
 import { collectContext } from './context.ts'
-import { gated } from './approve.ts'
+import { allowCommand, gated, type Answer } from './approve.ts'
 import { judge } from './judge.ts'
 import { makeTools } from './tools.ts'
 import { summarize, type FileChange } from './diff.ts'
@@ -14,6 +14,7 @@ import { compact, estimateTokens } from './compact.ts'
 import { userContent, type Attachment } from './attach.ts'
 
 export { attach, splitUserContent, type Attachment } from './attach.ts'
+export { allowable, type Answer } from './approve.ts'
 
 /**
  * navi's harness as a library (harness.md): everything between a prompt and
@@ -37,6 +38,8 @@ export interface HarnessConfig {
   fetch_url?: boolean
   /** false removes write_file and edit_file (TL-40). */
   write?: boolean
+  /** Commands that run without the judge or a question (TL-41). */
+  allow?: string[]
 }
 
 export interface HarnessOptions {
@@ -50,14 +53,15 @@ export interface HarnessOptions {
    * file change that is not a new file in `cwd` (HAR-4, TL-38). For a file
    * change, `command` is a one-line summary and `change` holds the diff. The
    * signal aborts when the turn is stopped; a throw, or no answer before
-   * then, declines. Leaving it out declines every such request.
+   * then, declines. Leaving it out declines every such request. `'always'`
+   * runs a command and adds it to the allowlist (TL-43).
    */
-  approve?: (command: string, o: { signal: AbortSignal; change?: FileChange }) => Promise<boolean>
+  approve?: (command: string, o: { signal: AbortSignal; change?: FileChange }) => Promise<Answer>
   /** Read from `~/.neoai/config.json` when left out. */
   config?: HarnessConfig
   /** Model responses per turn (CLI-9). */
   maxSteps?: number
-  /** Where the NAVI.md walk stops outside a repo (CTX-2); the home directory by default. */
+  /** Where the NAVI.md walk stops outside a repo (CTX-2), and whose `.neoai` an "always" is saved to; the home directory by default. */
   home?: string
   /** false forces the built-in grep/glob even where rg is installed (TL-31). */
   ripgrep?: boolean
@@ -80,7 +84,8 @@ export type HarnessEvent =
    * A shell command the judge passed, or a new file in the working directory,
    * made without asking (TL-22, TL-38). `command` is the change's summary for a file.
    */
-  | { type: 'auto-approved'; command: string; change?: FileChange }
+  /** `allowed` when the allowlist let it through rather than the judge (TL-42). */
+  | { type: 'auto-approved'; command: string; change?: FileChange; allowed?: true }
   /** What the tool returned; `error` when it threw and the model got the message. */
   | { type: 'tool-result'; id: string; name: string; output: unknown; error: boolean }
   /** The model call failed. The turn still ends with `done`. */
@@ -126,10 +131,10 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
 
   /** The front end's answer, or a decline if it throws or the turn stops first. */
   const ask = (command: string, signal: AbortSignal, change?: FileChange) =>
-    new Promise<boolean>((resolve) => {
+    new Promise<Answer>((resolve) => {
       if (!o.approve || signal.aborted) return resolve(false)
       // Removed once answered: a long turn would otherwise pile listeners on one signal.
-      const settle = (ok: boolean) => {
+      const settle = (ok: Answer) => {
         signal.removeEventListener('abort', declined)
         resolve(ok)
       }
@@ -137,7 +142,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       signal.addEventListener('abort', declined, { once: true })
       Promise.resolve()
         .then(() => o.approve!(command, change ? { signal, change } : { signal }))
-        .then((ok) => settle(ok === true), declined)
+        .then((ok) => settle(ok === true || ok === 'always' ? ok : false), declined)
     })
 
   const session = (start: ModelMessage[] = []): Session => {
@@ -172,22 +177,43 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       if (packed.compacted) emit({ type: 'compacted', messages: packed.compacted })
       const sent: ModelMessage[] = [...packed.messages, { role: 'user', content: userContent(prompt, attachments) }]
 
-      const approve = (command: string, toolSignal?: AbortSignal) =>
-        gated({
+      // A tool runs as soon as its call is parsed, which can be before the
+      // call's own event is out; what is said about it waits for that event,
+      // so a front end shows the call first. Not forever: a call that never
+      // gets an event must still be answered.
+      const shown = new Map<string, () => void>()
+      const shownCalls = new Set<string>()
+      const after = (id?: string) =>
+        !id || shownCalls.has(id)
+          ? Promise.resolve()
+          : Promise.race([new Promise<void>((r) => shown.set(id, r)), new Promise<void>((r) => setTimeout(r, 1000).unref?.())])
+
+      const approve = async (command: string, toolSignal?: AbortSignal, id?: string) => {
+        await after(id)
+        return gated({
           // The judge reads the command in the light of what was asked (TL-18).
           judge: (c) => judge(o.model, c, prompt),
           mode: config.approve,
-          onAuto: (c) => emit({ type: 'auto-approved', command: c }),
+          allow: () => config.allow,
+          // Kept for this session at once, and in the config file for the next.
+          remember: async (c) => {
+            config.allow = [...(Array.isArray(config.allow) ? config.allow : []), c.trim()]
+            await allowCommand(c, configDir(o.home ?? homedir())).catch((e) => emit({ type: 'error', error: e }))
+          },
+          onAuto: (c, how) => emit({ type: 'auto-approved', command: c, ...(how === 'allowed' && { allowed: true }) }),
           ask: (c) => ask(c, toolSignal ?? signal),
         })(command)
+      }
       // A new file in the working directory is what the judge would call safe
       // (TL-21), so it needs no model call to decide; any other change asks (TL-38).
-      const change = async ({ inside, ...c }: FileChange & { inside: boolean }, toolSignal?: AbortSignal) => {
+      const change = async ({ inside, ...c }: FileChange & { inside: boolean }, toolSignal?: AbortSignal, id?: string) => {
+        await after(id)
         if (config.approve !== 'ask' && c.created && inside) {
           emit({ type: 'auto-approved', command: summarize(c), change: c })
           return true
         }
-        return ask(summarize(c), toolSignal ?? signal, c)
+        // Never kept: "always" is for commands, so here it is a plain yes.
+        return (await ask(summarize(c), toolSignal ?? signal, c)) !== false
       }
       const tools = makeTools({ approve, change }, { web, fetch, write, cwd: o.cwd, ripgrep: o.ripgrep })
 
@@ -224,6 +250,8 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
                 break
               case 'tool-call':
                 emit({ type: 'tool-call', id: part.toolCallId, name: part.toolName, input: part.input })
+                shownCalls.add(part.toolCallId)
+                shown.get(part.toolCallId)?.()
                 break
               case 'tool-result':
                 if (!part.preliminary)

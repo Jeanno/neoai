@@ -19,12 +19,12 @@ export interface Gate {
    * Returns true to let the command run. Asked once per call, never cached.
    * The signal aborts when the turn is stopped, which should decline.
    */
-  approve: (command: string, signal?: AbortSignal) => Promise<boolean>
+  approve: (command: string, signal?: AbortSignal, toolCallId?: string) => Promise<boolean>
   /**
    * Returns true to let a file change be made (TL-38). `inside` is whether
    * the file is in the working directory. Left out, every change declines.
    */
-  change?: (change: FileChange & { inside: boolean }, signal?: AbortSignal) => Promise<boolean>
+  change?: (change: FileChange & { inside: boolean }, signal?: AbortSignal, toolCallId?: string) => Promise<boolean>
 }
 
 const MAX_OUTPUT = 8000
@@ -81,14 +81,14 @@ export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.
   }
 
   /** Shows the change, asks, and makes it only when approved (TL-38, TL-39). */
-  const apply = async (path: string, before: string | null, after: string, signal?: AbortSignal) => {
+  const apply = async (path: string, before: string | null, after: string, signal?: AbortSignal, id?: string) => {
     // A path no one can read on the question line is not one to approve.
     if (hasUnseen(path)) return 'The path has control or invisible characters in it; nothing was written. Use a plain path.'
     const file = at(path)
     if (before === after) return `${path} already reads that way; nothing changed.`
     const { real, inside, moved } = await landing(file)
     const change: FileChange = { path, created: before === null, ...(moved && { lands: real }), ...diffLines(before ?? '', after) }
-    if (!gate.change || !(await gate.change({ ...change, inside }, signal)))
+    if (!gate.change || !(await gate.change({ ...change, inside }, signal, id)))
       return `The user declined to ${summarize(change)}. Do not retry it; try another approach.`
     try {
       // Approval can take minutes: a file changed meanwhile is not overwritten
@@ -180,8 +180,8 @@ export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.
     run_shell: tool({
       description: 'Run a shell command. The user is asked to approve it first.',
       inputSchema: z.object({ command: z.string() }),
-      execute: async ({ command }, { abortSignal }) => {
-        if (!(await gate.approve(command, abortSignal)))
+      execute: async ({ command }, { abortSignal, toolCallId }) => {
+        if (!(await gate.approve(command, abortSignal, toolCallId)))
           return `The user declined to run: ${command}. Do not retry it; try another approach.`
         try {
           const { stdout, stderr } = await run(command, { cwd, timeout: 120_000, signal: abortSignal })
@@ -198,9 +198,9 @@ export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.
         'Create a file, or replace one whole, with the given content. The user ' +
         'sees the change and may be asked first. To change part of a file, use edit_file.',
       inputSchema: z.object({ path: z.string(), content: z.string() }),
-      execute: async ({ path, content }, { abortSignal }) => {
+      execute: async ({ path, content }, { abortSignal, toolCallId }) => {
         try {
-          return await apply(path, await current(path), content, abortSignal)
+          return await apply(path, await current(path), content, abortSignal, toolCallId)
         } catch (e: any) {
           return `could not read ${path}: ${e.message}`
         }
@@ -213,7 +213,7 @@ export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.
         'the file exactly, whitespace included, and occur once: include enough ' +
         'surrounding lines to make it unique. Read the file first.',
       inputSchema: z.object({ path: z.string(), old_text: z.string(), new_text: z.string() }),
-      execute: async ({ path, old_text, new_text }, { abortSignal }) => {
+      execute: async ({ path, old_text, new_text }, { abortSignal, toolCallId }) => {
         let before: string | null
         try {
           before = await current(path)
@@ -226,7 +226,7 @@ export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.
         if (count === 0) return `old_text was not found in ${path}; read the file and copy the text exactly.`
         if (count > 1) return `old_text occurs ${count} times in ${path}; include more surrounding lines so it occurs once.`
         // A function replacer, so `$&` and friends in new_text stay literal.
-        return apply(path, before, before.replace(old_text, () => new_text), abortSignal)
+        return apply(path, before, before.replace(old_text, () => new_text), abortSignal, toolCallId)
       },
     }),
 

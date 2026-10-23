@@ -140,3 +140,61 @@ test('approve: ask skips the judge entirely', async () => {
   assert.deepEqual(g.judged, [])
   assert.deepEqual(g.asked, ['ls'])
 })
+
+// TL-41
+test('a command is allowed by an entry it starts with, never when it chains', async () => {
+  const { allowed } = await import('../src/approve.ts')
+  const allow = ['npm test', ' git status ']
+  for (const c of ['npm test', 'npm test -- --watch', '  git status', 'git status -s']) assert.equal(allowed(c, allow), true, c)
+  for (const c of ['npm testing', 'npm test; rm -rf ~', 'npm test && x', 'npm test | tee', 'npm test > out', 'npm test `x`', 'npm test $(x)', 'npm test\nrm x', 'FOO=1 npm test', 'git'])
+    assert.equal(allowed(c, allow), false, c)
+  assert.equal(allowed('npm test', 'npm test'), false)
+  assert.equal(allowed('npm test', [7, '', null]), false)
+})
+
+// TL-41, TL-42, TL-43
+test('the allowlist comes before the judge, under any approve setting, and "always" is remembered', async () => {
+  const kept: string[] = []
+  const judged: string[] = []
+  let allow = ['npm test']
+  const seen: [string, string][] = []
+  const approve = gated({
+    judge: async (c) => (judged.push(c), 'unsafe'),
+    ask: async () => 'always',
+    mode: 'ask',
+    allow: () => allow,
+    remember: async (c) => {
+      kept.push(c)
+      allow = [...allow, c]
+    },
+    onAuto: (c, how) => seen.push([c, how]),
+  })
+  assert.equal(await approve('npm test -- a'), true)
+  assert.equal(await approve('make build'), true)
+  assert.equal(await approve('make build'), true)
+  // Never kept: it could run more than it says.
+  assert.equal(await approve('make; rm x'), true)
+  assert.deepEqual(kept, ['make build'])
+  assert.deepEqual(seen, [
+    ['npm test -- a', 'allowed'],
+    ['make build', 'allowed'],
+  ])
+  assert.deepEqual(judged, [])
+})
+
+// TL-43
+test('a at the prompt means always, offered only where a command could be allowed', async () => {
+  const shown: string[] = []
+  const capture = (typed: string) => {
+    const input = Readable.from([typed])
+    const output = new Writable({ write: (c, _e, cb) => (shown.push(String(c)), cb()) })
+    return { input, output }
+  }
+  const a = makeApprover(capture('a\n'))
+  assert.equal(await a.approve('npm run build'), 'always')
+  a.close()
+  const b = makeApprover(capture('a\n'))
+  assert.equal(await b.approve('npm run build && rm x'), false)
+  b.close()
+  assert.match(shown.join(''), /\[y\/N\/a\][\s\S]*\[y\/N\]\x1b\[0m $/)
+})

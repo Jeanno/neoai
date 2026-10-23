@@ -113,6 +113,25 @@ anything off the machine.
   is cut as in TL-1.
 - TL-35: `"fetch_url": false` removes only fetch_url.
 
+## Allowlist
+
+Commands the user has said always to run, so a daily `npm test` stops asking.
+
+- TL-41: `"allow": ["npm test", "git status"]` in `~/.neoai/config.json`
+  lists commands that run without the judge or a question, under any
+  `approve` setting. A command is allowed when it is an entry, or an entry
+  followed by a space and more arguments, and holds none of `;`, `&`, `|`,
+  `<`, `>`, a backquote, `$(` or a line break: so `npm test -- --watch` is
+  allowed by `npm test`, and `npm test; rm -rf ~` is not. Leading and
+  trailing spaces are ignored.
+- TL-42: An allowed command is reported like an auto-approved one (TL-22),
+  saying it was allowed rather than judged.
+- TL-43: Where a command is asked about, the user may answer "always": it
+  runs, and is added to `allow` in `~/.neoai/config.json` (kept 0600, every
+  other setting left as it was) for this and every later session. A command
+  that could never be allowed (TL-41) is not offered "always". The CLI takes
+  `a` at its `[y/N/a]` prompt; file changes are never offered it.
+
 ## Safety judge
 
 A model call that decides whether a shell command needs the user's approval.
@@ -140,4 +159,3 @@ A model call that decides whether a shell command needs the user's approval.
 ## Open
 
 - A keyed search backend (Brave, Tavily, SearXNG) when DuckDuckGo blocks.
-- Per-command allowlist to skip approval.

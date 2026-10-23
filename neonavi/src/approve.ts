@@ -26,7 +26,8 @@ export interface Line {
 }
 
 export interface Approver {
-  approve: (command: string) => Promise<boolean>
+  /** `[y/N/a]`, or `[y/N]` for a command that could never be allowed (TL-43). */
+  approve: (command: string) => Promise<Answer>
   /** Shows the diff, then asks about the change by its summary (TL-38). */
   approveChange: (summary: string, change: FileChange) => Promise<boolean>
   close: () => void
@@ -97,8 +98,9 @@ export function makeApprover(
   return {
     approve: async (command) => {
       // Shown as typed: an escape sequence in it could otherwise redraw the question.
-      const answer = await line.ask(`\n${bold('run?')} ${visible(command)}\n${dim('[y/N]')} `)
-      return (answer ?? '').trim().toLowerCase() === 'y'
+      const always = allowable(command)
+      const answer = (await line.ask(`\n${bold('run?')} ${visible(command)}\n${dim(always ? '[y/N/a]' : '[y/N]')} `))?.trim().toLowerCase()
+      return answer === 'y' || (always && answer === 'a' ? 'always' : false)
     },
     approveChange: async (summary, change) => {
       const answer = await line.ask(`\n${colorDiff(change.diff)}\n${bold('write?')} ${visible(summary)}\n${dim('[y/N]')} `)
@@ -110,27 +112,69 @@ export function makeApprover(
 
 export type Verdict = 'safe' | 'unsafe' | 'unknown'
 
+/** What the user can answer about a command: no, yes, or yes and from now on (TL-43). */
+export type Answer = boolean | 'always'
+
+/** Chaining, redirection and substitution: a command holding any can run more than its prefix says (TL-41). */
+const COMPOUND = /[;&|<>`\n\r]|\$\(/
+
+/** Whether a command could ever be allowed: one plain command with arguments (TL-41). */
+export const allowable = (command: string) => !!command.trim() && !COMPOUND.test(command)
+
+/** Whether `command` is one the user said always to run (TL-41). */
+export function allowed(command: string, allow: unknown): boolean {
+  if (!Array.isArray(allow) || !allowable(command)) return false
+  const c = command.trim()
+  return allow.some((entry) => {
+    const e = typeof entry === 'string' ? entry.trim() : ''
+    return !!e && (c === e || c.startsWith(`${e} `))
+  })
+}
+
+/** Adds a command to `allow` in config.json, leaving everything else as it was (TL-43). */
+export async function allowCommand(command: string, dir: string): Promise<void> {
+  const { loadConfig, saveConfig } = await import('./setup-core.ts')
+  const config = await loadConfig(dir)
+  const allow: unknown[] = Array.isArray(config.allow) ? config.allow : []
+  if (!allow.includes(command.trim())) config.allow = [...allow, command.trim()]
+  await saveConfig(config, dir)
+}
+
 /**
- * Judge first, ask second. Only a clear 'safe' skips the question: 'unknown'
- * covers a model error or a hedged answer, and neither is consent.
+ * The allowlist first, then the judge, then the user. Only a clear 'safe'
+ * skips the question: 'unknown' covers a model error or a hedged answer, and
+ * neither is consent.
  */
 export function gated({
   judge,
   ask,
   mode,
+  allow,
+  remember,
   onAuto,
 }: {
   judge: (command: string) => Promise<Verdict>
-  ask: (command: string) => Promise<boolean>
+  ask: (command: string) => Promise<Answer>
   /** 'ask' never consults the judge. */
   mode?: string
-  onAuto?: (command: string) => void
-}): Approver['approve'] {
+  /** The allowlist now: read on each command, so an "always" counts at once. */
+  allow?: () => unknown
+  /** Called on an "always" answer, to keep the command allowed (TL-43). */
+  remember?: (command: string) => Promise<void>
+  onAuto?: (command: string, how: 'judged' | 'allowed') => void
+}): (command: string) => Promise<boolean> {
   return async (command) => {
-    if (mode !== 'ask' && (await judge(command)) === 'safe') {
-      onAuto?.(command)
+    if (allowed(command, allow?.())) {
+      onAuto?.(command, 'allowed')
       return true
     }
-    return ask(command)
+    if (mode !== 'ask' && (await judge(command)) === 'safe') {
+      onAuto?.(command, 'judged')
+      return true
+    }
+    const answer = await ask(command)
+    // Never kept for a command that could not be allowed anyway.
+    if (answer === 'always' && allowable(command)) await remember?.(command)
+    return answer === true || answer === 'always'
   }
 }

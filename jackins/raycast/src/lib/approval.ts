@@ -1,4 +1,4 @@
-import type { FileChange } from 'neonavi/harness'
+import { allowable, type Answer, type FileChange } from 'neonavi/harness'
 
 /** A shell command or file change waiting for the user (RAY-3). */
 export interface Approval {
@@ -6,7 +6,9 @@ export interface Approval {
   command: string
   /** Set for a file change, whose diff is shown (TL-38). */
   change?: FileChange
-  answer: (run: boolean) => void
+  /** Whether Always Allow is offered: only for a command that could be allowed (TL-43). */
+  always: boolean
+  answer: (run: Answer) => void
 }
 
 /**
@@ -19,11 +21,11 @@ export function waitForAnswer(
   signal: AbortSignal,
   show: (approval: Approval | null) => void,
   change?: FileChange,
-): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
+): Promise<Answer> {
+  return new Promise<Answer>((resolve) => {
     if (signal.aborted) return resolve(false)
     let settled = false
-    const settle = (run: boolean) => {
+    const settle = (run: Answer) => {
       if (settled) return
       settled = true
       signal.removeEventListener('abort', declined)
@@ -32,6 +34,6 @@ export function waitForAnswer(
     }
     const declined = () => settle(false)
     signal.addEventListener('abort', declined, { once: true })
-    show({ command, ...(change && { change }), answer: settle })
+    show({ command, ...(change && { change }), always: !change && allowable(command), answer: settle })
   })
 }

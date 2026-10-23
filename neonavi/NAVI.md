@@ -60,8 +60,11 @@ Before a shell command runs, the session's model is asked whether it is
 safe — read-only, or writing new files inside the directory, nothing over the
 network, no sudo. Safe commands run and are echoed as auto-approved; anything
 else, or anything the judge cannot tell, shows the command and waits for `y`.
-Nothing is remembered between commands. `"approve": "ask"` in the config asks
-for everything. Nothing writes to disk except a shell command that passed.
+Answer `a` instead to run it and allow it from then on: it is added to
+`"allow"` in the config, and that command, with any further arguments, runs
+without asking (`"allow": ["npm test", "git status"]`). A command that chains
+or redirects (`;`, `&&`, `|`, `>`, `$(…)`) is never allowed this way.
+`"approve": "ask"` in the config asks for everything else.
 
 Which model answers is set by `model` in `~/.neoai/config.json`, or `--model`
 for one run. A value is an alias — `local`, `fast`, `best`, or `remote` (a free

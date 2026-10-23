@@ -15,7 +15,9 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
 - RAY-3: A shell command not judged safe pauses the answer and shows the
   command with Run Command and Don't Run actions. Leaving the view or stopping
   the answer declines. A file change waiting for approval shows its diff,
-  with Write File and Don't Write actions (TL-38).
+  with Write File and Don't Write actions (TL-38). A command that could be
+  allowed (TL-41) also offers Always Run This Command, which runs it and adds
+  it to the allowlist shared with the CLI (TL-43).
 - RAY-4: Chats are kept in Raycast's own storage and continued through the
   harness (HAR-3).
 - RAY-5: Fix Spelling and Grammar and Translate and Replace use the model

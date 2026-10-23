@@ -426,3 +426,45 @@ test('the harness writes nothing to stdout or stderr', async () => {
   for (const t of ['compacted', 'auto-approved', 'tool-result', 'done']) assert.ok(types.has(t as any), t)
   assert.ok(events.some((e) => e.type === 'tool-result' && e.error))
 })
+
+// HAR-4, TL-43: "always" runs the command, lets it through from then on, and saves it.
+test('an "always" answer is kept for the session and in the config file', async () => {
+  const { readFile: read } = await import('node:fs/promises')
+  const asked: string[] = []
+  const model = fake([
+    [call('c1', 'run_shell', { command: 'echo risky' }), finish('tool-calls')],
+    [call('c2', 'run_shell', { command: 'echo risky again' }), finish('tool-calls')],
+    [...text('t', 'ok'), finish('stop')],
+  ])
+  const h = await harness(model, { approve: async (c) => (asked.push(c), 'always') })
+  const events = await collect(h.session().turn('run it'))
+  assert.deepEqual(asked, ['echo risky'])
+  assert.ok(events.some((e) => e.type === 'auto-approved' && e.command === 'echo risky again' && e.allowed))
+  const home = h.system.match(/The working directory is (\S+)/)![1]
+  const saved = JSON.parse(await read(join(home, '.neoai', 'config.json'), 'utf8'))
+  assert.deepEqual(saved.allow, ['echo risky'])
+})
+
+// HAR-2, TL-42: what is said about a call comes after the call itself, without waiting.
+test('an approval event follows its tool call, promptly', async () => {
+  // As neorouter's models run: each step generated whole, then replayed as a stream.
+  const steps = [
+    {
+      content: [
+        { type: 'tool-call' as const, toolCallId: 'c1', toolName: 'run_shell', input: JSON.stringify({ command: 'echo listed' }) },
+        { type: 'tool-call' as const, toolCallId: 'c2', toolName: 'write_file', input: JSON.stringify({ path: 'n.txt', content: 'x' }) },
+      ],
+      finishReason: 'tool-calls' as const,
+    },
+    { content: [{ type: 'text' as const, text: 'ok' }], finishReason: 'stop' as const },
+  ]
+  let n = 0
+  const model = new MockLanguageModelV2({ doGenerate: async () => ({ ...steps[n++], usage, warnings: [] }) })
+  const h = await harness(model, { config: { web_search: false, allow: ['echo listed'] }, streamsToolCalls: false })
+  const started = Date.now()
+  const events = await collect(h.session().turn('go'))
+  assert.ok(Date.now() - started < 800, `took ${Date.now() - started} ms`)
+  const order = events.filter((e) => e.type === 'tool-call' || e.type === 'auto-approved').map((e) => (e.type === 'tool-call' ? `call ${e.id}` : `auto ${e.command}`))
+  assert.ok(order.indexOf('call c1') < order.indexOf('auto echo listed'), order.join(', '))
+  assert.ok(order.indexOf('call c2') < order.indexOf('auto create n.txt (+1)'), order.join(', '))
+})
