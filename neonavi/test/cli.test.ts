@@ -35,6 +35,19 @@ test('no prompt and no terminal prints usage and exits 1', async () => {
   assert.equal(r.stdout, '')
 })
 
+// CLI-24
+test('--help prints the usage and what each form does, and exits 0', async () => {
+  for (const flag of ['-h', '--help', 'help']) {
+    const r = await navi([flag])
+    assert.equal(r.code, 0, flag)
+    assert.match(r.stdout, /^usage: navi /)
+    assert.match(r.stdout, /navi mcp +navi as a tool/)
+  }
+  const bad = await navi(['-p', 'hi', '--max-steps', 'lots'])
+  assert.equal(bad.code, 1)
+  assert.match(bad.stderr, /not a step count: lots\nusage: navi /)
+})
+
 // CLI-1
 test('bare words are reported, not taken as a prompt', async () => {
   const r = await navi(['what', 'is', 'this'])

@@ -28,6 +28,9 @@
   exits.
 - CLI-5: With no `-p` prompt and a non-terminal stdin, navi prints usage to
   stderr and exits 1.
+- CLI-24: `navi -h`, `--help` or `help` prints the usage and what each form
+  does to stdout and exits 0. A `--max-steps` that is not a whole number of
+  at least 1 is reported with the usage, exit 1.
 - CLI-6: With no `-p` prompt and a terminal stdin, navi starts a new session
   (SES-3), prints a one-line hint naming `/help` and how to leave, then opens
   the prompt.

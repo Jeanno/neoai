@@ -81,6 +81,29 @@ const HELP = [
   'exit, quit, ^C, ^D leave',
 ].join('\n')
 
+const USAGE = [
+  'usage: navi [-p "what you want done"] [-a file]... [-r|--resume] [--model local|best|<provider>:<model>[,...]] [--max-steps N]',
+  '       navi setup [--check]',
+  '       navi sessions [clear [<directory> | --all]]',
+  '       navi serve [--port N] [--install | --uninstall]',
+  '       navi mcp',
+].join('\n')
+
+/** What each form does, for --help (CLI-24). */
+const ABOUT = [
+  'navi                 a new conversation in this directory',
+  'navi -p "…"          ask, continuing this directory\'s conversation; on a pipe,',
+  '                     answer and exit with only the answer on stdout',
+  '  -a, --attach FILE  send an image, PDF or text file with the prompt',
+  '  -r, --resume       bare navi continues the saved conversation too',
+  '  --model SPEC       use another model chain for this run',
+  '  --max-steps N      model responses per turn (default 32)',
+  'navi setup           choose models and keys; --check only reports',
+  'navi sessions        list saved conversations; clear one or --all',
+  'navi serve           an OpenAI-compatible server on 127.0.0.1 for other apps',
+  'navi mcp             navi as a tool for MCP clients such as Claude Code',
+].join('\n')
+
 /** Each link that did not answer, and why (MOD-21). */
 function failedLines(failures: Failure[]): string[] {
   return failures.map((f) => `${['primary', 'fallback'][f.index] ?? `link ${f.index + 1}`} (${entryLabel(f.entry)}): ${f.why}`)
@@ -207,6 +230,10 @@ async function sessions(argv: string[]) {
 
 async function main() {
   let argv = process.argv.slice(2)
+  if (argv.length === 1 && ['-h', '--help', 'help'].includes(argv[0])) {
+    console.log(`${USAGE}\n\n${ABOUT}`)
+    return 0
+  }
   if (argv[0] === 'setup') return setup(argv.slice(1))
   if (argv[0] === 'sessions') return sessions(argv.slice(1))
   if (argv[0] === 'serve') return serve(argv.slice(1))
@@ -228,11 +255,11 @@ async function main() {
   const interactive = process.stdin.isTTY === true
   const maxSteps = steps.value === undefined ? DEFAULT_STEPS : Number(steps.value)
   const { prompt: first, stray } = promptFrom(argv)
-  if (stray.length || (!first && !interactive)) {
+  const badSteps = !Number.isInteger(maxSteps) || maxSteps < 1
+  if (stray.length || badSteps || (!first && !interactive)) {
     if (stray.length) console.error(`unexpected: ${stray.join(' ')}`)
-    console.error(
-      'usage: navi [-p "what you want done"] [-a file]... [-r|--resume] [--model local|best|<provider>:<model>[,...]] [--max-steps N]\n       navi setup [--check]\n       navi sessions [clear [<directory> | --all]]\n       navi serve [--port N] [--install | --uninstall]\n       navi mcp',
-    )
+    else if (badSteps) console.error(`not a step count: ${steps.value}`)
+    console.error(USAGE)
     return 1
   }
 

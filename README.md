@@ -6,8 +6,9 @@ Run language models locally with no configuration.
   itself: a server already running (Ollama, LM Studio, llama.cpp, vLLM, Jan) or a runtime it can launch, or the
   hosted provider you chose.
 - **[neonavi](neonavi/NAVI.md)** — `navi`, a command-line agent built on top of it, with file-search and
-  file-editing tools (every change shown as a diff), model-judged shell approval, and
-  `navi serve`, which gives any app that takes an OpenAI base URL the same model.
+  file-editing tools (every change shown as a diff), model-judged shell approval, images and PDFs
+  as input, `navi serve`, which gives any app that takes an OpenAI base URL the same model, and
+  `navi mcp`, which lets Claude Code or any MCP client hand navi a task.
 - **[jack-ins](jackins/NAVI.md)** — navi jacked into the apps you already use, starting with
   [Raycast](jackins/raycast/NAVI.md).
 
@@ -75,8 +76,8 @@ you're done: the extension stays installed. Run `npm run dev` again after pullin
 Releases: push a `raycast-v<version>` tag and CI (`.github/workflows/raycast-release.yml`) tests,
 builds with `jackins/raycast/scripts/dist.sh` and attaches `navi-raycast.tar.gz` to a GitHub release.
 
-The backend that answered is shown in each view. To pin one, set **Model** in the extension's
-preferences (⌘K → Configure Extension) — the same values as `navi --model`.
+The model that answered is shown in each view. To change it, run **Set Up Navi** in Raycast or
+`navi setup` in a terminal: both save to `~/.neoai/config.json`, so the CLI and Raycast always agree.
 
 ### Development
 
