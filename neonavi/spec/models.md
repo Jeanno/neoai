@@ -36,6 +36,11 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
 - MOD-16: Local discovery only probes the standard local servers (Ollama, LM
   Studio, llama.cpp, vLLM, Jan) and launchable runtimes. Anything else, such as
   a server on another machine, is a custom endpoint.
+- MOD-20: A custom endpoint whose address is this computer's own (loopback,
+  `localhost`, or an address of one of its network interfaces, such as its
+  Tailscale address) keeps prompts on this computer and is described as
+  local. It is still named by its endpoint name, and still waited on and
+  retried like a hosted server, since it is often a busy shared one.
 
 ## Resolution
 

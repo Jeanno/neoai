@@ -170,8 +170,10 @@ const nameOf = (provider: string) => providerById(provider)?.name ?? provider
  * alone, never the app serving it (RAY-9); a provider or custom model with the
  * provider's or endpoint's name, which the user picked.
  */
-export function modelLabel(chosen: { backend: string; modelId: string; local: boolean }): string {
-  return chosen.local ? chosen.modelId : `${chosen.modelId} on ${nameOf(chosen.backend)}`
+export function modelLabel(chosen: { backend: string; modelId: string; local: boolean; entry?: Entry }): string {
+  // A custom endpoint on this computer is still named (MOD-20).
+  const runtime = chosen.local && chosen.entry?.where !== 'remote'
+  return runtime ? chosen.modelId : `${chosen.modelId} on ${nameOf(chosen.backend)}`
 }
 
 /** What one link means, in words. */

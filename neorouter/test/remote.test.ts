@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkKey, chooseListed, fetchModels, modelHeaders, parseModels, remoteServer, roomiestFree } from '../src/remote.ts'
+import { checkKey, chooseListed, fetchModels, modelHeaders, onThisMachine, parseModels, remoteServer, roomiestFree } from '../src/remote.ts'
 import { PROVIDERS } from '../src/providers.ts'
 import { customEndpoints, readKey } from '../src/config.ts'
 
@@ -173,4 +173,16 @@ test('a gone pin still fails with several models listed, at a provider, or with 
   assert.equal(chooseListed([{ id: 'claude-x' }], 'gone', { name: 'anthropic' }), null)
   assert.equal(chooseListed([], 'gone', { name: 'homelab', custom: true }), null)
   assert.equal(chooseListed([{ id: 'only' }], undefined, { name: 'homelab', custom: true }), null)
+})
+
+// MOD-20
+test('an address of this computer is told from one elsewhere', () => {
+  const nics = {
+    lo0: [{ address: '127.0.0.1' }],
+    utun4: [{ address: '100.64.0.7' }, { address: 'fd7a:115c:a1e0::1' }],
+  } as any
+  for (const url of ['http://127.0.0.1:8000/v1', 'http://localhost:1234/v1', 'http://[::1]:8000', 'http://100.64.0.7:8000/v1', 'http://[fd7a:115c:a1e0::1]/v1'])
+    assert.equal(onThisMachine(url, nics), true, url)
+  for (const url of ['http://100.64.0.8:8000/v1', 'https://api.example.com/v1', 'http://homelab.local:8000', 'not a url'])
+    assert.equal(onThisMachine(url, nics), false, url)
 })

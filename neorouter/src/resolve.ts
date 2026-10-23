@@ -4,7 +4,7 @@ import { reachableServers } from './discover.ts'
 import { rank, contextWindow, evaluate, pick } from './select.ts'
 import { launchable, launch } from './launch.ts'
 import { hostedServers, hostedModels } from './hosted.ts'
-import { chooseListed, fetchModels, remoteServer } from './remote.ts'
+import { chooseListed, fetchModels, onThisMachine, remoteServer } from './remote.ts'
 
 export interface Resolved extends Resolution {
   server: Server
@@ -156,7 +156,8 @@ export async function remoteResolution(
     backend: server.backend,
     baseURL: server.baseURL,
     modelId: model.id,
-    local: false,
+    // A custom endpoint at this computer's own address keeps prompts here (MOD-20).
+    local: !!server.custom && onThisMachine(server.baseURL),
     contextWindow: model.contextWindow ?? 8192,
     reason: replaced
       ? `${replaced} is gone from ${name}; it serves only ${model.id} now`
@@ -198,7 +199,8 @@ function announce(r: Resolved): void {
   if (process.env.NEOROUTER_QUIET) return
   const cold = r.coldStartMs ? `, ${(r.coldStartMs / 1000).toFixed(1)}s cold start` : ''
   const gone = r.replaced ? `; ${r.replaced} is gone` : ''
-  console.error(`neorouter: ${r.backend} · ${r.modelId} (${r.rung}${cold}${gone})`)
+  const rung = r.rung === 'hosted' && r.local ? 'on this computer' : r.rung
+  console.error(`neorouter: ${r.backend} · ${r.modelId} (${rung}${cold}${gone})`)
 }
 
 // Keyed by preference: 'fast' and the default resolve to different models, so a

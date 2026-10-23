@@ -264,7 +264,8 @@ async function send(
  * concurrent requests, so serialising it would cost 3s a call for nothing.
  */
 function post(url: string, payload: unknown, r: Resolved, caller?: AbortSignal): Promise<Response> {
-  const hosted = !r.local
+  // A custom endpoint on this computer is still often a busy shared server (MOD-20).
+  const hosted = !r.local || !!r.server.custom
   const auth = r.server.auth
   const paced = hosted && r.backend === 'pollinations'
   return paced

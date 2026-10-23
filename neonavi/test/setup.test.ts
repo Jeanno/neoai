@@ -384,6 +384,8 @@ test('a resolved model is named model first', () => {
   assert.equal(modelLabel({ backend: 'lmstudio', modelId: 'qwen3-4b', local: true }), 'qwen3-4b')
   assert.equal(modelLabel({ backend: 'anthropic', modelId: 'claude-sonnet-5-5', local: false }), 'claude-sonnet-5-5 on Anthropic')
   assert.equal(modelLabel({ backend: 'homelab', modelId: 'm', local: false }), 'm on homelab')
+  // MOD-20: a custom endpoint on this computer keeps its name.
+  assert.equal(modelLabel({ backend: 'Darkbloom', modelId: 'm', local: true, entry: { where: 'remote', provider: 'Darkbloom' } }), 'm on Darkbloom')
   assert.equal(describe(null, undefined, { onlyRunning: true }), "navi can't find a running model to answer with.")
 })
 

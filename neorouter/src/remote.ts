@@ -1,3 +1,4 @@
+import { networkInterfaces } from 'node:os'
 import type { Server } from './types.ts'
 import { configDir, customEndpoints, readConfig, readKey } from './config.ts'
 import { PROVIDERS, providerById } from './providers.ts'
@@ -49,6 +50,25 @@ export async function remoteServers(dir = configDir()): Promise<Server[]> {
   const names = [...PROVIDERS.map((p) => p.id), ...Object.keys(customEndpoints(await readConfig(dir)))]
   const servers = await Promise.all(names.map((n) => remoteServer(n, dir)))
   return servers.filter((s) => s !== null)
+}
+
+/**
+ * Whether a URL points at this computer (MOD-20): loopback, `localhost`, or an
+ * address one of its interfaces holds, such as its Tailscale address. A name
+ * other than `localhost` is not looked up, so it counts as elsewhere.
+ */
+export function onThisMachine(
+  url: string,
+  interfaces: ReturnType<typeof networkInterfaces> = networkInterfaces(),
+): boolean {
+  let host: string
+  try {
+    host = new URL(url).hostname.replace(/^\[|\]$/g, '').toLowerCase()
+  } catch {
+    return false
+  }
+  if (host === 'localhost' || host.endsWith('.localhost') || host === '::1' || /^127\./.test(host)) return true
+  return Object.values(interfaces).some((list) => list?.some((i) => i.address.toLowerCase() === host))
 }
 
 /** Headers for listing a server's models. Never logged: they carry the key. */
