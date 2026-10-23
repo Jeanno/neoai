@@ -11,8 +11,17 @@ export interface FileChange {
 }
 
 const CONTEXT = 3
-/** More than this and the diff is cut: a whole new file need not scroll past. */
-const SHOWN = 80
+
+/**
+ * Control characters shown as symbols: written raw, an escape sequence in the
+ * model's text could move the cursor and paint over the lines being approved.
+ */
+function visible(line: string): string {
+  return line.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, (c) => {
+    const code = c.charCodeAt(0)
+    return code < 0x20 ? String.fromCharCode(0x2400 + code) : code === 0x7f ? '\u2421' : '\ufffd'
+  })
+}
 
 function lines(text: string): string[] {
   if (!text) return []
@@ -36,7 +45,8 @@ export function diffLines(before: string, after: string): { diff: string; added:
   while (end < a.length - start && end < b.length - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end++
   const gone = a.slice(start, a.length - end)
   const come = b.slice(start, b.length - end)
-  if (!gone.length && !come.length) return { diff: '(no change)', added: 0, removed: 0 }
+  if (!gone.length && !come.length)
+    return { diff: before === after ? '(no change)' : '(only the newline at the end of the file changes)', added: 0, removed: 0 }
   const from = Math.max(0, start - CONTEXT)
   const to = Math.min(a.length, a.length - end + CONTEXT)
   const out = [
@@ -46,8 +56,8 @@ export function diffLines(before: string, after: string): { diff: string; added:
     ...come.map((l) => `+ ${l}`),
     ...a.slice(a.length - end, to).map((l) => `  ${l}`),
   ]
-  const shown = out.length > SHOWN ? [...out.slice(0, SHOWN), `…[${out.length - SHOWN} more lines]`] : out
-  return { diff: shown.join('\n'), added: come.length, removed: gone.length }
+  // Never cut: what is approved is all of what is shown.
+  return { diff: out.map(visible).join('\n'), added: come.length, removed: gone.length }
 }
 
 /** One line for a change: `edit src/a.ts (+2 -1)`, `create notes.md (+12)`. */

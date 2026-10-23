@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { makeTools, type Gate } from '../src/tools.ts'
@@ -31,10 +31,13 @@ test('a diff marks the changed lines with three unchanged ones around them', () 
   assert.deepEqual(diffLines('', 'a\nb\n'), { diff: '@@ line 1 @@\n+ a\n+ b', added: 2, removed: 0 })
 })
 
-test('a long diff is cut and says how much more there was', () => {
+// TL-38: what is approved is all of what is shown.
+test('a long diff is shown whole, with control characters made visible', () => {
   const d = diffLines('', Array.from({ length: 200 }, (_, i) => `l${i}`).join('\n'))
-  assert.match(d.diff, /…\[121 more lines\]$/)
+  assert.equal(d.diff.split('\n').length, 201)
   assert.equal(d.added, 200)
+  assert.equal(diffLines('', 'ok\x1b[1A\x1b[2K\rgone\tx\n').diff, '@@ line 1 @@\n+ ok␛[1A␛[2K␍gone\tx')
+  assert.equal(diffLines('a', 'a\n').diff, '(only the newline at the end of the file changes)')
 })
 
 test('a change sums itself up in one line', () => {
@@ -67,6 +70,39 @@ test('a path outside the working directory is marked so', async () => {
   // A unique name next to the working directory, so an earlier run's file cannot match.
   await w.call('write_file', { path: `../${w.cwd.split('/').pop()}-x.txt`, content: 'x' })
   assert.deepEqual(w.asked.map((c) => c.inside), [false, false])
+})
+
+// TL-38: a symbolic link can lead out of the working directory however the path reads.
+test('a path through a symbolic link that leads out counts as outside', async () => {
+  const w = await setup()
+  const elsewhere = await mkdtemp(join(tmpdir(), 'navi-elsewhere-'))
+  await symlink(elsewhere, join(w.cwd, 'link'))
+  await symlink(join(elsewhere, 'dangling.txt'), join(w.cwd, 'note.txt'))
+  await mkdir(join(w.cwd, 'sub'))
+  await symlink(join(w.cwd, 'sub'), join(w.cwd, 'here'))
+  await w.call('write_file', { path: 'link/evil.sh', content: 'x' })
+  await w.call('write_file', { path: 'note.txt', content: 'x' })
+  await w.call('write_file', { path: 'here/fine.txt', content: 'x' })
+  assert.deepEqual(w.asked.map((c) => [c.path, c.inside]), [['link/evil.sh', false], ['note.txt', false], ['here/fine.txt', true]])
+})
+
+// TL-38: approval can take minutes.
+test('a file changed while the question was open is not overwritten', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'navi-w-'))
+  await writeFile(join(cwd, 'a.txt'), 'one\n')
+  const gate: Gate = {
+    approve: async () => true,
+    change: async (c) => {
+      await writeFile(join(cwd, c.path), 'the user was here\n')
+      return true
+    },
+  }
+  const tools = makeTools(gate, { cwd, web: false })
+  const call = (name: 'write_file' | 'edit_file', input: any) => (tools[name].execute as any)(input, { toolCallId: 't', messages: [] })
+  assert.match(await call('edit_file', { path: 'a.txt', old_text: 'one', new_text: '1' }), /a\.txt changed since it was read; nothing was written/)
+  assert.match(await call('write_file', { path: 'b.txt', content: 'model\n' }), /b\.txt (changed|appeared) since it was read; nothing was written/)
+  assert.equal(await readFile(join(cwd, 'a.txt'), 'utf8'), 'the user was here\n')
+  assert.equal(await readFile(join(cwd, 'b.txt'), 'utf8'), 'the user was here\n')
 })
 
 // TL-39

@@ -1,8 +1,8 @@
 import { tool } from 'ai'
 import { z } from 'zod'
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises'
 import { exec } from 'node:child_process'
-import { dirname, relative, resolve, isAbsolute } from 'node:path'
+import { dirname, join, relative, resolve, isAbsolute } from 'node:path'
 import { promisify } from 'node:util'
 import { fetchUrl, webSearch } from './web.ts'
 import { makeSearch } from './search.ts'
@@ -49,19 +49,36 @@ export function makeTools(gate: Gate, { web = true, fetch = true, cwd = process.
   const search = makeSearch({ cwd, ripgrep })
   const at = (path: string) => resolve(cwd, path)
 
+  /**
+   * Whether `file` really lands in the working directory: a symbolic link on
+   * the way, or at the file itself, can lead out of it however the path reads.
+   */
+  const landsInside = async (file: string) => {
+    const home = await realpath(cwd).catch(() => cwd)
+    if (await lstat(file).then((s) => s.isSymbolicLink(), () => false)) return false
+    // The nearest part of the path that exists is where links are resolved.
+    let dir = dirname(file)
+    while (!(await lstat(dir).then(() => true, () => false)) && dirname(dir) !== dir) dir = dirname(dir)
+    const real = join(await realpath(dir).catch(() => dir), relative(dir, file))
+    const rel = relative(home, real)
+    return !!rel && !rel.startsWith('..') && !isAbsolute(rel)
+  }
+
   /** Shows the change, asks, and makes it only when approved (TL-38, TL-39). */
   const apply = async (path: string, before: string | null, after: string, signal?: AbortSignal) => {
     const file = at(path)
-    const rel = relative(cwd, file)
     const change: FileChange = { path, created: before === null, ...diffLines(before ?? '', after) }
     if (before === after) return `${path} already reads that way; nothing changed.`
-    const inside = !!rel && !rel.startsWith('..') && !isAbsolute(rel)
+    const inside = await landsInside(file)
     if (!gate.change || !(await gate.change({ ...change, inside }, signal)))
       return `The user declined to ${summarize(change)}. Do not retry it; try another approach.`
     try {
+      // Approval can take minutes; a file changed meanwhile is not overwritten with the old read.
+      if ((await current(path)) !== before) return `${path} changed since it was read; nothing was written. Read it again.`
       await mkdir(dirname(file), { recursive: true })
-      await writeFile(file, after)
+      await writeFile(file, after, { flag: before === null ? 'wx' : 'w' })
     } catch (e: any) {
+      if (e.code === 'EEXIST') return `${path} appeared since it was read; nothing was written. Read it again.`
       return `could not write ${path}: ${e.message}`
     }
     return `${change.created ? 'created' : 'edited'} ${path}: +${change.added} -${change.removed} lines`

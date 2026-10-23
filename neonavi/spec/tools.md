@@ -56,12 +56,17 @@ anything off the machine.
   no such file returns a message saying which (and, for several, to include
   more surrounding lines), never a throw, and changes nothing.
 - TL-38: Every change is shown as a diff before it is made: the changed lines
-  marked `-` and `+`, with up to 3 unchanged lines around them. Creating a new
+  marked `-` and `+`, with up to 3 unchanged lines around them. The diff is
+  never cut short, and control characters in it are shown as symbols, so what
+  is approved is all of what is shown. Creating a new
   file inside the working directory is what TL-21 calls safe, so with judging
   on (TL-24) it runs without asking and is reported as auto-approved like a
   command (TL-22). Changing an existing file, or writing anywhere outside the
   working directory, always asks, and so does every change under
-  `"approve": "ask"`. Only `y` approves (TL-14).
+  `"approve": "ask"`. Only `y` approves (TL-14). A path that leads out of the working
+  directory through a symbolic link counts as outside. A file that changed, or
+  appeared, while the question was open is not written; the model is told to
+  read it again.
 - TL-39: A decline returns a message telling the model not to retry it
   (TL-15). A change made returns the path and how many lines were added and
   removed.
