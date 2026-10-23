@@ -387,6 +387,15 @@ test('a resolved model is named model first', () => {
   assert.equal(describe(null, undefined, { onlyRunning: true }), "navi can't find a running model to answer with.")
 })
 
+// SET-1, MOD-19
+test('a replaced pin is named as gone in the status', () => {
+  const answering = { index: 0, local: false, label: 'qwen3.6 on Darkbloom', replaced: 'qwen3.8' } as any
+  assert.equal(
+    describe(answering),
+    'navi answers with qwen3.6 on Darkbloom, the primary (REMOTE: prompts leave this computer). The pinned qwen3.8 is gone; it serves only this model now.',
+  )
+})
+
 test('a local model on two servers is one choice', async () => {
   const core = setupCore({
     load: async () => ({}),

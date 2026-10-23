@@ -46,6 +46,8 @@ export interface Resolution {
   rejected: { id: string; why: string }[]
   coldStartMs?: number
   pid?: number
+  /** A custom endpoint's pinned model that had gone, answered for by modelId (MOD-19). */
+  replaced?: string
 }
 
 /** Which way to break the tie between models that all fit. */

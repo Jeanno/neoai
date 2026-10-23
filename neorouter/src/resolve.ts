@@ -4,7 +4,7 @@ import { reachableServers } from './discover.ts'
 import { rank, contextWindow, evaluate, pick } from './select.ts'
 import { launchable, launch } from './launch.ts'
 import { hostedServers, hostedModels } from './hosted.ts'
-import { fetchModels, remoteServer, roomiestFree } from './remote.ts'
+import { chooseListed, fetchModels, remoteServer } from './remote.ts'
 
 export interface Resolved extends Resolution {
   server: Server
@@ -148,9 +148,9 @@ export async function remoteResolution(
   if (!server) return null
   const listing = await fetchModels(server)
   if (!listing.ok) return null
-  const id = modelId ?? (name === 'openrouter' ? roomiestFree(listing.models)[0] : undefined)
-  const model = id ? listing.models.find((m) => m.id === id) : undefined
-  if (!model) return null
+  const chosen = chooseListed(listing.models, modelId, { name, custom: server.custom })
+  if (!chosen) return null
+  const { model, replaced } = chosen
   return {
     rung: 'hosted',
     backend: server.backend,
@@ -158,9 +158,14 @@ export async function remoteResolution(
     modelId: model.id,
     local: false,
     contextWindow: model.contextWindow ?? 8192,
-    reason: modelId ? `pinned at ${name}` : 'no model named; the free OpenRouter model with the largest context',
+    reason: replaced
+      ? `${replaced} is gone from ${name}; it serves only ${model.id} now`
+      : modelId
+        ? `pinned at ${name}`
+        : 'no model named; the free OpenRouter model with the largest context',
     rejected,
     server,
+    ...(replaced && { replaced }),
   }
 }
 
@@ -192,7 +197,8 @@ async function keylessResolution(
 function announce(r: Resolved): void {
   if (process.env.NEOROUTER_QUIET) return
   const cold = r.coldStartMs ? `, ${(r.coldStartMs / 1000).toFixed(1)}s cold start` : ''
-  console.error(`neorouter: ${r.backend} · ${r.modelId} (${r.rung}${cold})`)
+  const gone = r.replaced ? `; ${r.replaced} is gone` : ''
+  console.error(`neorouter: ${r.backend} · ${r.modelId} (${r.rung}${cold}${gone})`)
 }
 
 // Keyed by preference: 'fast' and the default resolve to different models, so a

@@ -88,6 +88,25 @@ export function roomiestFree(models: RemoteModel[]): string[] {
 }
 
 /**
+ * The listed model a provider or custom link answers with, or null when it
+ * has none to offer (MOD-7). A custom endpoint whose pinned model has gone
+ * while it lists exactly one other answers with that one, and `replaced`
+ * names the pin (MOD-19): a server that switched models is still the server
+ * the user chose, while a provider's catalogue is too wide to guess from.
+ */
+export function chooseListed(
+  models: RemoteModel[],
+  wanted: string | undefined,
+  { name, custom = false }: { name: string; custom?: boolean },
+): { model: RemoteModel; replaced?: string } | null {
+  const id = wanted ?? (name === 'openrouter' ? roomiestFree(models)[0] : undefined)
+  const model = id ? models.find((m) => m.id === id) : undefined
+  if (model) return { model }
+  if (custom && wanted && models.length === 1) return { model: models[0], replaced: wanted }
+  return null
+}
+
+/**
  * 400 counts as a refusal: Gemini and xAI answer a bad key with 400, and a
  * plain GET has nothing else in it to be malformed.
  */

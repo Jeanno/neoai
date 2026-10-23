@@ -8,10 +8,13 @@ add the requirement there first.
 
 ### 1. Dependable: no configuration holds when things change
 
-- [ ] A pinned model the server no longer offers: fall back to what that
-      server serves now and say which, instead of failing the link.
+- [x] A pinned model the server no longer offers: a custom endpoint that
+      now lists one model answers with it and says which pin is gone.
       (Seen for real: Darkbloom moved from Qwen3.8 to qwen3.6 and navi found
-      no model.) (`spec/models.md`, neorouter)
+      no model.) (`spec/models.md` MOD-19, `spec/setup.md` SET-1)
+- [ ] A custom endpoint on this machine (Darkbloom on its Tailscale address)
+      is labelled "REMOTE: prompts leave this computer"; tell an address of
+      this machine from another one. (`spec/models.md`, `spec/setup.md`)
 - [ ] Say why a link failed: unreachable, key refused, model gone, with the
       link named, in `navi`, `navi setup --check` and Raycast.
       (`spec/models.md`, `spec/setup.md`)

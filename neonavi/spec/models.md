@@ -46,6 +46,12 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
   the machine. There is no keyless tier.
 - MOD-7: A provider or custom link fails when its key is missing, the server
   cannot be reached, or the model is not in the server's model list.
+- MOD-19: A custom endpoint's pinned model that has left its model list is
+  replaced by the endpoint's only model when it now lists exactly one (a
+  server that switched models, such as a Darkbloom provider). The link then
+  resolves, and which model was pinned and which answers is said wherever
+  the answering model is shown. With several models listed, or at a
+  provider, MOD-7 holds: the link fails.
 - MOD-8: A local link fails when no server is reachable or launchable, or the
   pinned id is not installed.
 - MOD-18: A local link can be probed without launching anything: it then

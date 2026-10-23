@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkKey, fetchModels, modelHeaders, parseModels, remoteServer, roomiestFree } from '../src/remote.ts'
+import { checkKey, chooseListed, fetchModels, modelHeaders, parseModels, remoteServer, roomiestFree } from '../src/remote.ts'
 import { PROVIDERS } from '../src/providers.ts'
 import { customEndpoints, readKey } from '../src/config.ts'
 
@@ -157,4 +157,20 @@ test('a listing and a key check pass the caller signal to the request', async ()
   assert.ok(!listing.ok && listing.why === 'unreachable')
   assert.equal(await checkKey('openrouter', 'k', fetcher, ctrl.signal), 'unreachable')
   assert.ok(seen.length === 2 && seen.every((s) => s.aborted))
+})
+
+// MOD-7, MOD-19: a Darkbloom provider that switched from Qwen3.8 to qwen3.6
+// is still the endpoint the user chose; a provider's catalogue is not.
+test('a custom endpoint that now serves one other model answers with it, naming the pin', () => {
+  const only = [{ id: 'qwen3.6' }]
+  assert.deepEqual(chooseListed(only, 'qwen3.8', { name: 'Darkbloom', custom: true }), { model: { id: 'qwen3.6' }, replaced: 'qwen3.8' })
+  assert.deepEqual(chooseListed(only, 'qwen3.6', { name: 'Darkbloom', custom: true }), { model: { id: 'qwen3.6' } })
+})
+
+test('a gone pin still fails with several models listed, at a provider, or with none', () => {
+  const two = [{ id: 'a' }, { id: 'b' }]
+  assert.equal(chooseListed(two, 'gone', { name: 'homelab', custom: true }), null)
+  assert.equal(chooseListed([{ id: 'claude-x' }], 'gone', { name: 'anthropic' }), null)
+  assert.equal(chooseListed([], 'gone', { name: 'homelab', custom: true }), null)
+  assert.equal(chooseListed([{ id: 'only' }], undefined, { name: 'homelab', custom: true }), null)
 })

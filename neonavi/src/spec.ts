@@ -59,6 +59,8 @@ export interface Chosen {
   modelId: string
   /** False when prompts leave the machine. */
   local: boolean
+  /** The pinned model that had gone, when the endpoint's only model answered instead (MOD-19). */
+  replaced?: string
 }
 
 /** What auto() is given for one link: scoped to the backend it names (MOD-6). */
@@ -91,6 +93,7 @@ export async function resolveChain(chain: Entry[], { launch = true }: { launch?:
         backend: got.backend,
         modelId: got.modelId,
         local: got.local,
+        ...(got.replaced && { replaced: got.replaced }),
       }
   }
   return null

@@ -194,7 +194,9 @@ export function describe(
   if (!answering) return onlyRunning ? "navi can't find a running model to answer with." : "navi can't find a model to answer with."
   const slot = ['the primary', 'the fallback'][answering.index] ?? `link ${answering.index + 1}`
   const where = answering.local ? 'on this computer' : 'REMOTE: prompts leave this computer'
-  return `navi answers with ${strong(answering.label)}, ${slot} (${where}).`
+  // A pin replaced under MOD-19 is named, so the swap is never silent.
+  const gone = answering.replaced ? ` The pinned ${answering.replaced} is gone; it serves only this model now.` : ''
+  return `navi answers with ${strong(answering.label)}, ${slot} (${where}).${gone}`
 }
 
 /**
