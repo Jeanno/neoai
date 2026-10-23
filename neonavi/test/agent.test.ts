@@ -31,6 +31,7 @@ test('bare navi starts fresh, a prompt continues, --resume continues', () => {
   assert.equal(startsFresh({ prompt: null, resume: true }), false)
 })
 
+// TL-9
 test('read_file returns the contents of a real file, numbered by line', async () => {
   const dir = await fixture()
   const tools = makeTools({ approve: async () => true })
@@ -40,6 +41,7 @@ test('read_file returns the contents of a real file, numbered by line', async ()
   assert.equal(out, '1→hello')
 })
 
+// TL-12
 test('list_dir lists real entries', async () => {
   const dir = await fixture()
   const tools = makeTools({ approve: async () => true })
@@ -49,6 +51,7 @@ test('list_dir lists real entries', async () => {
   assert.deepEqual(out.split('\n').sort(), ['a.txt', 'sub'])
 })
 
+// TL-16
 test('run_shell runs the command once approved', async () => {
   const tools = makeTools({ approve: async () => true })
 
@@ -57,6 +60,7 @@ test('run_shell runs the command once approved', async () => {
   assert.equal(out.trim(), 'hi')
 })
 
+// TL-13
 test('run_shell refuses and reports back when approval is declined', async () => {
   const asked: string[] = []
   const tools = makeTools({
@@ -75,6 +79,7 @@ test('run_shell refuses and reports back when approval is declined', async () =>
   assert.match(out, /declined/i)
 })
 
+// TL-13
 test('every shell command is asked about separately', async () => {
   const asked: string[] = []
   const tools = makeTools({

@@ -10,25 +10,28 @@ function io(typed: string) {
   return { input, output }
 }
 
+// TL-14
 test('y approves the command', async () => {
   const { approve, close } = makeApprover(io('y\n'))
   assert.equal(await approve('echo hi'), true)
   close()
 })
 
+// TL-14
 test('n declines the command', async () => {
   const { approve, close } = makeApprover(io('n\n'))
   assert.equal(await approve('rm -rf /'), false)
   close()
 })
 
+// TL-14
 test('anything else declines', async () => {
   const { approve, close } = makeApprover(io('maybe\n'))
   assert.equal(await approve('rm -rf /'), false)
   close()
 })
 
-// The safety-critical case: piped or redirected stdin, so nobody is there to
+// TL-14, the safety-critical case: piped or redirected stdin, so nobody is there to
 // answer. Silence must never read as consent.
 test('declines when stdin is closed with no answer', async () => {
   const { approve, close } = makeApprover(io(''))
@@ -36,15 +39,17 @@ test('declines when stdin is closed with no answer', async () => {
   close()
 })
 
+// PRM-1
 test('tells the model where it is running', () => {
   assert.match(systemPrompt('/Users/x/Projects/neoai'), /\/Users\/x\/Projects\/neoai/)
 })
 
+// PRM-2
 test('tells the model paths are relative to that directory', () => {
   assert.match(systemPrompt('/tmp/x'), /relative/i)
 })
 
-// The CLI builds the approver at startup but does not ask until the model's
+// CLI-8: the CLI builds the approver at startup but does not ask until the model's
 // first tool call, seconds later. A readline interface created eagerly drains
 // piped stdin in the meantime, so the answer is gone by the time we ask.
 test('still reads the answer when asked well after construction', async () => {
@@ -54,6 +59,7 @@ test('still reads the answer when asked well after construction', async () => {
   close()
 })
 
+// PRM-1
 test('lists what is in the working directory so the model need not guess', () => {
   const p = systemPrompt('/tmp/x', ['neonavi', 'neorouter', 'package.json'])
   assert.match(p, /neonavi/)
@@ -61,26 +67,28 @@ test('lists what is in the working directory so the model need not guess', () =>
   assert.match(p, /package\.json/)
 })
 
-// It answered "I cannot see its contents" while holding read_file and list_dir.
+// PRM-4: it answered "I cannot see its contents" while holding read_file and list_dir.
 test('forbids answering from a name instead of looking', () => {
   assert.match(systemPrompt('/tmp/x', []), /never (guess|answer).*name|do not guess/i)
 })
 
-// "list the dir" resolved to a directory discussed in an earlier turn.
+// PRM-3: "list the dir" resolved to a directory discussed in an earlier turn.
 test('pins bare references like "the dir" to the working directory', () => {
   assert.match(systemPrompt('/tmp/x', []), /"the dir"|the directory|here/i)
 })
 
+// PRM-5
 test('points the model at search before it starts opening files', () => {
   assert.match(systemPrompt('/tmp/x', []), /grep/)
 })
 
+// PRM-8
 test('folds the project context file into the prompt when there is one', () => {
   const p = systemPrompt('/tmp/x', [], 'neonavi is a CLI agent.')
   assert.match(p, /neonavi is a CLI agent/)
 })
 
-// The REPL prompt and the approval prompt read the same stdin. Two readline
+// CLI-8: the REPL prompt and the approval prompt read the same stdin. Two readline
 // interfaces on one stream would race for lines, so they share one.
 test('a shared line reader serves the prompt and the approval in order', async () => {
   const line = makeLine(io('do it\ny\n'))

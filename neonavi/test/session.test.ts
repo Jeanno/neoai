@@ -8,6 +8,7 @@ import { sessionFile, loadSession, saveSession } from '../src/session.ts'
 
 const msg = (role: 'user' | 'assistant', text: string) => ({ role, content: text }) as any
 
+// SES-2
 test('each directory gets its own session file', () => {
   const a = sessionFile('/Users/x/projects/one', '/home')
   const b = sessionFile('/Users/x/projects/two', '/home')
@@ -15,11 +16,12 @@ test('each directory gets its own session file', () => {
   assert.notEqual(a, b)
 })
 
+// SES-1
 test('history lives beside the config, in one app directory', () => {
   assert.match(sessionFile('/Users/x/one', '/home'), /^\/home\/\.neoai\/sessions\//)
 })
 
-// These files hold whatever navi has read: file contents, shell output. They
+// SES-6: these files hold whatever navi has read: file contents, shell output. They
 // were world-readable at 0755.
 test('the session directory is not readable by other users', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'navi-p-'))
@@ -31,16 +33,19 @@ test('the session directory is not readable by other users', async () => {
   assert.equal(mode.toString(8), '700')
 })
 
+// SES-2
 test('the same directory always maps to the same file', () => {
   assert.equal(sessionFile('/Users/x/one', '/home'), sessionFile('/Users/x/one', '/home'))
 })
 
+// SES-5
 test('a directory with no history starts empty', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'navi-s-'))
 
   assert.deepEqual(await loadSession(join(dir, 'missing.json')), [])
 })
 
+// SES-2
 test('what was saved comes back on the next run', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'navi-s-'))
   const file = join(dir, 's.json')
@@ -53,7 +58,7 @@ test('what was saved comes back on the next run', async () => {
   ])
 })
 
-// A half-written or hand-edited file must not take the CLI down.
+// SES-5: a half-written or hand-edited file must not take the CLI down.
 test('a corrupt session file reads as empty rather than throwing', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'navi-s-'))
   const file = join(dir, 'bad.json')

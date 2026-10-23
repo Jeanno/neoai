@@ -20,6 +20,7 @@ test('reads the context file sitting in the working directory', async () => {
   assert.match(await collectContext(root), /ROOT: a monorepo/)
 })
 
+// CTX-1
 test('collects the package file and the repo root file, root first', async () => {
   const root = await monorepo()
 
@@ -30,6 +31,7 @@ test('collects the package file and the repo root file, root first', async () =>
   assert.ok(out.indexOf('ROOT:') < out.indexOf('PKG:'))
 })
 
+// CTX-2
 test('stops climbing at the repo root', async () => {
   // A NAVI.md above the repo belongs to a different project.
   const outer = await mkdtemp(join(tmpdir(), 'navi-c-'))
@@ -44,12 +46,14 @@ test('stops climbing at the repo root', async () => {
   assert.doesNotMatch(out, /OUTSIDE/)
 })
 
+// CTX-5
 test('a project with no context file is silent, not an error', async () => {
   const bare = await mkdtemp(join(tmpdir(), 'navi-c-'))
 
   assert.equal(await collectContext(bare), '')
 })
 
+// CTX-4
 test('caps the total so a huge file cannot crowd out the conversation', async () => {
   const root = await mkdtemp(join(tmpdir(), 'navi-c-'))
   await mkdir(join(root, '.git'))

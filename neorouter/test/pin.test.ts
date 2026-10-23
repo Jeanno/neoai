@@ -14,7 +14,7 @@ test('a pinned id is taken even when it is not the best ranked', () => {
   assert.equal(pick([cand('big', 9), cand('small', 1)], 'small')?.id, 'small')
 })
 
-// Pinning a model the machine does not have must fail this link of the chain,
+// MOD-8: pinning a model the machine does not have must fail this link of the chain,
 // so the next one is tried — not silently answer with something else.
 test('a pin that matches nothing resolves nothing', () => {
   assert.equal(pick([cand('big', 9)], 'absent'), null)

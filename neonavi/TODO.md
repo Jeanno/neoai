@@ -16,10 +16,12 @@ add the requirement there first.
       is described as on this computer, not REMOTE. (`spec/models.md` MOD-20)
 - [x] Say why a link failed: unreachable, key refused, model gone, with the
       link named, in `navi`, `navi setup --check` and Raycast. (MOD-21)
-- [ ] The installer leaves `navi` runnable: warn when `~/.local/bin` is not
-      on PATH and print the line to add. (`spec/setup.md`)
-- [ ] Cite spec ids from the existing tests so every requirement is traceable.
-      (`test/*.test.ts`)
+- [x] The installer leaves `navi` runnable: it already warns when
+      `~/.local/bin` is not on PATH; navi had simply never been installed here.
+- [x] Cite spec ids from the existing tests so every requirement is traceable.
+- [ ] Tests for the 20 requirements no test checks yet: CLI-2 to CLI-7,
+      CLI-9 to CLI-11, CLI-13 to CLI-15, CLI-18, CTX-3, HAR-6, MOD-16, PRM-6,
+      PRM-7, RAY-1, RAY-5, RAY-8, SET-3, TL-1, TL-17, TL-25. (`test/*.test.ts`)
 
 ### 2. Daily driver: the agent I reach for first
 

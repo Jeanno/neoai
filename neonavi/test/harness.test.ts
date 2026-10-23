@@ -278,7 +278,7 @@ test('history goes in and comes back out, so a front end can store it', async ()
   assert.match(JSON.stringify(model.doStreamCalls[1].prompt), /what is my name/)
 })
 
-// HAR-2, SES-8
+// HAR-2, SES-8, SES-11: the history handed back to be saved is the compacted one.
 test('compaction is reported as an event', async () => {
   const long = 'x'.repeat(4000)
   const earlier: ModelMessage[] = []
