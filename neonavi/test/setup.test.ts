@@ -369,6 +369,51 @@ test('a custom name may not be a provider id or local', async () => {
   assert.equal(f.saved.length, 0)
 })
 
+// SET-28
+test('a saved key can be removed after confirming; other fields stay', async () => {
+  const config = { keys: { anthropic: 'k', groq: 'g' }, approve: 'ask' }
+  const no = fake(['1', row('Providers'), row('Anthropic'), row('Remove the saved key'), 'n', '', '', ''], { config })
+  await runSetup(no.d)
+  assert.equal(no.saved.length, 0)
+  const f = fake(['1', row('Providers'), row('Anthropic'), row('Remove the saved key'), 'y', '', ''], { config })
+  await runSetup(f.d)
+  assert.match(f.out(), /Key removed\./)
+  assert.deepEqual(f.config(), { keys: { groq: 'g' }, approve: 'ask' })
+})
+
+test('removing a saved key says when the environment still keys the provider', async () => {
+  const f = fake([], { config: KEYED, env: { ANTHROPIC_API_KEY: 'e' } })
+  assert.deepEqual(await f.core.removeKey('anthropic'), { ok: true, still: 'ANTHROPIC_API_KEY' })
+  assert.deepEqual(f.config().keys, {})
+  // Nothing saved is nothing to remove.
+  assert.equal((await f.core.removeKey('anthropic')).ok, false)
+  assert.equal((await f.core.removeKey('nope')).ok, false)
+  assert.equal(f.saved.length, 1)
+})
+
+test('a key from the environment alone offers no removal', async () => {
+  const f = fake(['1', row('Providers'), row('Groq'), '', '', '', ''], { env: { GROQ_API_KEY: 'g' } })
+  await runSetup(f.d)
+  assert.doesNotMatch(f.out(), /Remove the saved key/)
+})
+
+test('a custom endpoint can be removed, unless the chain uses it', async () => {
+  const custom = { homelab: { baseURL: 'http://box/v1' }, spare: { baseURL: 'http://spare/v1' } }
+  const f = fake(['1', row('Custom'), row('Remove an endpoint'), row('spare'), 'y', '', '', ''], {
+    config: { model: ['local', 'homelab:m1'], custom },
+  })
+  await runSetup(f.d)
+  assert.match(f.out(), /Removed spare\./)
+  assert.deepEqual(f.config().custom, { homelab: custom.homelab })
+  assert.deepEqual(f.config().model, ['local', 'homelab:m1'])
+
+  const used = await f.core.removeCustom('homelab')
+  assert.equal(used.ok, false)
+  assert.match(!used.ok ? used.message : '', /homelab answers as the fallback; change that first/)
+  assert.deepEqual(f.config().custom, { homelab: custom.homelab })
+  assert.equal((await f.core.removeCustom('gone')).ok, false)
+})
+
 // SET-23: the core alone, as a front end such as Raycast calls it.
 test('the core answers with data and never prompts', async () => {
   const f = fake([], { config: KEYED, local: ['a'] })

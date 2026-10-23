@@ -2,6 +2,8 @@ import './lib/quiet'
 import {
   Action,
   ActionPanel,
+  Alert,
+  confirmAlert,
   Detail,
   Form,
   Icon,
@@ -292,6 +294,15 @@ function Providers({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
                 )}
                 {p.key && <Action.Push title="Replace Key" icon={Icon.Key} target={key} />}
                 <Action.OpenInBrowser title="Open Key Page" url={p.keyPage} />
+                {p.key === 'saved' && (
+                  <Action
+                    title="Remove Saved Key"
+                    icon={Icon.Trash}
+                    style={Action.Style.Destructive}
+                    shortcut={Keyboard.Shortcut.Common.Remove}
+                    onAction={() => removeKey(p).then(reload)}
+                  />
+                )}
               </ActionPanel>
             }
           />
@@ -299,6 +310,36 @@ function Providers({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
       })}
     </List>
   )
+}
+
+/** SET-28: confirms, then deletes the saved key; one from the environment stays in use. */
+async function removeKey(p: ProviderRow) {
+  const sure = await confirmAlert({
+    title: `Remove the saved ${p.name} key?`,
+    message: `${p.name} models in your chain stop answering until a key is entered again.`,
+    primaryAction: { title: 'Remove', style: Alert.ActionStyle.Destructive },
+  })
+  if (!sure) return
+  const removed = await core.removeKey(p.id)
+  if (!removed.ok) return showToast({ style: Toast.Style.Failure, title: 'Key not removed', message: removed.message })
+  await showToast({
+    style: Toast.Style.Success,
+    title: 'Key removed',
+    ...(removed.still && { message: `${p.name} still has one from ${removed.still}.` }),
+  })
+}
+
+/** SET-28: confirms, then deletes the endpoint; one the chain uses is kept. */
+async function removeCustom(name: string) {
+  const sure = await confirmAlert({
+    title: `Remove ${name}?`,
+    primaryAction: { title: 'Remove', style: Alert.ActionStyle.Destructive },
+  })
+  if (!sure) return
+  const removed = await core.removeCustom(name)
+  if (!removed.ok)
+    return showToast({ style: Toast.Style.Failure, title: 'Endpoint not removed', message: removed.message })
+  await showToast({ style: Toast.Style.Success, title: `Removed ${name}` })
 }
 
 /** SET-6: a key in a password field, checked with the provider before it is saved. */
@@ -595,6 +636,13 @@ function Custom({ slot, onPick }: { slot: Slot; onPick: OnPick }) {
             <ActionPanel>
               <Action.Push title="Choose Model" icon={Icon.ArrowRight} target={models(c.name)} />
               {add}
+              <Action
+                title="Remove Endpoint"
+                icon={Icon.Trash}
+                style={Action.Style.Destructive}
+                shortcut={Keyboard.Shortcut.Common.Remove}
+                onAction={() => removeCustom(c.name).then(reload)}
+              />
             </ActionPanel>
           }
         />

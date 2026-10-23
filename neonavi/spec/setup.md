@@ -76,6 +76,15 @@ JSON by hand. Everything it writes goes to `~/.neoai/config.json`.
   it is saved under `custom.<name>` (MOD-15). Choosing an endpoint lists its
   models.
 
+## Removing
+
+- SET-28: A provider's saved key can be removed, deleting `keys.<provider>`.
+  A key the environment sets is not touched, so setup says the provider
+  still has one from that variable. A custom endpoint can be removed,
+  deleting `custom.<name>`, unless a link in the chain uses it: setup then
+  names the slot to change first, and removes nothing. Removing asks for
+  confirmation in each front end.
+
 ## Choices
 
 - ~~SET-4: Setup offers: a model on this computer, an OpenRouter key, a free
@@ -110,4 +119,3 @@ JSON by hand. Everything it writes goes to `~/.neoai/config.json`.
 
 - Editing links past the second.
 - Offering to install LM Studio or Ollama.
-- Removing a saved key or custom endpoint.

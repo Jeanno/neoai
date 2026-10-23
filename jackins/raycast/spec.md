@@ -27,7 +27,8 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
 
 - RAY-6: A Set Up Navi command presents setup (SET-23) as Raycast views: the
   slots, then Providers, Local and Custom, with keys entered in a password
-  field and endpoints in a form.
+  field and endpoints in a form. A saved key and a custom endpoint each
+  have a Remove action that confirms first (SET-28).
 - RAY-7: When no model answers, every command says so and offers Set Up Navi
   as its primary action, instead of an error naming the chain. Below that,
   each link is listed with why it failed (MOD-21).

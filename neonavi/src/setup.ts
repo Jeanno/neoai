@@ -113,6 +113,26 @@ async function enterKey(d: SetupDeps, p: ProviderRow): Promise<Outcome<'saved'>>
   return 'saved'
 }
 
+/** Asks before removing anything (SET-28); true only for a yes. */
+async function confirm(d: SetupIO, question: string): Promise<Outcome<boolean>> {
+  const a = await d.ask(`${question} [y/N] `)
+  if (a === null) return 'eof'
+  return /^y(es)?$/i.test(a.trim())
+}
+
+/** SET-28: deletes the saved key; one from the environment stays in use. */
+async function removeKey(d: SetupDeps, p: ProviderRow): Promise<Outcome<'removed'>> {
+  const sure = await confirm(d, `\nRemove the saved ${p.name} key?`)
+  if (sure !== true) return sure === 'eof' ? 'eof' : 'back'
+  const removed = await d.core.removeKey(p.id)
+  if (!removed.ok) {
+    d.print(removed.message)
+    return 'back'
+  }
+  d.print(dim(removed.still ? `Key removed. ${p.name} still has one from ${removed.still}.` : 'Key removed.'))
+  return 'removed'
+}
+
 async function pickFrom(d: SetupDeps, title: string, choices: Choice[]): Promise<Outcome<string | null>> {
   const i = await choose(d, title, choices, { filter: choices.length > 20 })
   return typeof i === 'number' ? choices[i].value : i
@@ -124,7 +144,13 @@ async function providerModels(d: SetupDeps, slot: Slot, p: ProviderRow): Promise
     const list = await d.core.providerModels(p.id, slot)
     if (!list.ok) d.print(list.message)
     const picks = list.ok ? list.recommended : []
-    const rows: Row[] = [...picks, ...(list.ok ? [{ label: 'All models…' }] : []), { label: 'Replace the key' }]
+    const rows: Row[] = [
+      ...picks,
+      ...(list.ok ? [{ label: 'All models…' }] : []),
+      { label: 'Replace the key' },
+      // Looked up afresh: a key entered a moment ago is saved now.
+      ...((await d.core.providers()).find((r) => r.id === p.id)?.key === 'saved' ? [{ label: 'Remove the saved key' }] : []),
+    ]
     const i = await choose(d, `${p.name}:`, rows)
     if (typeof i !== 'number') return i
     if (i < picks.length) return picks[i].value!
@@ -132,6 +158,12 @@ async function providerModels(d: SetupDeps, slot: Slot, p: ProviderRow): Promise
       const got = await pickFrom(d, `All ${p.name} models:`, list.all)
       if (got === 'eof') return 'eof'
       if (got !== 'back' && got !== null) return got
+      continue
+    }
+    if (rows[i].label === 'Remove the saved key') {
+      const removed = await removeKey(d, p)
+      if (removed === 'eof') return 'eof'
+      if (removed === 'removed') return 'back'
       continue
     }
     if ((await enterKey(d, p)) === 'eof') return 'eof'
@@ -230,14 +262,30 @@ async function customModels(d: SetupDeps, slot: Slot, name: string): Promise<Out
   return got === null ? 'back' : got
 }
 
+/** SET-28: one that a link in the chain uses is kept, and setup says which. */
+async function removeEndpoint(d: SetupDeps, names: string[]): Promise<Outcome<'removed'>> {
+  const i = await choose(d, 'Remove which endpoint?', names.map((label) => ({ label })))
+  if (typeof i !== 'number') return i
+  const sure = await confirm(d, `\nRemove ${names[i]}?`)
+  if (sure !== true) return sure === 'eof' ? 'eof' : 'back'
+  const removed = await d.core.removeCustom(names[i])
+  d.print(removed.ok ? dim(`Removed ${names[i]}.`) : removed.message)
+  return removed.ok ? 'removed' : 'back'
+}
+
 async function custom(d: SetupDeps, slot: Slot): Promise<Outcome<string>> {
   for (;;) {
     const saved = await d.core.customs()
     const i = await choose(d, 'Custom endpoints:', [
       ...saved.map((c) => ({ label: c.name, detail: c.baseURL })),
       { label: 'Add an endpoint' },
+      ...(saved.length ? [{ label: 'Remove an endpoint' }] : []),
     ])
     if (typeof i !== 'number') return i
+    if (i > saved.length) {
+      if ((await removeEndpoint(d, saved.map((c) => c.name))) === 'eof') return 'eof'
+      continue
+    }
     const name = i < saved.length ? saved[i].name : await addEndpoint(d)
     if (name === 'eof') return 'eof'
     if (name === 'back') continue

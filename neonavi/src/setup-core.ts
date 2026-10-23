@@ -383,6 +383,22 @@ export function setupCore(d: CoreDeps) {
       return { ok: true }
     },
 
+    /**
+     * Deletes `keys.<provider>` (SET-28). `still` names the environment
+     * variable that keeps the provider keyed, when one does.
+     */
+    async removeKey(provider: string): Promise<{ ok: true; still?: string } | Failure> {
+      const p = providerById(provider)
+      if (!p) return { ok: false, why: 'invalid', message: `${provider} is not a provider.` }
+      const config = await d.load()
+      if (!config.keys || !(provider in config.keys)) return { ok: false, why: 'invalid', message: `No ${p.name} key is saved.` }
+      await update((c) => {
+        const { [provider]: _, ...keys } = c.keys ?? {}
+        return { ...c, keys }
+      })
+      return { ok: true, ...(d.env[p.env] && { still: p.env }) }
+    },
+
     /** A provider's hand-picked models still on offer, then all of them (SET-20). */
     async providerModels(provider: string, slot: Slot, { signal }: Cancel = {}): Promise<ModelList> {
       const p = providerById(provider)
@@ -464,6 +480,26 @@ export function setupCore(d: CoreDeps) {
             ? `${url} refused ${key ? 'that key' : 'to list models without a key'}. Nothing was saved.`
             : `Couldn't list models at ${url}. Nothing was saved; is it an OpenAI-compatible server, and is it running?`,
       }
+    },
+
+    /**
+     * Deletes `custom.<name>` (SET-28), unless a link in the chain uses it:
+     * that link would then mean something else, or nothing.
+     */
+    async removeCustom(name: string): Promise<{ ok: true } | Failure> {
+      const config = await d.load()
+      if (!customEndpoints(config)[name]) return { ok: false, why: 'invalid', message: `No endpoint is saved as ${name}.` }
+      const parts = links(config.model)
+      const used = parseModelSpec(parts, customNames(config)).findIndex((e) => e.where === 'remote' && e.provider === name)
+      if (used >= 0) {
+        const slot = ['primary model', 'fallback'][used] ?? `link ${used + 1}`
+        return { ok: false, why: 'invalid', message: `${name} answers as the ${slot}; change that first. Nothing was removed.` }
+      }
+      await update((c) => {
+        const { [name]: _, ...custom } = c.custom ?? {}
+        return { ...c, custom }
+      })
+      return { ok: true }
     },
 
     /** A custom endpoint's models (SET-22). */

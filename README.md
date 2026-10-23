@@ -42,7 +42,8 @@ From a checkout, `./neonavi/install.sh` does the same with the code you have. Ei
 The installer ends by checking for a model. If it finds none, run `navi setup`. It shows your
 primary and fallback models and lets you change either, from a provider (it asks for a key and
 checks it), a model on your computer (with help getting LM Studio or Ollama going) or a custom
-endpoint, and it tests the result. Until you choose, nothing leaves your machine.
+endpoint, and it tests the result. A saved key or endpoint can be removed there too. Until you
+choose, nothing leaves your machine.
 
 ```bash
 navi setup
