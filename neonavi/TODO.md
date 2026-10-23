@@ -31,8 +31,8 @@ add the requirement there first.
 - [x] Image and PDF input: `-a`, `/attach`, and Raycast's Ask About Selected
       Files; images go to the model, PDFs as text. (HAR-7, HAR-8, CLI-22,
       CLI-23, RAY-11)
-- [ ] A PDF that is only scanned pages: render its pages as images for a
-      vision model instead of refusing it. (`spec/harness.md`)
+- [x] A PDF that is only scanned pages: its first 8 pages go as images,
+      drawn with PDFKit on macOS. (HAR-7)
 - [x] `navi sessions` lists per-directory histories; `navi sessions clear`
       forgets one or all. (SES-12 to SES-14)
 

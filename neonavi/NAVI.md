@@ -12,7 +12,8 @@ prints it. `exit`, ^C or ^D leave.
     navi -a paper.pdf -a notes.md -p "does my summary miss anything"
 
 `-a` attaches a file to the prompt: an image goes to the model as an image
-(scaled to 1600 px), a PDF as its text, any other text file as it is. At the
+(scaled to 1600 px), a PDF as its text (a scanned one as images of its first
+8 pages, on macOS), any other text file as it is. At the
 prompt, `/attach <file>` (drag a file in) sends one with your next message,
 `/model <spec>` switches model for the rest of the conversation, and `/help`
 lists these.

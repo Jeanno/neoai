@@ -61,8 +61,28 @@ test('what cannot be attached is refused by name', async () => {
   await assert.rejects(attach('~/surely-not-here-navi.txt', d), (e: Error) => !e.message.includes(d))
   await assert.rejects(attach('sub', d), /sub is a directory/)
   await assert.rejects(attach('blob.bin', d), /blob\.bin is neither text, a PDF, nor a PNG/)
-  await writeFile(join(d, 'empty.pdf'), pdf(''))
-  await assert.rejects(attach('empty.pdf', d), /empty\.pdf has no text to read/)
+})
+
+// HAR-7: a PDF with no text layer is scanned pages, shown as images where they can be drawn.
+test('a PDF without text is sent as page images, or refused where pages cannot be drawn', async () => {
+  const d = await dir()
+  await writeFile(join(d, 'scan.pdf'), pdf(''))
+  if (process.platform !== 'darwin') return assert.rejects(attach('scan.pdf', d), /scan\.pdf has no text to read/)
+  const a = await attach('scan.pdf', d)
+  assert.equal(a.kind, 'pages')
+  if (a.kind !== 'pages') return
+  assert.equal(a.of, 1)
+  assert.equal(Buffer.from(a.pages[0], 'base64').subarray(1, 4).toString(), 'PNG')
+  const [text, page] = userContent('read it', [a]) as any[]
+  assert.equal(text.text, '<image name="scan.pdf" pages="1" />\n\nread it')
+  assert.deepEqual([page.type, page.mediaType, page.filename], ['file', 'image/png', 'scan.pdf page 1'])
+  assert.deepEqual(splitUserText(text.text), { prompt: 'read it', names: ['scan.pdf'] })
+})
+
+test('only the first eight pages of a long scan are sent, and the model is told', () => {
+  const [text, ...pages] = userContent('read it', [{ kind: 'pages', name: 'long.pdf', mediaType: 'image/png', pages: Array(8).fill('QQ=='), of: 30 }]) as any[]
+  assert.equal(text.text, '<image name="long.pdf" pages="the first 8 of 30" />\n\nread it')
+  assert.equal(pages.length, 8)
 })
 
 test('a long text file is cut and marked', async () => {

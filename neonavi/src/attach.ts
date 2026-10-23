@@ -11,6 +11,8 @@ const run = promisify(execFile)
 export type Attachment =
   | { kind: 'image'; name: string; mediaType: string; data: string }
   | { kind: 'text'; name: string; text: string }
+  /** A PDF of scanned pages, each page an image; `of` is how many it has. */
+  | { kind: 'pages'; name: string; mediaType: 'image/png'; pages: string[]; of: number }
 
 const IMAGES: Record<string, string> = {
   '.png': 'image/png',
@@ -56,6 +58,44 @@ async function scaled(file: string, ext: string, bytes: Buffer): Promise<Buffer>
   }
 }
 
+/** Pages past this are left out: each costs the model as much as an image. */
+const MAX_PAGES = 8
+
+/** Draws a PDF's first pages as PNGs with PDFKit, from JavaScript for Automation: nothing to install. */
+const RENDER = `ObjC.import('PDFKit'); ObjC.import('AppKit')
+function run([file, dir, most, side]) {
+  const doc = $.PDFDocument.alloc.initWithURL($.NSURL.fileURLWithPath(file))
+  if (!doc || doc.isNil()) return '0'
+  for (let i = 0; i < Math.min(doc.pageCount, Number(most)); i++) {
+    const page = doc.pageAtIndex(i)
+    const box = page.boundsForBox($.kPDFDisplayBoxMediaBox).size
+    const scale = Number(side) / Math.max(box.width, box.height)
+    const image = page.thumbnailOfSizeForBox($.NSMakeSize(Math.round(box.width * scale), Math.round(box.height * scale)), $.kPDFDisplayBoxMediaBox)
+    const png = $.NSBitmapImageRep.imageRepWithData(image.TIFFRepresentation).representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({}))
+    png.writeToFileAtomically(dir + '/' + (i + 1) + '.png', true)
+  }
+  return String(doc.pageCount)
+}`
+
+/** A scanned PDF's pages as PNGs, or null where they cannot be drawn (HAR-7). */
+async function pdfPages(file: string): Promise<{ pages: string[]; of: number } | null> {
+  if (process.platform !== 'darwin') return null
+  const dir = await mkdtemp(join(tmpdir(), 'navi-pages-'))
+  try {
+    const { stdout } = await run('osascript', ['-l', 'JavaScript', '-e', RENDER, file, dir, String(MAX_PAGES), String(MAX_SIDE)])
+    const of = Number(stdout.trim())
+    if (!of) return null
+    const pages = await Promise.all(
+      Array.from({ length: Math.min(of, MAX_PAGES) }, (_, i) => readFile(join(dir, `${i + 1}.png`)).then((b) => b.toString('base64'))),
+    )
+    return { pages, of }
+  } catch {
+    return null
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
 async function pdfText(bytes: Buffer): Promise<string> {
   const { extractText, getDocumentProxy } = await import('unpdf')
   const pdf = await getDocumentProxy(new Uint8Array(bytes))
@@ -81,8 +121,12 @@ export async function attach(path: string, cwd = process.cwd()): Promise<Attachm
   }
   if (ext === '.pdf') {
     const text = await pdfText(bytes).catch(() => '')
-    if (!text.replace(/\[page \d+\]/g, '').trim())
-      throw new Error(`${path} has no text to read; it may be scanned pages, which navi cannot read yet`)
+    if (!text.replace(/\[page \d+\]/g, '').trim()) {
+      // Scanned pages: shown to the model as the images they are.
+      const drawn = await pdfPages(file)
+      if (!drawn) throw new Error(`${path} has no text to read, and its pages could not be drawn as images here`)
+      return { kind: 'pages', name, mediaType: 'image/png', ...drawn }
+    }
     return { kind: 'text', name, text: cut(text) }
   }
   const text = bytes.toString('utf8')
@@ -96,10 +140,18 @@ export function userContent(prompt: string, attachments: Attachment[] = []): str
   if (!attachments.length) return prompt
   // Images are named too, so the model can tell which is which.
   const texts = attachments.map((a) =>
-    a.kind === 'text' ? `<file name="${a.name}">\n${a.text}\n</file>` : `<image name="${a.name}" />`,
+    a.kind === 'text'
+      ? `<file name="${a.name}">\n${a.text}\n</file>`
+      : a.kind === 'pages'
+        ? `<image name="${a.name}" pages="${a.pages.length < a.of ? `the first ${a.pages.length} of ${a.of}` : a.of}" />`
+        : `<image name="${a.name}" />`,
   )
   const images = attachments.flatMap((a): FilePart[] =>
-    a.kind === 'image' ? [{ type: 'file', mediaType: a.mediaType, data: a.data, filename: a.name }] : [],
+    a.kind === 'image'
+      ? [{ type: 'file', mediaType: a.mediaType, data: a.data, filename: a.name }]
+      : a.kind === 'pages'
+        ? a.pages.map((data, i) => ({ type: 'file', mediaType: a.mediaType, data, filename: `${a.name} page ${i + 1}` }))
+        : [],
   )
   return [{ type: 'text', text: [...texts, prompt].join('\n\n') }, ...images]
 }
@@ -111,7 +163,7 @@ export function userContent(prompt: string, attachments: Attachment[] = []): str
 export function splitUserText(text: string): { prompt: string; names: string[] } {
   if (!/^<(file|image) name="/.test(text)) return { prompt: text, names: [] }
   // The prompt follows the last block, however much a file's own text looks like one.
-  const ends = [...text.matchAll(/\n<\/file>\n\n|<image name="[^"]*" \/>\n\n/g)]
+  const ends = [...text.matchAll(/\n<\/file>\n\n|<image name="[^"]*"[^>\n]* \/>\n\n/g)]
   const last = ends.at(-1)
   if (!last) return { prompt: text, names: [] }
   const head = text.slice(0, last.index + last[0].length)

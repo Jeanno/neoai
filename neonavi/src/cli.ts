@@ -395,7 +395,8 @@ async function main() {
         try {
           const a = await attach(command.path)
           pending.push(a)
-          console.error(dim(`· attached ${a.name}; it goes with your next prompt`))
+          const as = a.kind === 'pages' ? ` (${a.pages.length < a.of ? `the first ${a.pages.length} of ${a.of}` : a.of} scanned page${a.of === 1 ? '' : 's'}, as images)` : ''
+          console.error(dim(`· attached ${a.name}${as}; it goes with your next prompt`))
         } catch (e) {
           console.error(`can't attach: ${(e as Error).message}`)
         }
