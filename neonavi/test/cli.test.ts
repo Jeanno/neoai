@@ -124,3 +124,47 @@ test('without a terminal navi answers once: the answer on stdout, everything els
   assert.equal(saved.cwd.endsWith(home.split('/').pop()!), true)
   assert.deepEqual(saved.messages.map((m: any) => m.role), ['user', 'assistant', 'tool', 'assistant'])
 })
+
+/**
+ * Runs navi on a terminal (a pty from script(1)), answering each `navi>`
+ * prompt with the next of `lines`. Returns everything the terminal showed.
+ */
+async function naviOnTerminal(args: string[], lines: string[], config: object) {
+  const home = await mkdtemp(join(tmpdir(), 'navi-cli-'))
+  await mkdir(join(home, '.neoai'), { recursive: true })
+  await writeFile(join(home, '.neoai', 'config.json'), JSON.stringify(config))
+  const env = { PATH: process.env.PATH, HOME: home, NEOROUTER_QUIET: '1', TERM: 'xterm' }
+  // script(1) needs real pipes, and node's stdio on macOS is a socket.
+  const child = spawn('sh', ['-c', 'cat | script -q /dev/null "$@" | cat', 'sh', TSX, CLI, ...args], { env, cwd: home })
+  let shown = ''
+  let prompts = 0
+  child.stdout.on('data', (c) => {
+    shown += c
+    // One line per prompt shown, sent once it is.
+    const seen = shown.split('navi>').length - 1
+    while (prompts < seen) {
+      const next = lines[prompts++]
+      if (next !== undefined) child.stdin.write(`${next}\n`)
+      // Ended after the last, or the cat feeding script(1) would wait forever.
+      if (prompts >= lines.length) child.stdin.end()
+    }
+  })
+  const code = await new Promise<number>((resolve) => child.on('close', (c) => resolve(c ?? -1)))
+  return { code, shown: shown.replace(/\x1b\[[0-9;]*m/g, ''), home }
+}
+
+// CLI-3, CLI-6, CLI-7, CLI-20: a session on a terminal: a turn, a blank line,
+// the model shown and switched, then leaving.
+test('on a terminal navi keeps asking until told to leave', { skip: process.platform !== 'darwin' }, async () => {
+  const fake = await fakeModel()
+  const r = await naviOnTerminal([], ['what is here', '', '/model', '/model box:nope', 'QUIT'], fake.config)
+  fake.close()
+  assert.equal(r.code, 0, JSON.stringify(r.shown))
+  assert.match(r.shown, /^navi · ask anything; \/help for commands; exit, \^C or \^D to leave/)
+  assert.match(r.shown, /It holds \.neoai\./)
+  assert.match(r.shown, /\/model\r?\r\n\r\nnavi answers with fake-1 on box, the primary \(on this computer\)\.\r\nchain: fake-1 on box/)
+  // A pin the endpoint no longer serves falls to what it does (MOD-19).
+  assert.match(r.shown, /The pinned nope is gone/)
+  // The blank line is ignored and QUIT leaves: one prompt per line sent.
+  assert.equal(r.shown.split('navi>').length - 1, 5)
+})
