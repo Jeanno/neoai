@@ -25,6 +25,9 @@ jobs:
       # navi's grep and glob tools run ripgrep, and their tests do too.
       - run: brew install ripgrep
 
+      # navi's browser tests drive a real, headless Chromium.
+      - run: npx playwright-core install chromium
+
       - name: Test
         run: npm test --workspaces --if-present
 
