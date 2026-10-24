@@ -31,6 +31,9 @@ before(async () => {
       res.end(`<title>Framed</title><h1>Pay</h1><iframe src="http://localhost:${url.port || (server.address() as { port: number }).port}/inner"></iframe>`)
     else if (url.pathname === '/inner') res.end('<button>Confirm transfer</button>')
     else if (url.pathname === '/focus') res.end('<title>Focus</title><button autofocus>Place order</button>')
+    else if (url.pathname === '/deep')
+      // Tables in tables, far deeper than Chrome hands back in one piece.
+      res.end(`<title>Deep</title><h1>Tree</h1>${'<table><tr><td>'.repeat(30)}<button onclick="this.textContent='Opened'">Open leaf</button>${'</td></tr></table>'.repeat(30)}<p>After the tree</p>`)
     else if (url.pathname === '/late')
       res.end(`<title>Late</title><div id=app>Loading…</div><script>setTimeout(() => {
         document.getElementById('app').innerHTML = '<h1>Dashboard</h1><button>Refresh</button>'
@@ -168,6 +171,14 @@ test('a page drawn late by scripts is read once drawn', { skip }, async () => {
   assert.match(late, /heading "Dashboard"/)
   assert.match(late, /button "Refresh" \[ref=/)
   assert.doesNotMatch(late, /Loading/)
+})
+
+// BRW-5: a page nested too deep to read in one piece is read in parts, its refs all usable.
+test('a deeply nested page is read whole, and acted on', { skip }, async () => {
+  const tab = makeTab({ home, headless: true })
+  const deep = await tab.open(`${base}/deep`)
+  assert.match(deep, /text: After the tree/)
+  assert.equal(await done(tab, { kind: 'click', ref: refOf(deep, 'button "Open leaf"') }), 'appeared on the page:\n+ button "Opened" [ref=' + refOf(await tab.read({ find: 'Opened' }), 'button "Opened"') + ']\n1 line went from the page')
 })
 
 // BRW-4

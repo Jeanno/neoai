@@ -10,6 +10,9 @@ const LAYOUT = new Set([
   'paragraph', 'LineBreak', 'strong', 'emphasis', 'superscript', 'subscript', 'Section', 'time',
 ])
 
+/** Roles whose name is only their contents run together: left out when the contents follow, read as text when not. */
+const CONTAINERS = new Set(['row', 'cell', 'gridcell'])
+
 /** Roles a model can act on: the only lines that keep their ref. */
 const ACTIONABLE = new Set([
   'link', 'button', 'textbox', 'searchbox', 'checkbox', 'radio', 'combobox', 'listbox', 'option',
@@ -74,9 +77,11 @@ export function pageLines(snapshot: string): string[] {
     while (open.length && open.at(-1)!.indent >= indent) open.pop()
     const parent = open.length ? open.at(-1)!.depth : -1
     const node = parse(m[2])
-    // An unnamed wrapper, a URL, an unnamed image, or text with no word in it.
+    const wraps = !!node && CONTAINERS.has(node.role) && !node.text && m[2].endsWith(':')
+    // A row or cell with its contents under it, an unnamed wrapper, a URL, an unnamed image, or text with no word in it.
     const skip =
       !node ||
+      wraps ||
       (LAYOUT.has(node.role) && !node.name && !node.text) ||
       (node.role === 'img' && !node.name) ||
       (node.role === 'text' && !/[\p{L}\p{N}]/u.test(node.text ?? ''))
@@ -90,6 +95,7 @@ export function pageLines(snapshot: string): string[] {
       ...node,
       // A wrapper kept for its own words reads as the words.
       role: LAYOUT.has(node.role) && !node.name ? 'text' : node.role,
+      ...(CONTAINERS.has(node.role) && { role: 'text', name: undefined, text: node.text ?? (node.name ? (JSON.parse(node.name) as string) : '') }),
       // Where the pointer and focus are is not what the page says.
       flags: node.flags.filter((f) => f !== 'cursor=pointer' && f !== 'active' && (keepRef || !f.startsWith('ref='))),
     }
@@ -179,6 +185,18 @@ export function changes(before: string[], after: string[]): string {
     ...(appeared.length ? ['appeared on the page:', ...shown] : ['nothing appeared']),
     ...(gone ? [`${gone} line${gone === 1 ? '' : 's'} went from the page`] : []),
   ].join('\n')
+}
+
+/**
+ * The ref of a snapshot line a depth limit cut off: one at that depth, with
+ * a ref and no words of its own, whose children were left out (BRW-5).
+ */
+export function cutOff(raw: string, depth: number): string | null {
+  const m = /^(\s*)- (.*)$/.exec(raw)
+  if (!m || m[1].length !== depth * 2) return null
+  const node = parse(m[2])
+  if (!node || node.text) return null
+  return node.flags.find((f) => f.startsWith('ref='))?.slice(4) ?? null
 }
 
 /** The element a ref names, as a model and the user read it: `button "Place order"`; null when the page has none. */

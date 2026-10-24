@@ -33,11 +33,14 @@ has to look at the whole page again to see what happened.
   are left out. Every element that can be
   clicked, typed into or chosen from carries `[ref=…]`, the handle the
   actions take. A page longer than 8000 characters is cut on a line boundary
-  and says how many lines remain and which offset continues. A page that
-  cannot be read as elements within 10s (some deeply nested tables take
-  Playwright minutes) is read as its plain text instead, saying so: it can be
-  read but not acted on by ref, and is read so, without waiting again, until
-  its tab moves to another URL.
+  and says how many lines remain and which offset continues. Rows and cells
+  read as their contents. A page nested deeper than Chrome hands back in one
+  piece (40 levels; tables in tables do it) is read 40 levels at a time, each
+  part cut off read on its own and put back in place, so every element on it
+  keeps a ref that works. A page that still cannot be read as elements within
+  10s is read as its plain text instead, saying so: it can be read but not
+  acted on by ref, and is read so, without waiting again, until its tab moves
+  to another URL.
 - BRW-6: `browser_open(url)` opens an http or https page in the session's tab
   and returns its title, its URL after redirects, and its first part (BRW-5).
   Any other scheme is refused.

@@ -2,9 +2,9 @@ import { spawn } from 'node:child_process'
 import { access, mkdir, readFile, rm, stat } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
-import type { Browser, Page } from 'playwright-core'
+import type { Browser, Locator, Page } from 'playwright-core'
 import { configDir, readConfig } from 'neorouter'
-import { changes, describeAction, find, focused, pageAnswer, pageLines, textLines, window, type Action } from './page.ts'
+import { changes, cutOff, describeAction, find, focused, pageAnswer, pageLines, textLines, window, type Action } from './page.ts'
 
 export type { Action } from './page.ts'
 
@@ -203,10 +203,65 @@ export async function disconnect(home: string): Promise<void> {
 
 const reason = (e: unknown) => (e instanceof Error ? e.message : String(e)).split('\n')[0]
 
-/** Some pages (deeply nested tables) take Playwright minutes to read as elements; past this, they are read as text (BRW-5). */
+/** Reading a page as elements past this, it is read as text (BRW-5). */
 const SNAPSHOT_MS = 10_000
 
-const snapshot = (page: Page) => page.ariaSnapshot({ mode: 'ai', timeout: SNAPSHOT_MS } as never)
+/**
+ * Chrome cannot hand back a tree much deeper than this (its encoder gives
+ * up, and Playwright retries until it times out), so a page is read this
+ * deep and each part cut off is read on its own, at most PARTS of them.
+ */
+const DEPTH = 40
+const PARTS = 300
+
+const read = (where: Page | Locator) => where.ariaSnapshot({ mode: 'ai', depth: DEPTH, timeout: 3000 } as never)
+
+/** The page as Playwright's snapshot, however deeply nested (BRW-5). */
+async function snapshot(page: Page): Promise<string> {
+  const until = Date.now() + SNAPSHOT_MS
+  const top = await read(page)
+  const left = { parts: PARTS, until }
+  const whole = await deepen(page, top, left)
+  // A ref is looked up in the latest snapshot only, which a part's replaced: read the whole page last again.
+  if (left.parts < PARTS) await read(page)
+  return whole
+}
+
+let parts = 0
+
+/** A snapshot with each part its depth limit cut off read on its own and put back in place. */
+async function deepen(page: Page, text: string, left: { parts: number; until: number }): Promise<string> {
+  const lines = text.split('\n')
+  const cut = lines.flatMap((l, i) => {
+    const ref = cutOff(l, DEPTH)
+    return ref ? [{ i, ref }] : []
+  })
+  if (!cut.length) return text
+  // Each part's element first: the next snapshot replaces the one its ref is looked up in.
+  const handles = await Promise.all(cut.map((c) => page.locator(`aria-ref=${c.ref}`).elementHandle({ timeout: 1000 }).catch(() => null)))
+  for (const [k, c] of cut.entries()) {
+    const handle = handles[k]
+    if (!handle) continue
+    try {
+      const frame = await handle.ownerFrame()
+      if (!frame || left.parts <= 0 || Date.now() > left.until) continue
+      left.parts--
+      // Found again by a mark of navi's own, taken off once read.
+      const mark = `p${++parts}`
+      await handle.evaluate((e, m) => (e as unknown as { setAttribute: (a: string, v: string) => void }).setAttribute('data-navi-part', m), mark)
+      const part = await read(frame.locator(`[data-navi-part="${mark}"]`)).finally(() =>
+        handle.evaluate((e) => (e as unknown as { removeAttribute: (a: string) => void }).removeAttribute('data-navi-part')).catch(() => {}),
+      )
+      const pad = /^\s*/.exec(lines[c.i])![0]
+      lines[c.i] = (await deepen(page, part, left)).split('\n').map((l) => pad + l).join('\n')
+    } catch {
+      // A part that cannot be read is left as its one line.
+    } finally {
+      await handle.dispose().catch(() => {})
+    }
+  }
+  return lines.join('\n')
+}
 
 /** Pages found too complex, by the URL they were found at: read as text until they move on, not waited on again. */
 const complex = new WeakMap<Page, string>()

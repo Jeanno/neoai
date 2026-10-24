@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { changes, describeAction, element, find, focused, pageLines, textLines, window } from '../src/page.ts'
+import { changes, cutOff, describeAction, element, find, focused, pageLines, textLines, window } from '../src/page.ts'
 
 const SNAPSHOT = `- generic [active] [ref=e1]:
   - banner [ref=e2]:
@@ -35,7 +35,7 @@ test('a page reads as its elements, refs only where something can be done', () =
     '    link "Docs" [ref=e8]',
     'main',
     '  heading "Orders" [level=1]',
-    '  cell "Order 7"',
+    '  text: Order 7',
     '  button "Cancel" [ref=e17]',
     '  text [ref=e18]: Show more',
     '  textbox "Note" [ref=e19]: hi',
@@ -133,4 +133,24 @@ test('a page read as text says it has no refs', () => {
   const lines = textLines('Squid\n\n  Cephalopods  \n|\nOrder Teuthida')
   assert.match(lines[0], /without refs/)
   assert.deepEqual(lines.slice(1), ['text: Squid', 'text: Cephalopods', 'text: Order Teuthida'])
+})
+
+// BRW-5: a table reads as its cells' contents, not rows and cells named after them.
+test('rows and cells read as their contents', () => {
+  const lines = pageLines(`- table [ref=e1]:
+  - rowgroup [ref=e2]:
+    - row "Octopus 3 hearts" [ref=e3]:
+      - cell "Octopus" [ref=e4]:
+        - link "Octopus" [ref=e5]
+      - cell "3 hearts" [ref=e6]`)
+  assert.deepEqual(lines, ['link "Octopus" [ref=e5]', 'text: 3 hearts'])
+})
+
+// BRW-5: a line a depth limit cut off is found by its ref, and only one at that depth with no words.
+test('a part cut off by the depth limit is found', () => {
+  assert.equal(cutOff('    - generic [ref=e9]', 2), 'e9')
+  assert.equal(cutOff('    - generic [ref=e9]:', 2), 'e9')
+  assert.equal(cutOff('    - generic [ref=e9]: some words', 2), null)
+  assert.equal(cutOff('  - generic [ref=e9]', 2), null)
+  assert.equal(cutOff('    - text: looks like [ref=e9]', 2), null)
 })
