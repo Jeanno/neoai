@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import { realpath } from 'node:fs/promises'
 import { commandFrom, promptFrom, startsFresh } from './args.ts'
 import { parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
-import { makeApprover, makeLine } from './approve.ts'
+import { colorDiff, makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
 import { serveMcp, type Ask } from './mcp.ts'
 import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } from './serve.ts'
@@ -17,6 +17,8 @@ import { configuredBrowser, disconnect, findBrowser, installBrowser, makeTab, sh
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 import { describe, entryLabel, escalationFor, modelLabel } from './setup-core.ts'
 import { readLedger, stats } from './ledger.ts'
+import { makeJobs, serveToken, tailnetAddresses, titleOf, type JobDeps } from './jobs.ts'
+import { execFile } from 'node:child_process'
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 
@@ -93,6 +95,8 @@ const USAGE = [
   '       navi mcp',
   '       navi browser [--install]',
   '       navi stats [--days N]',
+  '       navi job "<what you want done>" [-C <directory>]',
+  '       navi jobs [<id> [y | n | stop] | link]',
 ].join('\n')
 
 /** What each form does, for --help (CLI-24). */
@@ -106,10 +110,13 @@ const ABOUT = [
   '  --max-steps N      model responses per turn (default 32)',
   'navi setup           choose models and keys; --check only reports',
   'navi sessions        list saved conversations; clear one or --all',
-  'navi serve           an OpenAI-compatible server on 127.0.0.1 for other apps',
+  'navi serve           an OpenAI-compatible server on 127.0.0.1 for other apps, and jobs;',
+  '                     --tailnet lets your phone reach it over Tailscale',
   'navi mcp             navi as a tool for MCP clients such as Claude Code',
   "navi browser         open navi's browser to sign in to sites; --install gets Chromium for it",
   'navi stats           how each model has done, from the ledger; --days N (default 30)',
+  'navi job "…"         hand navi serve a job to do in the background; -C sets where',
+  'navi jobs            list jobs; <id> shows one, then y, n or stop; link is for a phone',
 ].join('\n')
 
 /** Each link that did not answer, and why (MOD-21). */
@@ -156,14 +163,15 @@ async function mcp(argv: string[]) {
 
 /** `navi serve [--port N]`: the chain as an OpenAI-compatible server (serve.md). */
 async function serve(argv: string[]) {
-  const install = takeFlag(argv, '--install', false)
+  const tailnet = takeFlag(argv, '--tailnet', false)
+  const install = takeFlag(tailnet.rest, '--install', false)
   const uninstall = takeFlag(install.rest, '--uninstall', false)
   const port = takeFlag(uninstall.rest, '--port', true)
   const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
   if (port.rest.length || !Number.isInteger(n) || n < 1 || n > 65535 || (install.value !== undefined && uninstall.value !== undefined)) {
     if (port.rest.length) console.error(`unexpected: ${port.rest.join(' ')}`)
     else if (!Number.isInteger(n) || n < 1 || n > 65535) console.error(`not a port: ${port.value}`)
-    console.error('usage: navi serve [--port N] [--install | --uninstall]')
+    console.error('usage: navi serve [--port N] [--tailnet] [--install | --uninstall]')
     return 1
   }
   // SRV-8: kept running by launchd instead of this terminal.
@@ -172,7 +180,7 @@ async function serve(argv: string[]) {
     return 0
   }
   if (install.value !== undefined) {
-    const got = await installAgent(homedir(), n)
+    const got = await installAgent(homedir(), n, tailnet.value !== undefined)
     if ('problem' in got) {
       console.error(got.problem)
       return 1
@@ -193,17 +201,140 @@ async function serve(argv: string[]) {
   if (chosen) console.error(describe({ ...chosen, label: modelLabel(chosen) }))
   else console.error(`No model answers yet; requests will get a 503 until one does.`)
   for (const line of failedLines(failures)) console.error(dim(`· ${line}`))
+  const home = homedir()
+  const jobs = await makeJobs({ home, start: startJob, notify })
+  const tailnetAt = tailnet.value === undefined ? [] : tailnetAddresses()
+  if (tailnet.value !== undefined && !tailnetAt.length) console.error('This computer has no Tailscale address, so only it can reach navi serve.')
+  const directories = async () => [...new Set([...(await listSessions(home)).flatMap((s) => (s.cwd ? [s.cwd] : [])), home])]
   try {
-    await listen(chain, realServeDeps((line) => console.error(dim(`${new Date().toLocaleTimeString()} ${line}`))), n)
+    await listen(chain, realServeDeps((line) => console.error(dim(`${new Date().toLocaleTimeString()} ${line}`))), n, {
+      jobs: { jobs, token: await serveToken(home), directories },
+      tailnet: tailnetAt,
+    })
   } catch (e) {
     const busy = (e as NodeJS.ErrnoException).code === 'EADDRINUSE'
     console.error(busy ? `Port ${n} is in use; choose another with --port.` : `navi serve: ${(e as Error).message}`)
     return 1
   }
   console.error(`\nServing on ${bold(`http://127.0.0.1:${n}/v1`)}: give apps that base URL, any API key, and the model ${bold('navi')}.`)
-  console.error(dim('Only this computer can reach it. ^C stops it.'))
+  if (tailnetAt.length) console.error(dim(`Your tailnet reaches it too, with the token; \`navi jobs link\` gives a phone its link. ^C stops it.`))
+  else console.error(dim('Only this computer can reach it. ^C stops it.'))
   // Runs until stopped: the open server keeps the process alive.
   return new Promise<number>(() => {})
+}
+
+/** A job's session (JOB-1): the chain, escalation, the browser and the ledger, as the CLI's. */
+async function startJob({ directory, history, approve }: Parameters<JobDeps['start']>[0]) {
+  const config = await readConfig()
+  const { chosen, failures } = await walkChain(parseModelSpec(config.model, Object.keys(config.custom ?? {})))
+  if (!chosen) throw new Error(`navi has no model to answer with: ${failedLines(failures).join('; ')}`)
+  const harness = await createHarness({
+    model: auto(chosen.options),
+    contextWindow: chosen.contextWindow,
+    cwd: directory,
+    config,
+    front: 'job',
+    name: { model: modelLabel(chosen), local: chosen.local },
+    escalate: escalationFor(config),
+    browser: () => makeTab({ home: homedir() }),
+    // Nothing is remembered from a job (JOB-4): its "yes" is only a yes.
+    approve: async (command, o) => ((await approve(command, o)) === true),
+  })
+  return { session: harness.session(history), model: modelLabel(chosen) }
+}
+
+/** A macOS notification (JOB-5), unless the config turns them off. */
+function notify(title: string, text: string) {
+  if (process.platform !== 'darwin') return
+  void readConfig().then((config) => {
+    if (config.notify === false) return
+    const quote = (s: string) => `"${s.replace(/[\\"]/g, '\\$&')}"`
+    execFile('osascript', ['-e', `display notification ${quote(text)} with title ${quote(title)}`], () => {})
+  })
+}
+
+/** Talks to navi serve's jobs on this computer (JOB-13). */
+async function jobsApi(port: number, path: string, body?: unknown): Promise<{ status: number; data: any } | null> {
+  const token = await serveToken(homedir())
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { authorization: `Bearer ${token}`, ...(body !== undefined && { 'content-type': 'application/json' }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    return { status: r.status, data: await r.json().catch(() => ({})) }
+  } catch {
+    return null
+  }
+}
+
+const NOT_SERVING = 'navi serve is not running. Start it with `navi serve`, or keep it running with `navi serve --install`.'
+
+const statusWord = (s: string) => (s === 'waiting' ? bold('waiting for you') : s)
+
+/** One job as `navi jobs <id>` shows it (JOB-13). */
+function showJob(job: any) {
+  console.log(`${bold(job.id)} · ${statusWord(job.status)}${job.model ? ` · ${job.model}` : ''}`)
+  console.log(dim(job.directory))
+  console.log(job.prompt)
+  if (job.log?.length) console.log(dim(job.log.join('\n')))
+  if (job.pending) {
+    console.log(`\n${bold('do?')} ${job.pending.command}${job.pending.url ? `\n${dim(job.pending.url)}` : ''}`)
+    if (job.pending.diff) console.log(colorDiff(job.pending.diff))
+    console.log(dim(`answer with \`navi jobs ${job.id} y\` or \`n\``))
+  }
+  if (job.answer) console.log(`\n${job.answer}`)
+  if (job.error) console.error(`error: ${job.error}`)
+}
+
+/** `navi job "<prompt>" [-C <directory>] [--port N]` (JOB-13). */
+async function startJobCommand(argv: string[]) {
+  const port = takeFlag(argv, '--port', true)
+  const dir = takeFlag(port.rest, '-C', true)
+  const prompt = dir.rest.join(' ').trim()
+  const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
+  if (!prompt || !Number.isInteger(n)) {
+    console.error('usage: navi job "<what you want done>" [-C <directory>] [--port N]')
+    return 1
+  }
+  const got = await jobsApi(n, '/jobs', { prompt, directory: resolve(dir.value ?? process.cwd()) })
+  if (!got) return console.error(NOT_SERVING), 1
+  if (got.status !== 201) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
+  console.log(`Started job ${bold(got.data.id)}. Follow it with \`navi jobs ${got.data.id}\`.`)
+  return 0
+}
+
+/** `navi jobs [<id> [y | n | stop] | link] [--port N]` (JOB-12, JOB-13). */
+async function jobsCommand(argv: string[]) {
+  const port = takeFlag(argv, '--port', true)
+  const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
+  const [id, what, ...extra] = port.rest
+  if (extra.length || !Number.isInteger(n) || (what !== undefined && !['y', 'n', 'stop'].includes(what))) {
+    console.error('usage: navi jobs [<id> [y | n | stop] | link] [--port N]')
+    return 1
+  }
+  if (id === 'link') {
+    const at = tailnetAddresses()
+    if (!at.length) return console.error('This computer has no Tailscale address; a phone reaches navi serve over Tailscale.'), 1
+    const token = await serveToken(homedir())
+    for (const a of at) console.log(`http://${a}:${n}/#${token}`)
+    console.error(dim('This link is a key to this computer: anyone with it on your tailnet can run jobs. Run navi serve with --tailnet for it to answer.'))
+    return 0
+  }
+  if (!id) {
+    const got = await jobsApi(n, '/jobs')
+    if (!got) return console.error(NOT_SERVING), 1
+    const list = got.data.jobs ?? []
+    if (!list.length) console.log('No jobs yet. Start one with `navi job "<what you want done>"`.')
+    for (const j of list) console.log(`${bold(j.id)}  ${statusWord(j.status).padEnd(10)}  ${ago(new Date(j.created)).padEnd(10)}  ${titleOf(j.prompt)}`)
+    return 0
+  }
+  const path = what === undefined ? `/jobs/${id}` : what === 'stop' ? `/jobs/${id}/stop` : `/jobs/${id}/answer`
+  const got = await jobsApi(n, path, what === undefined ? undefined : what === 'stop' ? {} : { yes: what === 'y' })
+  if (!got) return console.error(NOT_SERVING), 1
+  if (got.status !== 200) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
+  showJob(got.data)
+  return 0
 }
 
 /** `navi stats [--days N]`: how each model has done (LED-6). */
@@ -306,6 +437,8 @@ async function main() {
   if (argv[0] === 'mcp') return mcp(argv.slice(1))
   if (argv[0] === 'browser') return browser(argv.slice(1))
   if (argv[0] === 'stats') return showStats(argv.slice(1))
+  if (argv[0] === 'job') return startJobCommand(argv.slice(1))
+  if (argv[0] === 'jobs') return jobsCommand(argv.slice(1))
   const steps = takeFlag(argv, '--max-steps', true)
   argv = steps.rest
   const resume = takeFlag(argv, '--resume', false)

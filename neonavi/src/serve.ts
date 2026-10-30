@@ -8,6 +8,11 @@ import { promisify } from 'node:util'
 import type { ReadableStream as WebStream } from 'node:stream/web'
 import { diagnose, PROVIDERS, readConfig, reset, route, type Route } from 'neorouter'
 import { optionsFor, type Entry } from './spec.ts'
+import { timingSafeEqual } from 'node:crypto'
+import { stat as statPath } from 'node:fs/promises'
+import { isAbsolute } from 'node:path'
+import type { Jobs } from './jobs.ts'
+import { PHONE_PAGE } from './phone.ts'
 
 /** What the server needs from the world; the real ones by default, fakes in tests. */
 export interface ServeDeps {
@@ -60,8 +65,79 @@ function linkName(entry: Entry, index: number): string {
   return `${slot} (${what})`
 }
 
-/** The request handler for SRV-2 to SRV-7, over the chain navi resolves. */
-export function serveHandler(chain: Entry[], d: ServeDeps) {
+/** Jobs, and how a listener reaches them (jobs.md). */
+export interface JobsOptions {
+  jobs: Jobs
+  /** The token every jobs request needs (JOB-8). */
+  token: string
+  /** Directories to offer as places to work (JOB-7). */
+  directories: () => Promise<string[]>
+}
+
+/** Whether a request carries the token, compared in constant time (JOB-8). */
+function bearer(req: IncomingMessage, token: string): boolean {
+  const got = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1] ?? ''
+  const a = Buffer.from(got)
+  const b = Buffer.from(token)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+async function jsonBody(req: IncomingMessage): Promise<Record<string, unknown> | string> {
+  const raw = await readBody(req)
+  if (!raw) return 'The request is larger than 50 MB.'
+  try {
+    const body = JSON.parse(raw.toString('utf8') || '{}')
+    if (body && typeof body === 'object' && !Array.isArray(body)) return body
+  } catch {
+    // Said below.
+  }
+  return 'The body is not a JSON object.'
+}
+
+const json = (res: ServerResponse, status: number, body: unknown) =>
+  res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
+
+/** The jobs API (JOB-7); the token is already checked. */
+async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string, o: JobsOptions) {
+  const { jobs } = o
+  const parts = path.split('/').slice(2)
+  if (req.method === 'GET' && !parts.length) return json(res, 200, { jobs: jobs.list() })
+  if (req.method === 'GET' && parts.length === 1 && parts[0] === 'directories') return json(res, 200, { directories: await o.directories() })
+  if (req.method === 'POST' && !parts.length) {
+    const body = await jsonBody(req)
+    if (typeof body === 'string') return error(res, 400, body)
+    if (typeof body.prompt !== 'string' || !body.prompt.trim()) return error(res, 400, 'Give the job a prompt.')
+    const directory = body.directory ?? (await o.directories())[0]
+    // JOB-9: somewhere real to work, named in full.
+    if (typeof directory !== 'string' || !isAbsolute(directory) || !(await statPath(directory).then((s) => s.isDirectory(), () => false)))
+      return error(res, 400, `${String(directory)} is not a directory on this computer; give an absolute path.`)
+    return json(res, 201, jobs.create(body.prompt.trim(), directory))
+  }
+  const job = parts[0] ? jobs.get(parts[0]) : undefined
+  if (!job) return error(res, 404, `There is no job ${parts[0] ?? ''}.`)
+  if (req.method === 'GET' && parts.length === 1) return json(res, 200, job)
+  if (req.method === 'POST' && parts.length === 2) {
+    const body = await jsonBody(req)
+    if (typeof body === 'string') return error(res, 400, body)
+    if (parts[1] === 'answer') {
+      if (typeof body.yes !== 'boolean') return error(res, 400, 'Answer with { "yes": true } or { "yes": false }.')
+      return jobs.answer(job.id, body.yes) ? json(res, 200, jobs.get(job.id)) : error(res, 400, 'The job is not waiting on an approval.')
+    }
+    if (parts[1] === 'reply') {
+      if (typeof body.prompt !== 'string' || !body.prompt.trim()) return error(res, 400, 'Give the follow-up a prompt.')
+      return jobs.reply(job.id, body.prompt.trim()) ? json(res, 200, jobs.get(job.id)) : error(res, 400, 'The job is still working; wait for it, or stop it.')
+    }
+    if (parts[1] === 'stop') return jobs.stop(job.id) ? json(res, 200, jobs.get(job.id)) : error(res, 400, 'The job is not running.')
+  }
+  error(res, 404, `Jobs answer GET /jobs, POST /jobs, GET /jobs/<id> and POST /jobs/<id>/answer, reply or stop, not ${req.method} ${path}.`)
+}
+
+/**
+ * The request handler for SRV-2 to SRV-7, over the chain navi resolves, and
+ * jobs when given (JOB-7). `remote` is a listener on the tailnet (JOB-10),
+ * where every request needs the token.
+ */
+export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptions; remote?: boolean } = {}) {
   /** Posts to one link; a 400 over the reasoning hint navi added is asked once more without it, as navi does. */
   async function send(r: Route, body: Record<string, unknown>, signal: AbortSignal): Promise<Response> {
     const sent: Record<string, unknown> = { ...r.extra, ...body, model: r.model }
@@ -136,6 +212,30 @@ export function serveHandler(chain: Entry[], d: ServeDeps) {
     res.once('close', () =>
       d.log(`${req.method} ${path || '/'} → ${via ? `${via} · ` : ''}${res.writableFinished ? res.statusCode : 'cut off'} · ${Date.now() - started} ms`),
     )
+    try {
+      const j = o.jobs
+      // JOB-10: the phone's page holds no secret; the token stays in its fragment.
+      if (j && req.method === 'GET' && !path) {
+        via = 'page'
+        return res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(PHONE_PAGE)
+      }
+      // JOB-8, JOB-11: the token, from anywhere, the page's Origin included.
+      if (j && (path === '/jobs' || path.startsWith('/jobs/'))) {
+        if (!bearer(req, j.token)) {
+          via = 'refused: no token'
+          return error(res, 401, 'Jobs need the token in ~/.neoai/serve-token, as Authorization: Bearer <token>.', 'authentication_error')
+        }
+        return await jobsRoute(req, res, path, j)
+      }
+      // JOB-10: on the tailnet the model endpoints need the token too.
+      if (o.remote && !(j && bearer(req, j.token))) {
+        via = 'refused: no token'
+        return error(res, 401, 'From another device, navi serve needs the token in ~/.neoai/serve-token as the API key.', 'authentication_error')
+      }
+    } catch (e) {
+      if (!res.headersSent) return error(res, 500, e instanceof Error ? e.message : String(e), 'server_error')
+      return void res.destroy()
+    }
     // SRV-5: a browser page carries an Origin; local apps do not.
     if (req.headers.origin) {
       via = `refused: sent from a web page (${req.headers.origin})`
@@ -147,7 +247,7 @@ export function serveHandler(chain: Entry[], d: ServeDeps) {
           .writeHead(200, { 'content-type': 'application/json' })
           .end(JSON.stringify({ object: 'list', data: [{ id: 'navi', object: 'model', created: 0, owned_by: 'navi' }] }))
       if (req.method === 'POST' && path === '/v1/chat/completions') return await chat(req, res, (v) => (via = v))
-      error(res, 404, `navi serves GET /v1/models and POST /v1/chat/completions, not ${req.method} ${path || '/'}.`)
+      error(res, 404, `navi serves GET /v1/models and POST /v1/chat/completions${o.jobs ? ', and jobs under /jobs' : ''}, not ${req.method} ${path || '/'}.`)
     } catch (e) {
       if (!res.headersSent) error(res, 500, e instanceof Error ? e.message : String(e), 'server_error')
       else res.destroy()
@@ -155,13 +255,26 @@ export function serveHandler(chain: Entry[], d: ServeDeps) {
   }
 }
 
-/** Starts listening on loopback (SRV-1); resolves once it is. */
-export function listen(chain: Entry[], d: ServeDeps, port = DEFAULT_PORT): Promise<Server> {
-  const server = createServer(serveHandler(chain, d))
-  return new Promise((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(port, '127.0.0.1', () => resolve(server))
-  })
+/**
+ * Starts listening on loopback (SRV-1), and on each tailnet address given
+ * (JOB-10); resolves once all are.
+ */
+export async function listen(chain: Entry[], d: ServeDeps, port = DEFAULT_PORT, o: { jobs?: JobsOptions; tailnet?: string[] } = {}): Promise<Server[]> {
+  const on = (host: string, remote: boolean) => {
+    const server = createServer(serveHandler(chain, d, { jobs: o.jobs, remote }))
+    return new Promise<Server>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(port, host, () => resolve(server))
+    })
+  }
+  const servers = [await on('127.0.0.1', false)]
+  try {
+    for (const host of o.tailnet ?? []) servers.push(await on(host, true))
+  } catch (e) {
+    for (const s of servers) s.close()
+    throw e
+  }
+  return servers
 }
 
 const run = promisify(execFile)
@@ -170,8 +283,8 @@ export const AGENT = 'dev.neoai.navi-serve'
 const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 /** The LaunchAgent that keeps `navi serve` running (SRV-8). */
-export function agentPlist(navi: string, port: number, log: string, path: string): string {
-  const args = [navi, 'serve', '--port', String(port)].map((a) => `    <string>${xml(a)}</string>`).join('\n')
+export function agentPlist(navi: string, port: number, log: string, path: string, tailnet = false): string {
+  const args = [navi, 'serve', '--port', String(port), ...(tailnet ? ['--tailnet'] : [])].map((a) => `    <string>${xml(a)}</string>`).join('\n')
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -218,7 +331,7 @@ export function keysOnlyInEnv(config: Record<string, any>, env: Record<string, s
 }
 
 /** Installs or replaces the LaunchAgent and starts it; returns the log's path (SRV-8). */
-export async function installAgent(home: string, port: number): Promise<{ log: string; unsaved: string[] } | { problem: string }> {
+export async function installAgent(home: string, port: number, tailnet = false): Promise<{ log: string; unsaved: string[] } | { problem: string }> {
   if (process.platform !== 'darwin') return { problem: 'Keeping navi serve running is only set up on macOS.' }
   const navi = await naviOnPath()
   if (!navi) return { problem: 'navi is not on PATH; install it first (neonavi/install.sh).' }
@@ -229,7 +342,7 @@ export async function installAgent(home: string, port: number): Promise<{ log: s
   const domain = `gui/${process.getuid?.()}`
   // Replacing: the old one is stopped first, or bootstrap refuses.
   await run('launchctl', ['bootout', `${domain}/${AGENT}`]).catch(() => {})
-  await writeFile(file, agentPlist(navi, port, log, process.env.PATH ?? '/usr/bin:/bin'))
+  await writeFile(file, agentPlist(navi, port, log, process.env.PATH ?? '/usr/bin:/bin', tailnet))
   // launchd may still be letting go of the old one; a second try a moment later usually takes.
   const start = () => run('launchctl', ['bootstrap', domain, file])
   try {

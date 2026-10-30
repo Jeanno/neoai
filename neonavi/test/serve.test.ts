@@ -32,7 +32,7 @@ async function serving(links: (Backend | null)[]) {
     forget: () => forgot++,
     log: (l) => logs.push(l),
   }
-  const server = await listen(CHAIN, deps, 0)
+  const [server] = await listen(CHAIN, deps, 0)
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
   return { base, sent, logs, forgot: () => forgot, close: () => server.close() }
 }

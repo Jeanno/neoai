@@ -48,6 +48,11 @@ add the requirement there first.
       chain, with fallback, and `--install` to keep it running. (SRV-1 to SRV-8)
 - [x] `navi mcp`: an MCP server whose `ask_navi` tool runs a navi turn.
       (MCP-1 to MCP-5)
+- [x] Jobs in navi serve: started, followed and approved from the terminal
+      (`navi job`, `navi jobs`) or a phone over Tailscale (`--tailnet`), kept
+      across restarts, with macOS notifications. (JOB-1 to JOB-13)
+- [ ] Push to the phone when a job waits (ntfy or a Shortcut), and jobs on a
+      schedule: a morning brief, a page watch. (`spec/jobs.md` Open)
 - [x] navi's own browser: a separate Chromium with its own logins, read as
       text with refs (never screenshots), each action answering with what
       changed; reading is free, acting is judged and asked. (BRW-1 to BRW-15)

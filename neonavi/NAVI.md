@@ -31,6 +31,22 @@ same way. Requests pass through as sent (images, tools, streaming); only
 this computer can reach it, and a web page cannot. `navi serve --install`
 keeps it running at login (macOS); `--uninstall` stops that (`spec/serve.md`).
 
+navi serve also runs jobs: work handed off to carry on in the background,
+whether or not a terminal stays open. `navi job "<prompt>"` starts one here
+(`-C <dir>` elsewhere); `navi jobs` lists them, `navi jobs <id>` shows what one
+did and its answer, `navi jobs <id> y` or `n` answers what it is waiting on, and
+`stop` stops it. A macOS notification says when a job waits for you and when it
+ends (`"notify": false` turns that off). With `navi serve --tailnet` (or
+`navi serve --install --tailnet`) it also listens on this computer's Tailscale
+address, where every request needs the token in `~/.neoai/serve-token`, and
+serves a page for your phone: start jobs, follow them, answer Yes or No.
+`navi jobs link` prints the link to open on the phone; it holds the token, so
+treat it as a key to this computer (`spec/jobs.md`).
+
+    navi serve --install --tailnet
+    navi job "check the build log in ~/Projects/app and tell me what broke"
+    navi jobs link
+
 `navi mcp` is navi as an MCP server: clients such as Claude Desktop, Claude
 Code or Cursor get one tool, `ask_navi`, that hands a task (and any files) to
 navi and your model in a directory they name. There is no one to say `y` over

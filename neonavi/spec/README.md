@@ -17,6 +17,9 @@ The spec is the source of truth for what `navi` does. Code and tests follow it.
 | `harness.md` | The harness as a library for front ends |
 | `ledger.md` | How each turn went, kept as counts on this computer |
 | `escalate.md` | Handing a struggling turn to a stronger model |
+| `serve.md` | navi's model chain as an OpenAI-compatible server |
+| `jobs.md` | Background jobs in navi serve, from the terminal or a phone |
+| `mcp.md` | navi as an MCP server |
 
 ## Requirements
 
