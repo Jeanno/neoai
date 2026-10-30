@@ -614,3 +614,104 @@ test('browser tools come only with a browser, on, and one tab per session', asyn
   assert.equal(made, 1)
   assert.match(String(model.doStreamCalls[0].prompt.find((m) => m.role === 'system')?.content), /browser_open/)
 })
+
+const ledgerOf = async (cwd: string) =>
+  (await readFile(join(cwd, '.neoai', 'ledger.jsonl'), 'utf8').catch(() => ''))
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l))
+
+/** A stronger model for escalation (ESC-1), answering in one step. */
+const stronger = (answer = 'Done properly.') => {
+  const model = fake([[...text('s', answer), finish('stop')]])
+  return { model, escalate: async () => ({ model, contextWindow: 200_000, name: 'big on Cloud', local: false }) }
+}
+
+// ESC-2, ESC-3, LED-1, LED-3
+test('a turn with no answer goes on on the escalation model, with what was done and why', async () => {
+  const first = fake([[...text('t', ''), finish('stop')]])
+  const up = stronger()
+  const h = await harness(first, { front: 'cli', name: { model: 'small', local: true }, escalate: up.escalate })
+  const events = await collect(h.session().turn('fix the build'))
+  const at = events.findIndex((e) => e.type === 'escalated')
+  assert.deepEqual(events[at], { type: 'escalated', from: 'small', to: 'big on Cloud', local: false, reason: 'it gave no answer' })
+  assert.ok(events.findIndex((e) => e.type === 'text' && e.text === 'Done properly.') > at)
+  const end = done(events)
+  assert.equal(end.text, 'Done properly.')
+  // The new model is told why, after what was asked.
+  const sent = JSON.stringify(up.model.doStreamCalls[0].prompt)
+  assert.match(sent, /fix the build[\s\S]*struggled: it gave no answer/)
+})
+
+// ESC-2: three failing tool calls in a row end the first model's go.
+test('three failing tool calls in a row escalate, and the first model is not asked again', async () => {
+  const bad = { path: 42 }
+  const first = fake([
+    [call('c1', 'read_file', bad), call('c2', 'read_file', bad), call('c3', 'read_file', bad), finish('tool-calls')],
+    [...text('t', 'never'), finish('stop')],
+  ])
+  const up = stronger()
+  const h = await harness(first, { escalate: up.escalate, name: { model: 'small', local: true } })
+  const events = await collect(h.session().turn('read it'))
+  assert.equal(events.find((e) => e.type === 'escalated' && e.reason === 'three tool calls in a row failed')?.type, 'escalated')
+  assert.equal(first.doStreamCalls.length, 1)
+  assert.equal(done(events).text, 'Done properly.')
+})
+
+// ESC-3: with nowhere to go, a turn ends as it would have.
+test('a turn whose escalation model does not resolve ends as it would have', async () => {
+  const bad = { path: 42 }
+  const first = fake([
+    [call('c1', 'read_file', bad), call('c2', 'read_file', bad), call('c3', 'read_file', bad), finish('tool-calls')],
+    [...text('t', 'Gave up on that.'), finish('stop')],
+  ])
+  const h = await harness(first, { escalate: async () => null })
+  const events = await collect(h.session().turn('read it'))
+  assert.equal(events.some((e) => e.type === 'escalated'), false)
+  assert.equal(done(events).text, 'Gave up on that.')
+})
+
+// ESC-4: the next turn starts on the session's model again.
+test('only the struggling turn escalates', async () => {
+  const first = fake([
+    [...text('t', ''), finish('stop')],
+    [...text('t', 'Small again.'), finish('stop')],
+  ])
+  const up = stronger()
+  const h = await harness(first, { escalate: up.escalate, name: { model: 'small', local: true } })
+  const s = h.session()
+  await collect(s.turn('one'))
+  const second = await collect(s.turn('two'))
+  assert.equal(done(second).text, 'Small again.')
+  assert.equal(up.model.doStreamCalls.length, 1)
+})
+
+// LED-1, LED-2, LED-3, LED-5, HAR-10
+test('the ledger keeps counts of each turn, never what was said, and only for a named front end', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-led-'))
+  const turn = async (o: Partial<HarnessOptions>) => {
+    const first = fake([
+      [call('c1', 'list_dir', { path: '.' }), finish('tool-calls')],
+      [...text('t', ''), finish('stop')],
+    ])
+    const h = await createHarness({ model: first, contextWindow: 100_000, cwd: home, home, config: { web_search: false }, ...o })
+    await collect(h.session().turn('a secret prompt'))
+  }
+  const up = stronger('secret answer')
+  await turn({ front: 'cli', name: { model: 'small', local: true }, escalate: up.escalate })
+  const [entry, ...more] = await ledgerOf(home)
+  assert.equal(more.length, 0)
+  assert.equal(entry.front, 'cli')
+  assert.equal(entry.model, 'big on Cloud')
+  assert.equal(entry.local, false)
+  assert.deepEqual(entry.escalated, { from: 'small', reason: 'it gave no answer' })
+  assert.deepEqual(entry.tools, { list_dir: 1 })
+  assert.equal(entry.steps, 3)
+  assert.equal(entry.outcome, 'answered')
+  assert.equal(entry.promptChars, 'a secret prompt'.length)
+  assert.doesNotMatch(JSON.stringify(entry), /secret|a\.txt/)
+  // No front end named, or the ledger off: nothing more is written.
+  await turn({})
+  await turn({ front: 'cli', config: { web_search: false, ledger: false } })
+  assert.equal((await ledgerOf(home)).length, 1)
+})

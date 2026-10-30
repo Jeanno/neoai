@@ -15,6 +15,7 @@ import { userContent, type Attachment } from './attach.ts'
 
 export { attach, splitUserContent, type Attachment } from './attach.ts'
 import { searchBackend } from './web.ts'
+import { record, type LedgerEntry } from './ledger.ts'
 import type { Tab } from './browser.ts'
 export { allowable, type Answer } from './approve.ts'
 
@@ -46,6 +47,18 @@ export interface HarnessConfig {
   allow?: string[]
   /** false removes the browser tools (BRW-13); `{ executable }` is for the front end (BRW-4). */
   browser?: unknown
+  /** false keeps no ledger (LED-5). */
+  ledger?: boolean
+}
+
+/** The model a struggling turn is handed to (ESC-1). */
+export interface Escalation {
+  model: Model
+  contextWindow: number
+  /** `<backend> · <model id>`, as the ledger and the front end show it. */
+  name: string
+  /** False when prompts leave the machine. */
+  local: boolean
 }
 
 export interface HarnessOptions {
@@ -72,6 +85,15 @@ export interface HarnessOptions {
   browser?: () => Tab
   /** Read from `~/.neoai/config.json` when left out. */
   config?: HarnessConfig
+  /** The front end, for the ledger (HAR-10, LED-1): `cli`, `raycast`, `mcp`, `job`. */
+  front?: string
+  /** The model given, as the ledger shows it (LED-1); its own id otherwise. */
+  name?: { model: string; local: boolean }
+  /**
+   * Resolves the model a struggling turn goes on with (ESC-1), the first
+   * time one does; null when it does not answer. Left out, nothing escalates.
+   */
+  escalate?: () => Promise<Escalation | null>
   /** Model responses per turn (CLI-9). */
   maxSteps?: number
   /** Where the NAVI.md walk stops outside a repo (CTX-2), and whose `.neoai` an "always" is saved to; the home directory by default. */
@@ -108,6 +130,8 @@ export type HarnessEvent =
   | { type: 'tool-result'; id: string; name: string; output: unknown; error: boolean }
   /** The model call failed. The turn still ends with `done`. */
   | { type: 'error'; error: unknown }
+  /** The turn struggled and goes on on a stronger model (ESC-3); `local` is false when its prompts leave the machine. */
+  | { type: 'escalated'; from: string; to: string; local: boolean; reason: string }
   /**
    * Always the last event. `history` is what to store and pass back (HAR-3);
    * `text` is the final step's answer, `empty` when it is blank (CLI-12), and
@@ -137,8 +161,13 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
   // Read from where an "always" is saved (TL-43), so the two never differ.
   const config = o.config ?? ((await readConfig(configDir(o.home ?? homedir()))) as HarnessConfig)
   const maxSteps = o.maxSteps ?? DEFAULT_STEPS
-  const native = o.streamsToolCalls ?? ((o.model as { streamsToolCalls?: boolean }).streamsToolCalls === true || !o.model.provider.startsWith('neorouter'))
-  const model = native ? o.model : generatedAsStream(o.model)
+  const streamable = (m: Model, told?: boolean) =>
+    (told ?? ((m as { streamsToolCalls?: boolean }).streamsToolCalls === true || !m.provider.startsWith('neorouter'))) ? m : generatedAsStream(m)
+  const model = streamable(o.model, o.streamsToolCalls)
+  const home = o.home ?? homedir()
+  const named = o.name ?? { model: o.model.modelId, local: false }
+  // Resolved the first time a turn struggles, then kept (ESC-1).
+  let escalation: Promise<Escalation | null> | undefined
   // On unless the config says otherwise; off keeps everything but the model on the machine.
   const web = config.web_search !== false
   const fetch = web && config.fetch_url !== false
@@ -150,7 +179,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
   const systemTokens = estimateTokens([{ role: 'system', content: system }])
 
   /** The front end's answer, or a decline if it throws or the turn stops first. */
-  const ask = (command: string, signal: AbortSignal, change?: FileChange, action?: { url: string }) =>
+  const askUser = (command: string, signal: AbortSignal, change?: FileChange, action?: { url: string }) =>
     new Promise<Answer>((resolve) => {
       if (!o.approve || signal.aborted) return resolve(false)
       // Removed once answered: a long turn would otherwise pile listeners on one signal.
@@ -195,6 +224,13 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
     }
 
     async function run(prompt: string, attachments: Attachment[] | undefined, signal: AbortSignal, emit: (e: HarnessEvent) => void) {
+      const started = Date.now()
+      let declined = 0
+      const ask = (command: string, signal: AbortSignal, change?: FileChange, action?: { url: string }) =>
+        askUser(command, signal, change, action).then((ok) => {
+          if (ok === false && !signal.aborted) declined++
+          return ok
+        })
       const packed = await compact(o.model, history, { contextWindow: o.contextWindow, extraTokens: systemTokens })
       if (packed.compacted) emit({ type: 'compacted', messages: packed.compacted })
       const sent: ModelMessage[] = [...packed.messages, { role: 'user', content: userContent(prompt, attachments) }]
@@ -255,67 +291,163 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         { web, fetch, write, cwd: o.cwd, ripgrep: o.ripgrep, search: searchBackend(config.search), browser },
       )
 
-      // Messages of the finished steps; the step in flight only adds its text.
-      let finished: ModelMessage[] = []
-      let lastText = ''
-      let partial = ''
-      let stopped = signal.aborted
-      if (!stopped) {
-        try {
-          const result = streamText({
-            model,
-            system,
-            tools,
-            messages: sent,
-            stopWhen: stepCountIs(maxSteps),
-            abortSignal: signal,
-            // The default logs to the console; errors are events here (HAR-5).
-            onError: () => {},
-            onStepFinish: (step) => {
-              finished = step.response.messages
-              lastText = step.text
-            },
-          })
-          for await (const part of result.fullStream) {
-            switch (part.type) {
-              case 'start-step':
-              case 'finish-step':
-                partial = ''
-                break
-              case 'text-delta':
-                partial += part.text
-                emit({ type: 'text', text: part.text })
-                break
-              case 'tool-call':
-                emit({ type: 'tool-call', id: part.toolCallId, name: part.toolName, input: part.input })
-                shownCalls.add(part.toolCallId)
-                shown.get(part.toolCallId)?.()
-                break
-              case 'tool-result':
-                if (!part.preliminary)
-                  emit({ type: 'tool-result', id: part.toolCallId, name: part.toolName, output: part.output, error: false })
-                break
-              case 'tool-error':
-                emit({ type: 'tool-result', id: part.toolCallId, name: part.toolName, output: message(part.error), error: true })
-                break
-              case 'error':
-                emit({ type: 'error', error: part.error })
-                break
-              case 'abort':
-                stopped = true
-                break
+      const tally: Record<string, number> = {}
+      let steps = 0
+      let toolErrors = 0
+      let failed = false
+
+      /**
+       * One model's go at the turn. With `struggle` set, a failing model call,
+       * three failing tool calls in a row, or a step budget spent still
+       * calling tools ends it early with why (ESC-2), rather than as an error.
+       */
+      // Somewhere to go: the escalation model resolved, and is not this one.
+      const target = async () => {
+        if (!o.escalate) return null
+        const to = await (escalation ??= o.escalate().catch(() => null))
+        return to && to.name !== named.model ? to : null
+      }
+
+      const attempt = async (m: Model, messages: ModelMessage[], struggle: boolean) => {
+        const own = new AbortController()
+        const onStop = () => own.abort()
+        if (signal.aborted) own.abort()
+        else signal.addEventListener('abort', onStop, { once: true })
+        // Messages of the finished steps; the step in flight only adds its text.
+        let finished: ModelMessage[] = []
+        let lastText = ''
+        let partial = ''
+        let stopped = signal.aborted
+        let trouble: string | undefined
+        let inARow = 0
+        let lastCalledTools = false
+        let taken = 0
+        if (!stopped) {
+          try {
+            const result = streamText({
+              model: m,
+              system,
+              tools,
+              messages,
+              stopWhen: stepCountIs(maxSteps),
+              abortSignal: own.signal,
+              // The default logs to the console; errors are events here (HAR-5).
+              onError: () => {},
+              onStepFinish: (step) => {
+                finished = step.response.messages
+                lastText = step.text
+                lastCalledTools = step.toolCalls.length > 0
+                taken++
+              },
+            })
+            for await (const part of result.fullStream) {
+              switch (part.type) {
+                case 'start-step':
+                case 'finish-step':
+                  partial = ''
+                  break
+                case 'text-delta':
+                  partial += part.text
+                  emit({ type: 'text', text: part.text })
+                  break
+                case 'tool-call':
+                  tally[part.toolName] = (tally[part.toolName] ?? 0) + 1
+                  emit({ type: 'tool-call', id: part.toolCallId, name: part.toolName, input: part.input })
+                  shownCalls.add(part.toolCallId)
+                  shown.get(part.toolCallId)?.()
+                  break
+                case 'tool-result':
+                  if (!part.preliminary) {
+                    inARow = 0
+                    emit({ type: 'tool-result', id: part.toolCallId, name: part.toolName, output: part.output, error: false })
+                  }
+                  break
+                case 'tool-error':
+                  toolErrors++
+                  emit({ type: 'tool-result', id: part.toolCallId, name: part.toolName, output: message(part.error), error: true })
+                  if (struggle && ++inARow >= 3 && !trouble && (await target())) {
+                    trouble = 'three tool calls in a row failed'
+                    own.abort()
+                  }
+                  break
+                case 'error':
+                  if (struggle && !trouble && (await target())) {
+                    trouble = `the model call failed (${message(part.error)})`
+                    own.abort()
+                  } else if (!trouble) {
+                    failed = true
+                    emit({ type: 'error', error: part.error })
+                  }
+                  break
+                case 'abort':
+                  if (!trouble) stopped = true
+                  break
+              }
+            }
+          } catch (error) {
+            if (signal.aborted) stopped = true
+            else if (struggle && !trouble && (await target())) trouble = `the model call failed (${message(error)})`
+            else if (!trouble) {
+              failed = true
+              emit({ type: 'error', error })
             }
           }
-        } catch (error) {
-          if (signal.aborted) stopped = true
-          else emit({ type: 'error', error })
         }
+        signal.removeEventListener('abort', onStop)
+        steps += taken
+        // A step cut short keeps its words but not its tool calls: a call without
+        // its result is rejected by every backend on the next turn.
+        const kept: ModelMessage[] = partial && !trouble ? [{ role: 'assistant', content: partial }] : []
+        const text = trouble ? '' : partial || lastText
+        if (struggle && !trouble && !stopped && !failed && (await target())) {
+          if (taken >= maxSteps && lastCalledTools) trouble = `it used all ${maxSteps} steps still calling tools`
+          else if (!text.trim()) trouble = 'it gave no answer'
+        }
+        return { messages: [...finished, ...kept], text, stopped, trouble }
       }
-      // A step cut short keeps its words but not its tool calls: a call without
-      // its result is rejected by every backend on the next turn.
-      const kept: ModelMessage[] = partial ? [{ role: 'assistant', content: partial }] : []
-      history = [...sent, ...finished, ...kept]
-      const text = partial || lastText
+
+      // Escalation is only tried where there is somewhere to go (ESC-3).
+      const first = await attempt(model, sent, !!o.escalate)
+      let done = first
+      let whole = [...sent, ...first.messages]
+      let escalated: { from: string; reason: string } | undefined
+      let answering = named
+      const to = first.trouble && !first.stopped ? await target() : null
+      if (to && first.trouble) {
+        escalated = { from: named.model, reason: first.trouble }
+        answering = { model: to.name, local: to.local }
+        emit({ type: 'escalated', from: named.model, to: to.name, local: to.local, reason: first.trouble })
+        // What the first model did stays, with a word on why another goes on (ESC-3).
+        const note: ModelMessage = {
+          role: 'user',
+          content: `(navi: the model that started on this struggled: ${first.trouble}. Carry on from where it got to and finish the task above.)`,
+        }
+        done = await attempt(streamable(to.model), [...whole, note], false)
+        whole = [...whole, note, ...done.messages]
+      }
+      history = whole
+      const text = done.text
+      const stopped = done.stopped
+      // Written before the turn is said to be done: a front end may exit on `done`.
+      // Kept for front ends that name themselves (HAR-10), so a library's own tests leave none.
+      if (o.front && config.ledger !== false) {
+        const entry: LedgerEntry = {
+          at: new Date().toISOString(),
+          front: o.front,
+          model: answering.model,
+          local: answering.local,
+          ms: Date.now() - started,
+          steps,
+          tools: tally,
+          toolErrors,
+          declined,
+          promptChars: prompt.length,
+          attachments: attachments?.length ?? 0,
+          outcome: stopped ? 'stopped' : text.trim() ? 'answered' : failed ? 'error' : 'empty',
+          ...(escalated && { escalated }),
+        }
+        await record(home, entry)
+      }
       emit({ type: 'done', history, text, empty: !text.trim(), stopped })
     }
 

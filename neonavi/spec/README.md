@@ -15,6 +15,8 @@ The spec is the source of truth for what `navi` does. Code and tests follow it.
 | `context.md` | NAVI.md discovery |
 | `setup.md` | Setup: choosing models, shared by `navi setup` and Raycast |
 | `harness.md` | The harness as a library for front ends |
+| `ledger.md` | How each turn went, kept as counts on this computer |
+| `escalate.md` | Handing a struggling turn to a stronger model |
 
 ## Requirements
 

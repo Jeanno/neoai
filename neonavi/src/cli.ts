@@ -15,7 +15,8 @@ import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEven
 import { readConfig, reset } from 'neorouter'
 import { configuredBrowser, disconnect, findBrowser, installBrowser, makeTab, showBrowser } from './browser.ts'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
-import { describe, entryLabel, modelLabel } from './setup-core.ts'
+import { describe, entryLabel, escalationFor, modelLabel } from './setup-core.ts'
+import { readLedger, stats } from './ledger.ts'
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 
@@ -91,6 +92,7 @@ const USAGE = [
   '       navi serve [--port N] [--install | --uninstall]',
   '       navi mcp',
   '       navi browser [--install]',
+  '       navi stats [--days N]',
 ].join('\n')
 
 /** What each form does, for --help (CLI-24). */
@@ -107,6 +109,7 @@ const ABOUT = [
   'navi serve           an OpenAI-compatible server on 127.0.0.1 for other apps',
   'navi mcp             navi as a tool for MCP clients such as Claude Code',
   "navi browser         open navi's browser to sign in to sites; --install gets Chromium for it",
+  'navi stats           how each model has done, from the ledger; --days N (default 30)',
 ].join('\n')
 
 /** Each link that did not answer, and why (MOD-21). */
@@ -127,7 +130,15 @@ async function mcp(argv: string[]) {
     const { chosen, failures } = await walkChain(parseModelSpec(config.model, Object.keys(config.custom ?? {})))
     if (!chosen) throw new Error(`navi has no model to answer with: ${failedLines(failures).join('; ')}`)
     // No approve callback: what would need a y is declined (MCP-4).
-    const harness = await createHarness({ model: auto(chosen.options), contextWindow: chosen.contextWindow, cwd: directory, config })
+    const harness = await createHarness({
+      model: auto(chosen.options),
+      contextWindow: chosen.contextWindow,
+      cwd: directory,
+      config,
+      front: 'mcp',
+      name: { model: modelLabel(chosen), local: chosen.local },
+      escalate: escalationFor(config),
+    })
     let done: Extract<HarnessEvent, { type: 'done' }> | undefined
     const errors: string[] = []
     for await (const e of harness.session().turn(prompt, { attachments })) {
@@ -193,6 +204,18 @@ async function serve(argv: string[]) {
   console.error(dim('Only this computer can reach it. ^C stops it.'))
   // Runs until stopped: the open server keeps the process alive.
   return new Promise<number>(() => {})
+}
+
+/** `navi stats [--days N]`: how each model has done (LED-6). */
+async function showStats(argv: string[]) {
+  const days = argv[0] === '--days' && argv.length === 2 ? Number(argv[1]) : argv.length ? NaN : 30
+  if (!Number.isInteger(days) || days < 1) {
+    console.error(`unexpected: ${argv.join(' ')}`)
+    console.error('usage: navi stats [--days N]')
+    return 1
+  }
+  console.log(stats(await readLedger(homedir(), Date.now() - days * 86_400_000), days))
+  return 0
 }
 
 /** `navi browser [--install]`: opens navi's browser for signing in, or installs Chromium for it (BRW-12). */
@@ -282,6 +305,7 @@ async function main() {
   if (argv[0] === 'serve') return serve(argv.slice(1))
   if (argv[0] === 'mcp') return mcp(argv.slice(1))
   if (argv[0] === 'browser') return browser(argv.slice(1))
+  if (argv[0] === 'stats') return showStats(argv.slice(1))
   const steps = takeFlag(argv, '--max-steps', true)
   argv = steps.rest
   const resume = takeFlag(argv, '--resume', false)
@@ -378,6 +402,9 @@ async function main() {
     contextWindow: chosen.contextWindow,
     cwd,
     config,
+    front: 'cli',
+    name: { model: modelLabel(chosen), local: chosen.local },
+    escalate: escalationFor(config),
     maxSteps,
     browser: () => makeTab({ home: homedir() }),
     // The question would otherwise be drawn beside a spinning frame.
@@ -457,6 +484,8 @@ async function main() {
                 : `· allowed from now on: ${e.command} (\`allow\` in ~/.neoai/config.json)`,
             )
           else if (e.type === 'error') note(`error: ${e.error instanceof Error ? e.error.message : String(e.error)}`)
+          // ESC-5: said where the user sees model announcements, REMOTE called out (CLI-15).
+          else if (e.type === 'escalated') note(`· escalated to ${e.to}${e.local ? '' : ' (REMOTE: prompts leave this computer)'}: ${e.reason}`)
           // The model or a tool is busy again.
           endLine()
           spin.start()

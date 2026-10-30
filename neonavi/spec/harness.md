@@ -33,6 +33,10 @@ jack-ins are others (`jackins/NAVI.md`).
   tab (`makeTab` from `neonavi/browser`); the harness makes one per session
   on first use. Without it there are no browser tools, and Playwright is
   never loaded.
+- HAR-10: A front end names itself and the model it gives (LED-1), and may
+  give a way to resolve the escalation model (ESC-1); the harness keeps the
+  ledger and escalates, so every front end does both the same way. A
+  harness made without a front end's name keeps no ledger.
 - HAR-5: The harness never writes to stdout or stderr itself; everything a user
   might see is an event or a callback, so a front end with no terminal works.
 - HAR-6: The CLI is built on the library, with its behaviour in `cli.md`

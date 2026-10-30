@@ -51,6 +51,9 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
   (HAR-7) to a question, `Describe these files.` when none is typed. With
   nothing selected, or a file that cannot be attached, it says which and asks
   nothing. The answer shows the files beside the question.
+- RAY-12: The extension keeps the ledger (LED-1) as `raycast` and escalates
+  (ESC-1); an escalation is a note in the conversation naming the new model,
+  REMOTE called out, and why.
 
 ## Open
 

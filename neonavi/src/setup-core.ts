@@ -17,6 +17,7 @@ import {
   type Verdict,
 } from 'neorouter'
 import { parseModelSpec, walkChain, type Chosen, type Entry, type Failure as ChainFailure } from './spec.ts'
+import type { Escalation } from './harness.ts'
 
 /**
  * Setup's one core (SET-23): every choice, check and write. Front ends — the
@@ -186,6 +187,22 @@ export function modelLabel(chosen: { backend: string; modelId: string; local: bo
   // A custom endpoint on this computer is still named (MOD-20).
   const runtime = chosen.local && chosen.entry?.where !== 'remote'
   return runtime ? chosen.modelId : `${chosen.modelId} on ${nameOf(chosen.backend)}`
+}
+
+/**
+ * The model a struggling turn is handed to (ESC-1), from `"escalate"` in the
+ * config, as the harness takes it: resolved on first use, like `model`.
+ * Undefined when the config names none.
+ */
+export function escalationFor(config: { escalate?: unknown; custom?: Record<string, unknown> }): (() => Promise<Escalation | null>) | undefined {
+  const spec = config.escalate
+  if (typeof spec !== 'string' && !(Array.isArray(spec) && spec.every((s) => typeof s === 'string'))) return undefined
+  const chain = parseModelSpec(spec, Object.keys(config.custom ?? {}))
+  if (!chain.length) return undefined
+  return async () => {
+    const { chosen } = await walkChain(chain)
+    return chosen && { model: auto(chosen.options), contextWindow: chosen.contextWindow, name: modelLabel(chosen), local: chosen.local }
+  }
 }
 
 /** What one link means, in words. */

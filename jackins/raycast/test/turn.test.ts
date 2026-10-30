@@ -132,3 +132,18 @@ test('RAY-3, BRW-11: a browser action awaiting approval is shown with its page',
     /\*\*Do this in navi's browser\?\*\*\n\n```text\nclick button "Buy" on shop\.test\n```\n\nOn this page:\n\n```text\nhttps:\/\/shop\.test\/\n```/,
   )
 })
+
+test('RAY-12: an escalation is a note naming the new model and why', () => {
+  const turn = fold([
+    {
+      type: 'escalated',
+      from: 'qwen on Darkbloom',
+      to: 'claude-sonnet-5-5 on Anthropic',
+      local: false,
+      reason: 'it gave no answer',
+    },
+  ])
+  assert.deepEqual(turn.items, [
+    { kind: 'note', line: 'escalated to claude-sonnet-5-5 on Anthropic (REMOTE): it gave no answer' },
+  ])
+})

@@ -35,6 +35,8 @@
 - CLI-29: The CLI offers the browser tools (HAR-9). A browser action that
   asks (BRW-11) shows `do?`, its one-line description and the page's URL,
   and takes only `y`; `navi browser` is described in BRW-12.
+- CLI-30: The CLI keeps the ledger (LED-1) as `cli` and escalates
+  (ESC-1, ESC-5); `navi mcp` does both as `mcp`. `navi stats` is LED-6.
 - CLI-24: `navi -h`, `--help` or `help` prints the usage and what each form
   does to stdout and exits 0. A `--max-steps` that is not a whole number of
   at least 1 is reported with the usage, exit 1.

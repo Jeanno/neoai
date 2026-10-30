@@ -36,6 +36,11 @@ add the requirement there first.
       drawn with PDFKit on macOS. (HAR-7)
 - [x] `navi sessions` lists per-directory histories; `navi sessions clear`
       forgets one or all. (SES-12 to SES-14)
+- [x] Local first: a struggling turn escalates to `"escalate"`, keeping what
+      was done. (ESC-1 to ESC-5)
+- [x] A ledger of how each turn went, as counts, and `navi stats`. (LED-1 to LED-6)
+- [ ] Route by the ledger: start a kind of turn where it has gone well.
+      (`spec/ledger.md` Open)
 
 ### 3. Everywhere: navi in the apps I already use
 

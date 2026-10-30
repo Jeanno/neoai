@@ -56,6 +56,18 @@ send, buy, post, delete or change a setting asks you first (`do? … [y/N]`).
     navi browser
     navi -p "what's on my GitHub notifications page"
 
+navi starts every turn on your chain, usually a free model on your own
+machine. Name a stronger one as `"escalate"` in the config (for example
+`"escalate": "anthropic:claude-sonnet-5-5"`) and a turn that struggles (its
+model call fails, three tool calls in a row fail, it runs out of steps, or it
+gives no answer) carries on there, with everything done so far
+(`spec/escalate.md`). Each turn also leaves a line of counts in
+`~/.neoai/ledger.jsonl` (which model, how long, which tools, how it ended;
+never what was said), and `navi stats` shows how each model has done
+(`spec/ledger.md`; `"ledger": false` turns it off).
+
+    navi stats
+
 Each directory keeps its own conversation. `navi sessions` lists them, newest
 first; `navi sessions clear` forgets this directory's, `clear <directory>`
 another's, `clear --all` every one.

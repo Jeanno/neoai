@@ -1,6 +1,8 @@
 import { showToast, Toast } from '@raycast/api'
 import type { ModelMessage } from 'ai'
 import { createHarness, type Attachment, type FileChange, type Harness } from 'neonavi/harness'
+import { escalationFor } from 'neonavi/setup'
+import { readConfig } from 'neorouter'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { errorMessage, forgetNavi, naviHome, resolveNavi, type Navi } from './model'
 import { waitForAnswer, type Approval } from './approval'
@@ -57,8 +59,16 @@ export function useNavi() {
 
   const harnessFor = (n: Navi): Promise<Harness> => {
     if (harness.current?.navi !== n) {
-      const made = naviHome().then((cwd) =>
-        createHarness({ model: n.model, contextWindow: n.chosen.contextWindow, cwd, approve }),
+      const made = Promise.all([naviHome(), readConfig()]).then(([cwd, config]) =>
+        createHarness({
+          model: n.model,
+          contextWindow: n.chosen.contextWindow,
+          cwd,
+          approve,
+          front: 'raycast',
+          name: { model: n.label, local: n.local },
+          escalate: escalationFor(config),
+        }),
       )
       // A failed start is not kept, so asking again tries again.
       made.catch(() => (harness.current = null))
