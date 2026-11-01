@@ -20,6 +20,7 @@ The spec is the source of truth for what `navi` does. Code and tests follow it.
 | `serve.md` | navi's model chain as an OpenAI-compatible server |
 | `jobs.md` | Background jobs in navi serve, from the terminal or a phone |
 | `schedules.md` | Jobs navi serve starts by itself, at a time or every so often |
+| `push.md` | Job notifications sent to a phone through ntfy |
 | `mcp.md` | navi as an MCP server |
 
 ## Requirements

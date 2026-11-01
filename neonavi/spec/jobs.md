@@ -78,6 +78,4 @@ terminal that started them closes.
 
 ## Open
 
-- Push notifications to the phone (ntfy, or a Shortcut), rather than the
-  page being open.
 - A queue, so a busy computer runs a few at a time.

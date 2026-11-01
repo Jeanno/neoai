@@ -58,6 +58,17 @@ up once, not one by one, unless they are more than 12 hours late
 
     navi schedule "summarise what's new on my GitHub notifications page" --at 08:30 --days weekdays
 
+To have jobs reach your phone, install the ntfy app, subscribe to a long
+random topic, and put it in the config as `"push": "https://ntfy.sh/<topic>"`
+(or a ntfy server of your own); `navi push test` checks it, and prints a
+random topic to use if there is none. A job waiting on you then arrives as an
+urgent notification, and tapping it opens that job on the phone page when
+navi serve runs with `--tailnet`. Anyone who knows the topic can read what is
+sent, so a push says only what happened and the job's id; add
+`"detail": true` (`"push": { "url": …, "detail": true }`) to include the
+prompt and the command. The token never leaves this computer
+(`spec/push.md`).
+
 `navi mcp` is navi as an MCP server: clients such as Claude Desktop, Claude
 Code or Cursor get one tool, `ask_navi`, that hands a task (and any files) to
 navi and your model in a directory they name. There is no one to say `y` over

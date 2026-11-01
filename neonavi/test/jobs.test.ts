@@ -45,13 +45,17 @@ function fakeSession(approve: Approve, start: ModelMessage[]): Session {
 async function setup(o: Partial<JobDeps> = {}) {
   const home = await mkdtemp(join(tmpdir(), 'navi-jobs-'))
   const notes: string[] = []
+  const pushed: { job: string; urgent?: boolean }[] = []
   const deps: JobDeps = {
     home,
     start: async ({ approve, history }) => ({ session: fakeSession(approve, history), model: 'small' }),
-    notify: (title, text) => notes.push(`${title}: ${text}`),
+    notify: (title, text, job, urgent) => {
+      notes.push(`${title}: ${text}`)
+      pushed.push({ job, urgent })
+    },
     ...o,
   }
-  return { home, notes, deps, jobs: await makeJobs(deps) }
+  return { home, notes, pushed, deps, jobs: await makeJobs(deps) }
 }
 
 /** Until the job is in that state, or a second has gone. */
@@ -83,11 +87,13 @@ test('a job runs in the background, logs what it did, and can be followed up', a
 
 // JOB-4, JOB-5
 test('an approval waits in the job until answered', async () => {
-  const { jobs, notes } = await setup()
+  const { jobs, notes, pushed } = await setup()
   const job = jobs.create('ask', '/tmp')
   await until(jobs, job.id, 'waiting')
   assert.deepEqual(jobs.get(job.id)!.pending, { command: 'rm -rf build' })
   assert.deepEqual(notes, ['navi is waiting for you: ask: rm -rf build'])
+  // PSH-3: named by the job, and urgent.
+  assert.deepEqual(pushed, [{ job: job.id, urgent: true }])
   // A follow-up waits too.
   assert.equal(jobs.reply(job.id, 'more'), false)
   assert.ok(jobs.answer(job.id, true))

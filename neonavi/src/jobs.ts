@@ -49,8 +49,8 @@ export interface JobDeps {
   home: string
   /** A session to run a job's turn in; throws when no model answers. */
   start: (o: { directory: string; history: ModelMessage[]; approve: NonNullable<HarnessOptions['approve']> }) => Promise<{ session: Session; model: string }>
-  /** A desktop notification (JOB-5). */
-  notify: (title: string, text: string) => void
+  /** A notification (JOB-5), for the desktop and a phone (PSH-1); `urgent` when it waits on you. */
+  notify: (title: string, text: string, job: string, urgent?: boolean) => void
 }
 
 export interface Jobs {
@@ -149,7 +149,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         job.pending = { command, ...(o.action && { url: o.action.url }), ...(o.change && { diff: o.change.diff }) }
         job.status = 'waiting'
         void save(job)
-        d.notify('navi is waiting for you', `${titleOf(job.prompt)}: ${command}`)
+        d.notify('navi is waiting for you', `${titleOf(job.prompt)}: ${command}`, job.id, true)
         const settle = (yes: boolean) => {
           answers.delete(job.id)
           o.signal.removeEventListener('abort', no)
@@ -195,7 +195,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
     }
     await save(job)
     const word = { done: 'is done', failed: 'failed', stopped: 'was stopped' }[job.status as 'done' | 'failed' | 'stopped']
-    if (word) d.notify(`navi ${word}`, titleOf(job.prompt))
+    if (word) d.notify(`navi ${word}`, titleOf(job.prompt), job.id)
     await prune()
   }
 

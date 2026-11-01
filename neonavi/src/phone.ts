@@ -61,9 +61,11 @@ export const PHONE_PAGE = `<!doctype html>
     get() { try { return localStorage.getItem(KEY) } catch { return null } },
     set(v) { try { localStorage.setItem(KEY, v) } catch {} },
   }
-  // The token arrives as #<token> and is taken out of the address at once.
+  // The token arrives as #<token> and is taken out of the address at once;
+  // a push opens a job as #job=<id> (PSH-5).
   const hash = location.hash.slice(1)
   let token = /^[0-9a-f]{64}$/.test(hash) ? hash : store.get()
+  const linked = /^job=([0-9a-f]{8})$/.exec(hash)?.[1] ?? null
   if (hash) { if (token === hash) store.set(hash); history.replaceState(null, '', location.pathname) }
 
   const app = document.getElementById('app')
@@ -96,14 +98,15 @@ export const PHONE_PAGE = `<!doctype html>
     return s < 60 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' d ago'
   }
 
-  let jobs = [], dirs = [], open = null, job = null, problem = '', draft = '', reply = '', dir = '', busy = false
+  let jobs = [], dirs = [], open = linked, job = null, problem = '', draft = '', reply = '', dir = '', busy = false
 
   async function refresh() {
     if (!token) return render()
     try {
       jobs = (await api('/jobs')).jobs
       if (!dirs.length) { dirs = (await api('/jobs/directories')).directories; dir = dir || dirs[0] || '' }
-      job = open ? await api('/jobs/' + open) : null
+      // A job that is gone (pruned, or a stale link) goes back to the list.
+      job = open ? await api('/jobs/' + open).catch((e) => { open = null; throw e }) : null
       problem = ''
     } catch (e) { problem = e.message }
     render()

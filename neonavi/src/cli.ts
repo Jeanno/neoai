@@ -18,8 +18,10 @@ import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 import { describe, entryLabel, escalationFor, modelLabel } from './setup-core.ts'
 import { readLedger, stats } from './ledger.ts'
 import { makeJobs, serveToken, tailnetAddresses, titleOf, type JobDeps } from './jobs.ts'
+import { push, pushConfig } from './push.ts'
 import { makeSchedules, nextText, parseDays, parseEvery, whenText } from './schedules.ts'
 import { execFile } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 
@@ -100,6 +102,7 @@ const USAGE = [
   '       navi jobs [<id> [y | n | stop] | link]',
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [-C <directory>]',
   '       navi schedules [<id> run | rm]',
+  '       navi push test',
 ].join('\n')
 
 /** What each form does, for --help (CLI-24). */
@@ -122,6 +125,7 @@ const ABOUT = [
   'navi jobs            list jobs; <id> shows one, then y, n or stop; link is for a phone',
   'navi schedule "…"    have navi serve start a job at a time of day or every so often',
   'navi schedules       list schedules and their next run; <id> run starts one now, rm deletes it',
+  'navi push test       send a test push to your phone (set "push" in the config first)',
 ].join('\n')
 
 /** Each link that did not answer, and why (MOD-21). */
@@ -207,17 +211,18 @@ async function serve(argv: string[]) {
   else console.error(`No model answers yet; requests will get a 503 until one does.`)
   for (const line of failedLines(failures)) console.error(dim(`· ${line}`))
   const home = homedir()
-  const jobs = await makeJobs({ home, start: startJob, notify })
+  const tailnetAt = tailnet.value === undefined ? [] : tailnetAddresses()
+  const say = (line: string) => console.error(dim(`${new Date().toLocaleTimeString()} ${line}`))
+  const jobs = await makeJobs({ home, start: startJob, notify: makeNotify(tailnetAt[0] && `http://${tailnetAt[0]}:${n}/`, say) })
   const schedules = await makeSchedules({
     home,
     start: (prompt, directory, schedule) => jobs.create(prompt, directory, schedule).id,
     busy: (id) => ['running', 'waiting'].includes(jobs.get(id)?.status ?? ''),
   })
-  const tailnetAt = tailnet.value === undefined ? [] : tailnetAddresses()
   if (tailnet.value !== undefined && !tailnetAt.length) console.error('This computer has no Tailscale address, so only it can reach navi serve.')
   const directories = async () => [...new Set([...(await listSessions(home)).flatMap((s) => (s.cwd ? [s.cwd] : [])), home])]
   try {
-    await listen(chain, realServeDeps((line) => console.error(dim(`${new Date().toLocaleTimeString()} ${line}`))), n, {
+    await listen(chain, realServeDeps(say), n, {
       jobs: { jobs, token: await serveToken(home), directories, schedules },
       tailnet: tailnetAt,
     })
@@ -256,14 +261,25 @@ async function startJob({ directory, history, approve }: Parameters<JobDeps['sta
   return { session: harness.session(history), model: modelLabel(chosen) }
 }
 
-/** A macOS notification (JOB-5), unless the config turns them off. */
-function notify(title: string, text: string) {
-  if (process.platform !== 'darwin') return
-  void readConfig().then((config) => {
-    if (config.notify === false) return
-    const quote = (s: string) => `"${s.replace(/[\\"]/g, '\\$&')}"`
-    execFile('osascript', ['-e', `display notification ${quote(text)} with title ${quote(title)}`], () => {})
-  })
+/**
+ * A job's notifications: on macOS unless the config turns them off (JOB-5),
+ * and to a phone when `push` is set (PSH-1), opening the job on the phone page
+ * at `page` when there is one (PSH-3). The config is read each time, so a
+ * change needs no restart.
+ */
+function makeNotify(page: string | undefined, log: (line: string) => void): JobDeps['notify'] {
+  return (title, text, job, urgent) =>
+    void readConfig().then(async (config) => {
+      if (process.platform === 'darwin' && config.notify !== false) {
+        const quote = (s: string) => `"${s.replace(/[\\"]/g, '\\$&')}"`
+        execFile('osascript', ['-e', `display notification ${quote(text)} with title ${quote(title)}`], () => {})
+      }
+      const p = pushConfig(config)
+      if (!p) return
+      const failed = await push(p, { title, job, detail: text, urgent, ...(page && { click: `${page}#job=${job}` }) })
+      // PSH-4: said, never the topic.
+      if (failed) log(`push for job ${job} failed: ${failed}`)
+    })
 }
 
 /** Talks to navi serve's jobs on this computer (JOB-13). */
@@ -400,6 +416,25 @@ async function schedulesCommand(argv: string[]) {
   return 0
 }
 
+/** `navi push test` (PSH-6). */
+async function pushCommand(argv: string[]) {
+  if (argv.length !== 1 || argv[0] !== 'test') {
+    console.error('usage: navi push test')
+    return 1
+  }
+  const p = pushConfig(await readConfig())
+  if (!p) {
+    console.error('No push is set up. Install the ntfy app on your phone, subscribe to a long random topic, and add it to ~/.neoai/config.json:')
+    console.error(`  "push": "https://ntfy.sh/navi-${randomBytes(9).toString('hex')}"`)
+    console.error(dim('Anyone who knows the topic can read what is sent; pushes say only what happened and the job id unless you add "detail": true.'))
+    return 1
+  }
+  const failed = await push(p, { title: 'navi can reach your phone', note: 'This is a test push from navi.' })
+  if (failed) return console.error(`The push did not go through: ${failed}.`), 1
+  console.log(`Sent a test push to ${p.server}. If it did not show up, check the phone is subscribed to the same topic.`)
+  return 0
+}
+
 /** `navi stats [--days N]`: how each model has done (LED-6). */
 async function showStats(argv: string[]) {
   const days = argv[0] === '--days' && argv.length === 2 ? Number(argv[1]) : argv.length ? NaN : 30
@@ -503,6 +538,7 @@ async function main() {
   if (argv[0] === 'job') return startJobCommand(argv.slice(1))
   if (argv[0] === 'jobs') return jobsCommand(argv.slice(1))
   if (argv[0] === 'schedule') return scheduleCommand(argv.slice(1))
+  if (argv[0] === 'push') return pushCommand(argv.slice(1))
   if (argv[0] === 'schedules') return schedulesCommand(argv.slice(1))
   const steps = takeFlag(argv, '--max-steps', true)
   argv = steps.rest

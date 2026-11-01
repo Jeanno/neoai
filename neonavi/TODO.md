@@ -57,8 +57,9 @@ add the requirement there first.
 - [x] Jobs on a schedule: at a time of day on chosen days, or every so
       often; skipped while the last is busy, missed runs made up once.
       (SCH-1 to SCH-8) The prompt now carries today's date. (PRM-13)
-- [ ] Push to the phone when a job waits (ntfy or a Shortcut).
-      (`spec/jobs.md` Open)
+- [x] Push to the phone through ntfy when a job waits or ends, tapping
+      through to the job; only the job id leaves unless `detail`. (PSH-1 to PSH-6)
+- [ ] Answer Yes or No from the notification itself. (`spec/push.md` Open)
 - [ ] Schedules on the phone page, and a page watch that is quiet when
       nothing changed. (`spec/schedules.md` Open)
 - [x] navi's own browser: a separate Chromium with its own logins, read as
