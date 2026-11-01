@@ -19,6 +19,9 @@ add the requirement there first.
 - [x] The installer leaves `navi` runnable: it already warns when
       `~/.local/bin` is not on PATH; navi had simply never been installed here.
 - [x] Cite spec ids from the existing tests so every requirement is traceable.
+- [x] A delete, overwrite, kill or privilege always asks, whatever the
+      judge says: a local judge was seen auto-approving `rm README.md`
+      because the user had asked for it. (`spec/tools.md` TL-44)
 - [x] Tests for the requirements no test checked: the CLI end to end (on a
       pipe, and on a real terminal through script(1)), tool limits, local
       discovery, serve and mcp. Left: HAR-6 (structural) and RAY-1, RAY-5,

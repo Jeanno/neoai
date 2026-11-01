@@ -163,8 +163,9 @@ A model call that decides whether a shell command needs the user's approval.
 - TL-25: The judge uses the session's model. No separate model is configured.
 
 - TL-18: `judge(model, command, intent)` returns `safe`, `unsafe` or
-  `unknown`. `intent` is the user's current prompt, so "delete the build dir"
-  makes `rm -rf build` judgeable.
+  `unknown`. `intent` is the user's current prompt, so "clean the build"
+  makes `npm run clean` judgeable. Asking for a delete does not make one
+  safe (TL-44).
 - TL-19: The model is asked for a one-word verdict. Only a line reading
   exactly SAFE or UNSAFE (case-insensitive) counts; the last such line wins.
   Any other output is `unknown`.
@@ -173,3 +174,17 @@ A model call that decides whether a shell command needs the user's approval.
   without deleting or overwriting existing files, with no network sends, no
   privilege escalation, no process kills, and no git history rewriting or
   pushing. Everything else, including anything the judge cannot tell, is unsafe.
+- TL-44: Whatever the judge would say, a command always asks (unless the
+  allowlist names it, TL-41) when any part of it (between `;`, `&`, `|`,
+  `(`, `$(` or a backquote, past `VAR=…` settings and wrappers such as
+  `env`, `xargs`, `nice`, `nohup`, `time`) deletes, overwrites, kills or
+  takes privileges: `rm`, `rmdir`, `unlink`, `shred`, `trash`, `mv`, `dd`,
+  `truncate`, `mkfs…`, `sudo`, `su`, `doas`, `kill`, `killall`, `pkill`,
+  `chmod`, `chown`, `chgrp`, `launchctl`, `crontab`, `osascript`, `eval`,
+  `shutdown`, `reboot`, `diskutil`; `find` with `-delete` or `-exec`; `git`
+  `push`, `reset`, `clean`, `rebase`, `rm`, `restore`, `filter-branch`,
+  `filter-repo`, `commit --amend`, `checkout` with `--` or `-f`, `branch -d`
+  or `-D`, `stash drop` or `clear`; anything piped into `sh`, `bash` or
+  `zsh`; or a `>` or `>>` into a file other than `/dev/null`. A small local
+  judge was seen calling `rm README.md` safe because the user had asked for
+  it; a delete is the user's to say yes to.

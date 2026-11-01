@@ -277,6 +277,53 @@ export async function allowCommand(command: string, dir: string): Promise<void> 
   }, dir)
 }
 
+const DRASTIC = new Set([
+  'rm', 'rmdir', 'unlink', 'shred', 'trash', 'mv', 'dd', 'truncate', 'sudo', 'su', 'doas', 'kill', 'killall', 'pkill',
+  'chmod', 'chown', 'chgrp', 'launchctl', 'crontab', 'osascript', 'eval', 'shutdown', 'reboot', 'diskutil',
+])
+const WRAPPERS = new Set(['env', 'xargs', 'nice', 'nohup', 'time', 'command', 'exec', 'caffeinate'])
+const GIT = /^(push|reset|clean|rebase|rm|restore|filter-branch|filter-repo)$/
+const SHELLS = new Set(['sh', 'bash', 'zsh'])
+
+/** A command's name without its directory or a leading backslash: `/bin/rm`, `\rm`. */
+const bare = (word: string) => word.replace(/^\\/, '').replace(/^.*\//, '')
+
+/**
+ * Why a command must ask whatever the judge says (TL-44), or nothing. Read
+ * plainly, part by part: a floor under the judge, not a shell parser, so it
+ * errs towards asking.
+ */
+export function drastic(command: string): string | undefined {
+  // Into a file; `2>&1`, `>&2` and /dev/null are not.
+  for (const m of command.matchAll(/(?<![<&])>>?(?!&)\s*([^\s;&|)]+)/g)) if (m[1] !== '/dev/null') return `it writes into ${m[1]}`
+  for (const seg of command.split(/;|&&|\n/))
+    for (const part of seg.split(/\|\|?/).slice(1)) {
+      const word = bare(part.trim().split(/\s+/)[0] ?? '')
+      if (SHELLS.has(word)) return `it pipes into ${word}`
+    }
+  for (const part of command.split(/;|&&?|\|\|?|\(|\)|\$\(|`|\n/)) {
+    const words = part.trim().split(/\s+/).filter(Boolean)
+    while (words.length && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0]) || WRAPPERS.has(words[0]) || words[0].startsWith('-'))) words.shift()
+    if (!words.length) continue
+    const name = bare(words[0])
+    const rest = words.slice(1)
+    if (DRASTIC.has(name) || name.startsWith('mkfs')) return `it runs ${name}`
+    if (name === 'find' && rest.some((w) => ['-delete', '-exec', '-execdir', '-ok'].includes(w))) return 'it runs find with -delete or -exec'
+    if (name !== 'git') continue
+    // Past git's own options, and the values of those that take one: `git -C repo reset`.
+    let at = 0
+    while (at < rest.length && rest[at].startsWith('-')) at += ['-C', '-c', '--git-dir', '--work-tree', '--namespace'].includes(rest[at]) ? 2 : 1
+    if (at >= rest.length) continue
+    const sub = rest[at]
+    const after = rest.slice(at + 1)
+    if (GIT.test(sub)) return `it runs git ${sub}`
+    if (sub === 'commit' && after.includes('--amend')) return 'it runs git commit --amend'
+    if (sub === 'checkout' && after.some((w) => ['--', '-f', '--force'].includes(w))) return 'it runs git checkout over changes'
+    if (sub === 'branch' && after.some((w) => ['-d', '-D', '--delete'].includes(w))) return 'it deletes a git branch'
+    if (sub === 'stash' && ['drop', 'clear'].includes(after[0] ?? '')) return `it runs git stash ${after[0]}`
+  }
+}
+
 /**
  * The allowlist first, then the judge, then the user. Only a clear 'safe'
  * skips the question: 'unknown' covers a model error or a hedged answer, and
@@ -305,7 +352,8 @@ export function gated({
       onAuto?.(command, 'allowed')
       return true
     }
-    if (mode !== 'ask' && (await judge(command)) === 'safe') {
+    // TL-44: a delete, overwrite, kill or privilege is the user's to allow.
+    if (mode !== 'ask' && !drastic(command) && (await judge(command)) === 'safe') {
       onAuto?.(command, 'judged')
       return true
     }

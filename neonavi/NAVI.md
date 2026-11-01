@@ -127,6 +127,9 @@ Before a shell command runs, the session's model is asked whether it is
 safe — read-only, or writing new files inside the directory, nothing over the
 network, no sudo. Safe commands run and are echoed as auto-approved; anything
 else, or anything the judge cannot tell, shows the command and waits for `y`.
+Whatever the judge says, a command that deletes, moves, overwrites, kills,
+changes permissions, takes privileges or rewrites git history (`rm`, `mv`,
+`>`, `sudo`, `git push`, …) always waits for you (`spec/tools.md` TL-44).
 Answer `a` instead to run it and allow it from then on: it is added to
 `"allow"` in the config, and that exact command runs without asking from
 then on. An entry ending in ` *`, written by hand, also covers further
