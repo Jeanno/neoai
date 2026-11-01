@@ -19,6 +19,9 @@ add the requirement there first.
 - [x] The installer leaves `navi` runnable: it already warns when
       `~/.local/bin` is not on PATH; navi had simply never been installed here.
 - [x] Cite spec ids from the existing tests so every requirement is traceable.
+- [x] Local time by this computer's zone rules, not Node's bundled tzdata,
+      which still had British Columbia on PST after its move to permanent
+      UTC-7 (schedules were an hour late). (`spec/schedules.md` SCH-14)
 - [x] A delete, overwrite, kill or privilege always asks, whatever the
       judge says: a local judge was seen auto-approving `rm README.md`
       because the user had asked for it. (`spec/tools.md` TL-44)

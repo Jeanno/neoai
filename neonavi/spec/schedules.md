@@ -26,6 +26,14 @@ every so often. A morning brief, a page watched every hour.
   restarting.
 - SCH-6: navi serve looks for due schedules at least every 30 seconds.
 
+- SCH-14: Local time (an `at` schedule, its next run, and today's date in
+  the prompt, PRM-13) follows this computer's own zone rules, read from its
+  zoneinfo (`TZ` when it names a zone, else `/etc/localtime`), not the
+  runtime's bundled copy, which can lag behind the law: Node 26 shipped
+  tzdata 2026a, with British Columbia still on PST after it moved to
+  permanent UTC-7 on 1 November 2026. When neither reads, the runtime's
+  rules are used.
+
 ## Watches
 
 - SCH-9: A schedule made a watch (`quiet`) tells each run after the first

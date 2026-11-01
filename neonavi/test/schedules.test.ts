@@ -6,10 +6,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkWhen, makeSchedules, nextRun, nextText, parseDays, parseEvery, schedulesFile, whenText, type ScheduleDeps } from '../src/schedules.ts'
 import { makeJobs, type StartOptions } from '../src/jobs.ts'
+import { fromWall, type Offset } from '../src/clock.ts'
 import { listen, type ServeDeps } from '../src/serve.ts'
 
-/** A local time, so the tests read the same in any time zone. */
-const at = (y: number, mo: number, d: number, h = 0, mi = 0) => new Date(y, mo - 1, d, h, mi)
+/** A fixed zone, UTC-8, so the tests read the same on any computer. */
+const zone: Offset = () => -480
+const at = (y: number, mo: number, d: number, h = 0, mi = 0) => fromWall(y, mo - 1, d, h, mi, zone)
 
 async function setup(o: Partial<ScheduleDeps> = {}) {
   const home = await mkdtemp(join(tmpdir(), 'navi-schedules-'))
@@ -44,12 +46,12 @@ test('SCH-1: a schedule is at a time of day or every 5 minutes or more, not both
 })
 
 test('SCH-2: the next run of an every and an at schedule', () => {
-  assert.deepEqual(nextRun({ every: 30 }, at(2026, 11, 2, 9, 10)), at(2026, 11, 2, 9, 40))
+  assert.deepEqual(nextRun({ every: 30 }, at(2026, 11, 2, 9, 10), zone), at(2026, 11, 2, 9, 40))
   // Later today, or tomorrow once it has passed.
-  assert.deepEqual(nextRun({ at: '08:00' }, at(2026, 11, 2, 7, 0)), at(2026, 11, 2, 8, 0))
-  assert.deepEqual(nextRun({ at: '08:00' }, at(2026, 11, 2, 8, 0)), at(2026, 11, 3, 8, 0))
+  assert.deepEqual(nextRun({ at: '08:00' }, at(2026, 11, 2, 7, 0), zone), at(2026, 11, 2, 8, 0))
+  assert.deepEqual(nextRun({ at: '08:00' }, at(2026, 11, 2, 8, 0), zone), at(2026, 11, 3, 8, 0))
   // 2026-11-06 is a Friday: weekdays skip to Monday.
-  assert.deepEqual(nextRun({ at: '08:00', days: [1, 2, 3, 4, 5] }, at(2026, 11, 6, 9, 0)), at(2026, 11, 9, 8, 0))
+  assert.deepEqual(nextRun({ at: '08:00', days: [1, 2, 3, 4, 5] }, at(2026, 11, 6, 9, 0), zone), at(2026, 11, 9, 8, 0))
 })
 
 test('SCH-8: lengths and days as typed', () => {
@@ -64,8 +66,8 @@ test('SCH-8: lengths and days as typed', () => {
   assert.equal(whenText({ at: '08:00', days: [1, 3] }), 'at 08:00 on Mon, Wed')
   assert.equal(whenText({ at: '08:00', days: [1, 2, 3, 4, 5] }), 'at 08:00 on weekdays')
   const now = at(2026, 11, 2, 9, 0)
-  assert.equal(nextText(at(2026, 11, 2, 9, 25), now), 'in 25 min')
-  assert.equal(nextText(at(2026, 11, 3, 8, 0), now), 'tomorrow 08:00')
+  assert.equal(nextText(at(2026, 11, 2, 9, 25), now, zone), 'in 25 min')
+  assert.equal(nextText(at(2026, 11, 3, 8, 0), now, zone), 'tomorrow 08:00')
 })
 
 test('SCH-2: a due schedule starts a job carrying its id, and not again until the next run', async () => {

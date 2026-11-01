@@ -1,3 +1,5 @@
+import { wall } from './clock.ts'
+
 /**
  * The prompt is whatever follows -p, and nothing else: with bare words allowed,
  * a mistyped flag silently became part of the question.
@@ -65,9 +67,11 @@ export function systemPrompt(
   ].join('\n')
 }
 
-/** PRM-13: "Today is Sunday, 1 November 2026 (time zone Australia/Sydney)." */
+/** PRM-13: "Today is Sunday 1 November 2026 (time zone Australia/Sydney)", by this computer's zone rules (SCH-14). */
 export function today(now = new Date()): string {
-  const date = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).replace(',', '')
+  const date = wall(now)
+    .toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    .replace(',', '')
   return `Today is ${date} (time zone ${Intl.DateTimeFormat().resolvedOptions().timeZone}).`
 }
 

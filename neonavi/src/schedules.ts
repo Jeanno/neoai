@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { NOTHING_NEW, nothingNew, type StartOptions } from './jobs.ts'
+import { fromWall, localOffset, wall, type Offset } from './clock.ts'
 
 /**
  * Jobs navi serve starts by itself (schedules.md): at a time of day, or
@@ -87,18 +88,18 @@ export function checkWhen(w: When): string | undefined {
     return 'days are numbers from 0 (Sunday) to 6.'
 }
 
-/** The first run after `after` (SCH-2). */
-export function nextRun(s: When, after: Date): Date {
+/** The first run after `after` (SCH-2), at times of day in this computer's zone (SCH-14). */
+export function nextRun(s: When, after: Date, offset: Offset = localOffset): Date {
   if (s.every !== undefined) return new Date(after.getTime() + s.every * 60_000)
   const [h, m] = (s.at ?? '0:0').split(':').map(Number)
-  const day = new Date(after)
-  day.setHours(h, m, 0, 0)
+  const today = wall(after, offset)
+  let t = after
   for (let i = 0; i < 8; i++) {
-    if (day > after && (!s.days || s.days.includes(day.getDay()))) return day
-    day.setDate(day.getDate() + 1)
-    day.setHours(h, m, 0, 0)
+    const day = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + i))
+    t = fromWall(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), h, m, offset)
+    if (t > after && (!s.days || s.days.includes(day.getUTCDay()))) return t
   }
-  return day
+  return t
 }
 
 const from = (s: Schedule) => new Date(s.last ?? s.created)
@@ -230,11 +231,12 @@ export function parseDays(s: string): number[] | undefined {
 }
 
 /** "in 25 min", "today 08:00", "tomorrow 08:00", "Mon 08:00". */
-export function nextText(next: Date, now = new Date()): string {
+export function nextText(next: Date, now = new Date(), offset: Offset = localOffset): string {
   const mins = Math.round((next.getTime() - now.getTime()) / 60_000)
   if (mins < 1) return 'now'
   if (mins < 60) return `in ${mins} min`
-  const hhmm = `${String(next.getHours()).padStart(2, '0')}:${String(next.getMinutes()).padStart(2, '0')}`
-  const days = Math.round((new Date(next).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / 86_400_000)
-  return `${days === 0 ? 'today' : days === 1 ? 'tomorrow' : DAY_NAMES[next.getDay()]} ${hhmm}`
+  const n = wall(next, offset)
+  const hhmm = `${String(n.getUTCHours()).padStart(2, '0')}:${String(n.getUTCMinutes()).padStart(2, '0')}`
+  const days = Math.round((new Date(n).setUTCHours(0, 0, 0, 0) - wall(now, offset).setUTCHours(0, 0, 0, 0)) / 86_400_000)
+  return `${days === 0 ? 'today' : days === 1 ? 'tomorrow' : DAY_NAMES[n.getUTCDay()]} ${hhmm}`
 }
