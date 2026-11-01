@@ -149,7 +149,8 @@ test('only the 100 most recent jobs are kept', async () => {
   const { home, jobs } = await setup()
   for (let i = 0; i < 103; i++) {
     jobs.create(`job ${i}`, '/tmp')
-    await new Promise((r) => setTimeout(r, 1))
+    // Apart by more than a millisecond, so no two share a creation time.
+    await new Promise((r) => setTimeout(r, 3))
   }
   await jobs.idle()
   assert.equal(jobs.list().length, 100)
