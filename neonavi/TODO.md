@@ -51,8 +51,13 @@ add the requirement there first.
 - [x] Jobs in navi serve: started, followed and approved from the terminal
       (`navi job`, `navi jobs`) or a phone over Tailscale (`--tailnet`), kept
       across restarts, with macOS notifications. (JOB-1 to JOB-13)
-- [ ] Push to the phone when a job waits (ntfy or a Shortcut), and jobs on a
-      schedule: a morning brief, a page watch. (`spec/jobs.md` Open)
+- [x] Jobs on a schedule: at a time of day on chosen days, or every so
+      often; skipped while the last is busy, missed runs made up once.
+      (SCH-1 to SCH-8) The prompt now carries today's date. (PRM-13)
+- [ ] Push to the phone when a job waits (ntfy or a Shortcut).
+      (`spec/jobs.md` Open)
+- [ ] Schedules on the phone page, and a page watch that is quiet when
+      nothing changed. (`spec/schedules.md` Open)
 - [x] navi's own browser: a separate Chromium with its own logins, read as
       text with refs (never screenshots), each action answering with what
       changed; reading is free, acting is judged and asked. (BRW-1 to BRW-15)

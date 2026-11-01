@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Readable, Writable } from 'node:stream'
 import { gated, makeApprover, makeLine } from '../src/approve.ts'
-import { systemPrompt } from '../src/args.ts'
+import { systemPrompt, today } from '../src/args.ts'
 
 function io(typed: string) {
   const input = Readable.from([typed])
@@ -37,6 +37,11 @@ test('declines when stdin is closed with no answer', async () => {
   const { approve, close } = makeApprover(io(''))
   assert.equal(await approve('rm -rf /'), false)
   close()
+})
+
+// PRM-13
+test('names the weekday, date and time zone', () => {
+  assert.match(today(new Date(2026, 10, 1, 9)), /^Today is Sunday 1 November 2026 \(time zone [\w/+-]+\)\.$/)
 })
 
 // PRM-1

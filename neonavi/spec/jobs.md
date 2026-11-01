@@ -80,5 +80,4 @@ terminal that started them closes.
 
 - Push notifications to the phone (ntfy, or a Shortcut), rather than the
   page being open.
-- Jobs on a schedule: the morning brief, a page watch.
 - A queue, so a busy computer runs a few at a time.

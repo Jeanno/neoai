@@ -38,6 +38,8 @@ export interface Job {
   pending?: Pending
   /** The conversation, to follow up (JOB-3, JOB-6). */
   history: ModelMessage[]
+  /** The schedule that started it (SCH-2). */
+  schedule?: string
 }
 
 /** A job as listed: no conversation or log (JOB-7). */
@@ -54,7 +56,7 @@ export interface JobDeps {
 export interface Jobs {
   list(): Listed[]
   get(id: string): Job | undefined
-  create(prompt: string, directory: string): Job
+  create(prompt: string, directory: string, schedule?: string): Job
   /** False when the job is not waiting. */
   answer(id: string, yes: boolean): boolean
   /** False when the job is running or waiting (JOB-3). */
@@ -208,9 +210,19 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
   return {
     list: () => [...jobs.values()].sort((a, b) => b.created.localeCompare(a.created)).map(listed),
     get: (id) => jobs.get(id),
-    create(prompt, directory) {
+    create(prompt, directory, schedule) {
       const now = new Date().toISOString()
-      const job: Job = { id: randomBytes(4).toString('hex'), prompt, directory, created: now, updated: now, status: 'running', log: [], history: [] }
+      const job: Job = {
+        id: randomBytes(4).toString('hex'),
+        prompt,
+        directory,
+        created: now,
+        updated: now,
+        status: 'running',
+        log: [],
+        history: [],
+        ...(schedule && { schedule }),
+      }
       jobs.set(job.id, job)
       begin(job, prompt)
       return job

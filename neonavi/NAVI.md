@@ -47,6 +47,17 @@ treat it as a key to this computer (`spec/jobs.md`).
     navi job "check the build log in ~/Projects/app and tell me what broke"
     navi jobs link
 
+Jobs can start by themselves. `navi schedule "<prompt>" --at 08:00` runs one
+every morning (`--days weekdays`, or `mon,thu`, for only some days), and
+`--every 30m` or `--every 2h` runs one every so often; `navi schedules` lists
+them with when each runs next, `navi schedules <id> run` runs one now and `rm`
+deletes it. A run that comes due while the last one is still going (or waiting
+for your answer) is skipped, and runs missed while navi serve was off are made
+up once, not one by one, unless they are more than 12 hours late
+(`spec/schedules.md`).
+
+    navi schedule "summarise what's new on my GitHub notifications page" --at 08:30 --days weekdays
+
 `navi mcp` is navi as an MCP server: clients such as Claude Desktop, Claude
 Code or Cursor get one tool, `ask_navi`, that hands a task (and any files) to
 navi and your model in a directory they name. There is no one to say `y` over

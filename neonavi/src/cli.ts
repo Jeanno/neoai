@@ -18,6 +18,7 @@ import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 import { describe, entryLabel, escalationFor, modelLabel } from './setup-core.ts'
 import { readLedger, stats } from './ledger.ts'
 import { makeJobs, serveToken, tailnetAddresses, titleOf, type JobDeps } from './jobs.ts'
+import { makeSchedules, nextText, parseDays, parseEvery, whenText } from './schedules.ts'
 import { execFile } from 'node:child_process'
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
@@ -97,6 +98,8 @@ const USAGE = [
   '       navi stats [--days N]',
   '       navi job "<what you want done>" [-C <directory>]',
   '       navi jobs [<id> [y | n | stop] | link]',
+  '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [-C <directory>]',
+  '       navi schedules [<id> run | rm]',
 ].join('\n')
 
 /** What each form does, for --help (CLI-24). */
@@ -117,6 +120,8 @@ const ABOUT = [
   'navi stats           how each model has done, from the ledger; --days N (default 30)',
   'navi job "…"         hand navi serve a job to do in the background; -C sets where',
   'navi jobs            list jobs; <id> shows one, then y, n or stop; link is for a phone',
+  'navi schedule "…"    have navi serve start a job at a time of day or every so often',
+  'navi schedules       list schedules and their next run; <id> run starts one now, rm deletes it',
 ].join('\n')
 
 /** Each link that did not answer, and why (MOD-21). */
@@ -203,12 +208,17 @@ async function serve(argv: string[]) {
   for (const line of failedLines(failures)) console.error(dim(`· ${line}`))
   const home = homedir()
   const jobs = await makeJobs({ home, start: startJob, notify })
+  const schedules = await makeSchedules({
+    home,
+    start: (prompt, directory, schedule) => jobs.create(prompt, directory, schedule).id,
+    busy: (id) => ['running', 'waiting'].includes(jobs.get(id)?.status ?? ''),
+  })
   const tailnetAt = tailnet.value === undefined ? [] : tailnetAddresses()
   if (tailnet.value !== undefined && !tailnetAt.length) console.error('This computer has no Tailscale address, so only it can reach navi serve.')
   const directories = async () => [...new Set([...(await listSessions(home)).flatMap((s) => (s.cwd ? [s.cwd] : [])), home])]
   try {
     await listen(chain, realServeDeps((line) => console.error(dim(`${new Date().toLocaleTimeString()} ${line}`))), n, {
-      jobs: { jobs, token: await serveToken(home), directories },
+      jobs: { jobs, token: await serveToken(home), directories, schedules },
       tailnet: tailnetAt,
     })
   } catch (e) {
@@ -219,6 +229,9 @@ async function serve(argv: string[]) {
   console.error(`\nServing on ${bold(`http://127.0.0.1:${n}/v1`)}: give apps that base URL, any API key, and the model ${bold('navi')}.`)
   if (tailnetAt.length) console.error(dim(`Your tailnet reaches it too, with the token; \`navi jobs link\` gives a phone its link. ^C stops it.`))
   else console.error(dim('Only this computer can reach it. ^C stops it.'))
+  // SCH-6: due schedules start within half a minute, and at once on starting (SCH-4).
+  void schedules.tick()
+  setInterval(() => void schedules.tick(), 30_000)
   // Runs until stopped: the open server keeps the process alive.
   return new Promise<number>(() => {})
 }
@@ -275,7 +288,7 @@ const statusWord = (s: string) => (s === 'waiting' ? bold('waiting for you') : s
 /** One job as `navi jobs <id>` shows it (JOB-13). */
 function showJob(job: any) {
   console.log(`${bold(job.id)} · ${statusWord(job.status)}${job.model ? ` · ${job.model}` : ''}`)
-  console.log(dim(job.directory))
+  console.log(dim(`${job.directory}${job.schedule ? ` · from schedule ${job.schedule}` : ''}`))
   console.log(job.prompt)
   if (job.log?.length) console.log(dim(job.log.join('\n')))
   if (job.pending) {
@@ -334,6 +347,56 @@ async function jobsCommand(argv: string[]) {
   if (!got) return console.error(NOT_SERVING), 1
   if (got.status !== 200) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
   showJob(got.data)
+  return 0
+}
+
+/** `navi schedule "<prompt>" (--at HH:MM [--days …] | --every N) [-C <dir>] [--port N]` (SCH-8). */
+async function scheduleCommand(argv: string[]) {
+  const port = takeFlag(argv, '--port', true)
+  const dir = takeFlag(port.rest, '-C', true)
+  const at = takeFlag(dir.rest, '--at', true)
+  const days = takeFlag(at.rest, '--days', true)
+  const every = takeFlag(days.rest, '--every', true)
+  const prompt = every.rest.join(' ').trim()
+  const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
+  const minutes = every.value === undefined ? undefined : parseEvery(every.value)
+  const on = days.value === undefined ? undefined : parseDays(days.value)
+  const usage = 'usage: navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [-C <directory>] [--port N]'
+  if (!prompt || !Number.isInteger(n) || (at.value === undefined) === (every.value === undefined)) return console.error(usage), 1
+  if (every.value !== undefined && minutes === undefined) return console.error(`not a length of time: ${every.value} (say 30m or 2h)`), 1
+  if (days.value !== undefined && !on) return console.error(`not days: ${days.value} (say mon,wed, weekdays or weekends)`), 1
+  const got = await jobsApi(n, '/schedules', { prompt, directory: resolve(dir.value ?? process.cwd()), at: at.value, days: on, every: minutes })
+  if (!got) return console.error(NOT_SERVING), 1
+  if (got.status !== 201) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
+  console.log(`Scheduled ${bold(got.data.id)}: ${whenText(got.data)}, next ${nextText(new Date(got.data.next))}.`)
+  console.log(dim(`navi serve starts it as a job; \`navi schedules ${got.data.id} rm\` deletes it.`))
+  return 0
+}
+
+/** `navi schedules [<id> run | rm] [--port N]` (SCH-8). */
+async function schedulesCommand(argv: string[]) {
+  const port = takeFlag(argv, '--port', true)
+  const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
+  const [id, what, ...extra] = port.rest
+  if (extra.length || !Number.isInteger(n) || (id !== undefined && !['run', 'rm'].includes(what ?? ''))) {
+    console.error('usage: navi schedules [<id> run | rm] [--port N]')
+    return 1
+  }
+  if (!id) {
+    const got = await jobsApi(n, '/schedules')
+    if (!got) return console.error(NOT_SERVING), 1
+    if (got.status !== 200) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
+    const list = got.data.schedules ?? []
+    if (!list.length) console.log('No schedules. Add one with `navi schedule "<what you want done>" --at 08:00`.')
+    for (const s of list)
+      console.log(`${bold(s.id)}  ${whenText(s).padEnd(22)}  next ${nextText(new Date(s.next)).padEnd(15)}  ${titleOf(s.prompt)}`)
+    return 0
+  }
+  const got = await jobsApi(n, `/schedules/${id}/${what === 'rm' ? 'delete' : 'run'}`, {})
+  if (!got) return console.error(NOT_SERVING), 1
+  if (got.status >= 300) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
+  if (what === 'rm') console.log(`Deleted schedule ${bold(id)}.`)
+  else console.log(`Started job ${bold(got.data.id)}. Follow it with \`navi jobs ${got.data.id}\`.`)
   return 0
 }
 
@@ -439,6 +502,8 @@ async function main() {
   if (argv[0] === 'stats') return showStats(argv.slice(1))
   if (argv[0] === 'job') return startJobCommand(argv.slice(1))
   if (argv[0] === 'jobs') return jobsCommand(argv.slice(1))
+  if (argv[0] === 'schedule') return scheduleCommand(argv.slice(1))
+  if (argv[0] === 'schedules') return schedulesCommand(argv.slice(1))
   const steps = takeFlag(argv, '--max-steps', true)
   argv = steps.rest
   const resume = takeFlag(argv, '--resume', false)

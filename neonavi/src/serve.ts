@@ -12,6 +12,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { stat as statPath } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import type { Jobs } from './jobs.ts'
+import { checkWhen, type Schedules } from './schedules.ts'
 import { PHONE_PAGE } from './phone.ts'
 
 /** What the server needs from the world; the real ones by default, fakes in tests. */
@@ -72,6 +73,8 @@ export interface JobsOptions {
   token: string
   /** Directories to offer as places to work (JOB-7). */
   directories: () => Promise<string[]>
+  /** Jobs started by themselves (schedules.md). */
+  schedules?: Schedules
 }
 
 /** Whether a request carries the token, compared in constant time (JOB-8). */
@@ -97,6 +100,42 @@ async function jsonBody(req: IncomingMessage): Promise<Record<string, unknown> |
 const json = (res: ServerResponse, status: number, body: unknown) =>
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body))
 
+/** JOB-9: somewhere real to work, named in full; the first offered when none is given. */
+async function placeFor(given: unknown, o: JobsOptions): Promise<string | undefined> {
+  const directory = given ?? (await o.directories())[0]
+  if (typeof directory !== 'string' || !isAbsolute(directory)) return
+  return (await statPath(directory).then((s) => s.isDirectory(), () => false)) ? directory : undefined
+}
+
+/** The schedules API (SCH-7); the token is already checked. */
+async function schedulesRoute(req: IncomingMessage, res: ServerResponse, path: string, o: JobsOptions, schedules: Schedules) {
+  const parts = path.split('/').slice(2)
+  if (req.method === 'GET' && !parts.length) return json(res, 200, { schedules: schedules.list() })
+  if (req.method !== 'POST') return error(res, 404, `Schedules answer GET /schedules, POST /schedules and POST /schedules/<id>/run or delete, not ${req.method} ${path}.`)
+  const body = await jsonBody(req)
+  if (typeof body === 'string') return error(res, 400, body)
+  if (!parts.length) {
+    if (typeof body.prompt !== 'string' || !body.prompt.trim()) return error(res, 400, 'Give the schedule a prompt.')
+    const when = { at: body.at, days: body.days, every: body.every } as Parameters<typeof checkWhen>[0]
+    const wrong = checkWhen(when)
+    if (wrong) return error(res, 400, wrong)
+    const directory = await placeFor(body.directory, o)
+    if (!directory) return error(res, 400, `${String(body.directory)} is not a directory on this computer; give an absolute path.`)
+    const made = await schedules.add(body.prompt.trim(), directory, when)
+    return json(res, 201, schedules.list().find((s) => s.id === made.id))
+  }
+  if (!schedules.get(parts[0])) return error(res, 404, `There is no schedule ${parts[0]}.`)
+  if (parts[1] === 'run' && parts.length === 2) {
+    const job = await schedules.run(parts[0])
+    return json(res, 201, job && o.jobs.get(job))
+  }
+  if (parts[1] === 'delete' && parts.length === 2) {
+    await schedules.remove(parts[0])
+    return json(res, 200, { deleted: parts[0] })
+  }
+  error(res, 404, `Schedules answer GET /schedules, POST /schedules and POST /schedules/<id>/run or delete, not ${req.method} ${path}.`)
+}
+
 /** The jobs API (JOB-7); the token is already checked. */
 async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string, o: JobsOptions) {
   const { jobs } = o
@@ -107,10 +146,8 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
     const body = await jsonBody(req)
     if (typeof body === 'string') return error(res, 400, body)
     if (typeof body.prompt !== 'string' || !body.prompt.trim()) return error(res, 400, 'Give the job a prompt.')
-    const directory = body.directory ?? (await o.directories())[0]
-    // JOB-9: somewhere real to work, named in full.
-    if (typeof directory !== 'string' || !isAbsolute(directory) || !(await statPath(directory).then((s) => s.isDirectory(), () => false)))
-      return error(res, 400, `${String(directory)} is not a directory on this computer; give an absolute path.`)
+    const directory = await placeFor(body.directory, o)
+    if (!directory) return error(res, 400, `${String(body.directory)} is not a directory on this computer; give an absolute path.`)
     return json(res, 201, jobs.create(body.prompt.trim(), directory))
   }
   const job = parts[0] ? jobs.get(parts[0]) : undefined
@@ -226,6 +263,14 @@ export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptio
           return error(res, 401, 'Jobs need the token in ~/.neoai/serve-token, as Authorization: Bearer <token>.', 'authentication_error')
         }
         return await jobsRoute(req, res, path, j)
+      }
+      // SCH-7: behind the same token.
+      if (j?.schedules && (path === '/schedules' || path.startsWith('/schedules/'))) {
+        if (!bearer(req, j.token)) {
+          via = 'refused: no token'
+          return error(res, 401, 'Schedules need the token in ~/.neoai/serve-token, as Authorization: Bearer <token>.', 'authentication_error')
+        }
+        return await schedulesRoute(req, res, path, j, j.schedules)
       }
       // JOB-10: on the tailnet the model endpoints need the token too.
       if (o.remote && !(j && bearer(req, j.token))) {

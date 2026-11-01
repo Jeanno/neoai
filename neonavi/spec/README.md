@@ -19,6 +19,7 @@ The spec is the source of truth for what `navi` does. Code and tests follow it.
 | `escalate.md` | Handing a struggling turn to a stronger model |
 | `serve.md` | navi's model chain as an OpenAI-compatible server |
 | `jobs.md` | Background jobs in navi serve, from the terminal or a phone |
+| `schedules.md` | Jobs navi serve starts by itself, at a time or every so often |
 | `mcp.md` | navi as an MCP server |
 
 ## Requirements

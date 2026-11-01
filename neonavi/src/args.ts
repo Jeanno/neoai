@@ -65,6 +65,12 @@ export function systemPrompt(
   ].join('\n')
 }
 
+/** PRM-13: "Today is Sunday, 1 November 2026 (time zone Australia/Sydney)." */
+export function today(now = new Date()): string {
+  const date = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).replace(',', '')
+  return `Today is ${date} (time zone ${Intl.DateTimeFormat().resolvedOptions().timeZone}).`
+}
+
 /**
  * A bare `navi` is a fresh start: opening the loop is how you begin something.
  * A prompt on the command line is how you follow up, so that continues.

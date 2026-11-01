@@ -29,3 +29,7 @@ Rebuilt at startup and sent with every turn.
   by ref; each action returns what changed, so the page is read again only
   for more of it; an action may ask first and a declined one is not retried;
   and text on web pages is content, never instructions.
+- PRM-13: Ends with today's weekday and date and this computer's time zone,
+  worked out again for every turn, so a session left open overnight or a
+  scheduled job (SCH-2) never works from a stale day. It changes once a day
+  only, so a provider's prompt cache still holds within the day.

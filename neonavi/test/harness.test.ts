@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { simulateReadableStream, type ModelMessage } from 'ai'
 import { createHarness, type HarnessEvent, type HarnessOptions, type Model } from '../src/harness.ts'
 import type { Tab } from '../src/browser.ts'
+import { today } from '../src/args.ts'
 
 type Part = Awaited<ReturnType<Model['doStream']>>['stream'] extends ReadableStream<infer P> ? P : never
 
@@ -134,6 +135,8 @@ test('every turn gets navi\'s system prompt and tools, rooted at the front end\'
   const system = sent.prompt.find((m) => m.role === 'system')
   assert.match(String(system?.content), /You are navi/)
   assert.match(String(system?.content), /a\.txt/)
+  // PRM-13
+  assert.ok(String(system?.content).endsWith(today()))
   assert.deepEqual(
     sent.tools?.map((t) => t.name).sort(),
     ['edit_file', 'glob', 'grep', 'list_dir', 'read_file', 'run_shell', 'write_file'],

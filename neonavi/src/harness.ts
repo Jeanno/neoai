@@ -2,7 +2,7 @@ import { stepCountIs, streamText, type LanguageModel, type ModelMessage } from '
 import { configDir, readConfig } from 'neorouter'
 import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { systemPrompt } from './args.ts'
+import { systemPrompt, today } from './args.ts'
 import { collectContext } from './context.ts'
 import { allowCommand, gated, type Answer } from './approve.ts'
 import { judge } from './judge.ts'
@@ -326,7 +326,8 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           try {
             const result = streamText({
               model: m,
-              system,
+              // PRM-13: the day, as of this turn.
+              system: `${system}\n${today()}`,
               tools,
               messages,
               stopWhen: stepCountIs(maxSteps),
