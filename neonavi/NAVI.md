@@ -65,6 +65,10 @@ notification or push, so you only hear from it when something happened.
 
     navi schedule "check https://status.example.com and tell me about incidents" --every 30m --only-changes
 
+The phone page has them too: its box can start a job now or schedule it
+(every 30 minutes, every hour, or each day or weekday at a time, as a watch
+if you like), and its Schedules list has Run now and Delete for each.
+
 To have jobs reach your phone, install the ntfy app, subscribe to a long
 random topic, and put it in the config as `"push": "https://ntfy.sh/<topic>"`
 (or a ntfy server of your own); `navi push test` checks it, and prints a

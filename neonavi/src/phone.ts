@@ -1,7 +1,8 @@
 /**
- * The page navi serve gives a phone (JOB-10): jobs, their approvals, and a
- * box to start one. It holds no secret: the token comes in the link's
- * fragment, which no server sees, and stays in the phone's storage.
+ * The page navi serve gives a phone (JOB-10, SCH-12): jobs, their approvals,
+ * schedules, and a box to start either. It holds no secret: the token comes
+ * in the link's fragment, which no server sees, and stays in the phone's
+ * storage.
  */
 export const PHONE_PAGE = `<!doctype html>
 <html lang="en">
@@ -33,6 +34,13 @@ export const PHONE_PAGE = `<!doctype html>
   textarea, select { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
   textarea { min-height: 84px; resize: vertical; }
   select { margin-top: 8px; }
+  .row > select, .row > input[type=time] { margin-top: 0; flex: 1; min-width: 0; }
+  input[type=time] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; }
+  .check { display: flex; gap: 8px; align-items: center; margin-top: 10px; font-size: 15px; }
+  .check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 20px 4px 8px; }
+  .sched .p { display: block; margin: 2px 0; }
+  .sched .status { color: var(--accent); }
   button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 11px 16px; background: var(--accent); color: var(--accent-text); }
   button.plain { background: transparent; color: var(--accent); padding: 8px 4px; }
   button.no { background: var(--code); color: var(--text); }
@@ -98,12 +106,32 @@ export const PHONE_PAGE = `<!doctype html>
     return s < 60 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : s < 86400 ? Math.round(s / 3600) + ' h ago' : Math.round(s / 86400) + ' d ago'
   }
 
-  let jobs = [], dirs = [], open = linked, job = null, problem = '', draft = '', reply = '', dir = '', busy = false
+  // SCH-12: how a schedule runs, in words, and when it next does.
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const when = (s) => s.every
+    ? (s.every % 60 ? 'Every ' + s.every + ' min' : s.every === 60 ? 'Every hour' : 'Every ' + s.every / 60 + ' h')
+    : 'At ' + s.at + (!s.days ? ' every day' : s.days.join() === '1,2,3,4,5' ? ' on weekdays' : s.days.join() === '0,6' ? ' at weekends' : ' on ' + s.days.map((d) => DAYS[d]).join(', '))
+  const soon = (iso) => {
+    const t = new Date(iso), mins = Math.round((t - Date.now()) / 60000)
+    if (mins < 1) return 'now'
+    if (mins < 60) return 'in ' + mins + ' min'
+    const hm = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0')
+    const days = Math.round((new Date(t).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
+    return (days === 0 ? 'today ' : days === 1 ? 'tomorrow ' : DAYS[t.getDay()] + ' ') + hm
+  }
+  // What the start box makes: a job now, or a schedule.
+  const REPEATS = [['now', 'Once, now'], ['30', 'Every 30 minutes'], ['60', 'Every hour'], ['daily', 'Every day at…'], ['weekdays', 'Weekdays at…']]
+  const timed = () => repeat === 'daily' || repeat === 'weekdays'
+
+  let jobs = [], schedules = [], dirs = [], open = linked, job = null, problem = '', draft = '', reply = '', dir = '', busy = false
+  let repeat = 'now', time = '08:00', quiet = false
 
   async function refresh() {
     if (!token) return render()
     try {
       jobs = (await api('/jobs')).jobs
+      // A navi serve from before schedules has none to give.
+      schedules = (await api('/schedules').catch(() => ({ schedules: [] }))).schedules
       if (!dirs.length) { dirs = (await api('/jobs/directories')).directories; dir = dir || dirs[0] || '' }
       // A job that is gone (pruned, or a stale link) goes back to the list.
       job = open ? await api('/jobs/' + open).catch((e) => { open = null; throw e }) : null
@@ -159,24 +187,55 @@ export const PHONE_PAGE = `<!doctype html>
         el('div', { class: 'card' },
           el('textarea', { id: 'draft', placeholder: 'What should navi do?', oninput: (e) => { draft = e.target.value; start.disabled = busy || !draft.trim() } }, draft),
           dirs.length > 1 && el('select', { onchange: (e) => (dir = e.target.value) }, dirs.map((d) => el('option', { value: d, selected: d === dir }, short(d)))),
+          el('div', { class: 'row' },
+            el('select', { id: 'repeat', 'aria-label': 'When', onchange: (e) => { repeat = e.target.value; render() } }, REPEATS.map(([v, t]) => el('option', { value: v, selected: v === repeat }, t))),
+            timed() && el('input', { id: 'time', type: 'time', 'aria-label': 'Time', value: time, oninput: (e) => (time = e.target.value) })),
+          repeat !== 'now' && el('label', { class: 'check' },
+            el('input', { id: 'quiet', type: 'checkbox', checked: quiet, onchange: (e) => (quiet = e.target.checked) }),
+            'Only tell me when something changes'),
           el('div', { class: 'row' }, start = el('button', { disabled: busy || !draft.trim(), onclick: () => act(async () => {
-            const made = await api('/jobs', { prompt: draft, ...(dir && { directory: dir }) })
-            draft = ''; open = made.id
-          }) }, 'Start'))),
+            const where = dir ? { directory: dir } : {}
+            if (repeat === 'now') {
+              open = (await api('/jobs', { prompt: draft, ...where })).id
+            } else {
+              await api('/schedules', { prompt: draft, ...where, quiet,
+                ...(timed() ? { at: time, ...(repeat === 'weekdays' && { days: [1, 2, 3, 4, 5] }) } : { every: Number(repeat) }) })
+              repeat = 'now'; quiet = false
+            }
+            draft = ''
+          }) }, repeat === 'now' ? 'Start' : 'Schedule'))),
         err,
+        schedules.length > 0 && el('h2', {}, 'Schedules'),
+        schedules.map((s) => el('div', { class: 'card sched' },
+          el('div', { class: 'status' }, when(s) + (s.quiet ? ' · watch' : '')),
+          el('span', { class: 'p' }, s.prompt),
+          el('span', { class: 'meta' }, 'Next ' + soon(s.next) + ' · ' + short(s.directory)),
+          el('div', { class: 'row' },
+            el('button', { class: 'no', disabled: busy, onclick: () => act(async () => { open = (await api('/schedules/' + s.id + '/run', {})).id }) }, 'Run now'),
+            el('button', { class: 'no', disabled: busy, onclick: () => { if (confirm('Delete this schedule?')) act(() => api('/schedules/' + s.id + '/delete', {})) } }, 'Delete')))),
+        schedules.length > 0 && el('h2', {}, 'Jobs'),
         jobs.length ? jobs.map((j) => el('button', { class: 'job', onclick: () => { open = j.id; refresh() } },
           el('span', { class: 'status s-' + j.status }, j.unchanged ? 'nothing new' : j.status),
           el('span', { class: 'p' }, j.prompt),
           el('span', { class: 'meta' }, ago(j.created) + (j.model ? ' · ' + j.model : ''))))
           : el('p', { class: 'empty' }, 'No jobs yet.'))
     }
-    if (active) { const again = document.getElementById(active); if (again) { again.focus(); const n = again.value.length; again.setSelectionRange?.(n, n) } }
+    if (active) {
+      const again = document.getElementById(active)
+      if (again) {
+        again.focus()
+        // A list, time or checkbox has no caret to put back.
+        if (again.tagName === 'TEXTAREA') { const n = again.value.length; again.setSelectionRange(n, n) }
+      }
+    }
   }
   let start
 
   refresh()
-  // Every few seconds, and at once when the page comes back into view.
-  setInterval(() => { if (!document.hidden && !busy) refresh() }, 3000)
+  // Every few seconds, and at once when the page comes back into view; never
+  // while a list, time or checkbox has focus, which a redraw would close (SCH-13).
+  const picking = () => ['SELECT', 'INPUT'].includes(document.activeElement?.tagName)
+  setInterval(() => { if (!document.hidden && !busy && !picking()) refresh() }, 3000)
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh() })
 })()
 </script>

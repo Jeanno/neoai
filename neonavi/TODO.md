@@ -62,7 +62,8 @@ add the requirement there first.
 - [ ] Answer Yes or No from the notification itself. (`spec/push.md` Open)
 - [x] Watches: `--only-changes` schedules compare with the last run that
       had news and stay silent when nothing changed. (SCH-9 to SCH-11)
-- [ ] Schedules on the phone page. (`spec/schedules.md` Open)
+- [x] Schedules on the phone page: made, listed, run now and deleted
+      there. (SCH-12, SCH-13)
 - [x] navi's own browser: a separate Chromium with its own logins, read as
       text with refs (never screenshots), each action answering with what
       changed; reading is free, acting is judged and asked. (BRW-1 to BRW-15)

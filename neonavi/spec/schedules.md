@@ -58,6 +58,19 @@ every so often. A morning brief, a page watched every hour.
   next run; `navi schedules <id> run` starts one now; `navi schedules <id>
   rm` deletes it. Like `navi jobs`, they talk to navi serve (JOB-13).
 
+## On the phone
+
+- SCH-12: The phone page (JOB-10) lists the schedules, soonest first, each
+  with when it runs, its next run and whether it is a watch, with Run now
+  (which opens the job it starts) and Delete (after a confirmation). Its
+  box for starting a job can instead make a schedule: every 30 minutes,
+  every hour, or every day or every weekday at a time chosen, and, for any
+  of them, a watch (SCH-9).
+- SCH-13: The page does not redraw itself every few seconds while a
+  choice is open in it (a list, a time or a checkbox), so a choice is never
+  snatched away mid-pick.
+
 ## Open
 
-- Schedules on the phone page.
+
+- Editing a schedule in place, rather than deleting it and making another.
