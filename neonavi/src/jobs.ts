@@ -40,7 +40,23 @@ export interface Job {
   history: ModelMessage[]
   /** The schedule that started it (SCH-2). */
   schedule?: string
+  /** Started by a watch, which may answer NOTHING NEW (SCH-9). */
+  watch?: true
+  /** A watch's run that found nothing new, so said nothing (SCH-10). */
+  unchanged?: true
 }
+
+/** How a job is started beyond its prompt and directory. */
+export interface StartOptions {
+  schedule?: string
+  /** What the model is sent in place of the prompt (SCH-11). */
+  send?: string
+  watch?: boolean
+}
+
+/** A watch's answer when nothing changed (SCH-10). */
+export const NOTHING_NEW = 'NOTHING NEW'
+export const nothingNew = (answer: string | undefined) => /^\W*nothing new\W*$/i.test(answer ?? '')
 
 /** A job as listed: no conversation or log (JOB-7). */
 export type Listed = Omit<Job, 'history' | 'log'>
@@ -56,7 +72,7 @@ export interface JobDeps {
 export interface Jobs {
   list(): Listed[]
   get(id: string): Job | undefined
-  create(prompt: string, directory: string, schedule?: string): Job
+  create(prompt: string, directory: string, o?: StartOptions): Job
   /** False when the job is not waiting. */
   answer(id: string, yes: boolean): boolean
   /** False when the job is running or waiting (JOB-3). */
@@ -143,6 +159,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
     job.status = 'running'
     delete job.answer
     delete job.error
+    delete job.unchanged
     await save(job)
     const approve = (command: string, o: Parameters<NonNullable<HarnessOptions['approve']>>[1]): Promise<Answer> =>
       new Promise<boolean>((resolve) => {
@@ -193,9 +210,11 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
       stops.delete(job.id)
       delete job.pending
     }
+    // SCH-10: a watch that found nothing says nothing.
+    if (job.watch && job.status === 'done' && nothingNew(job.answer)) job.unchanged = true
     await save(job)
     const word = { done: 'is done', failed: 'failed', stopped: 'was stopped' }[job.status as 'done' | 'failed' | 'stopped']
-    if (word) d.notify(`navi ${word}`, titleOf(job.prompt), job.id)
+    if (word && !job.unchanged) d.notify(`navi ${word}`, titleOf(job.prompt), job.id)
     await prune()
   }
 
@@ -210,7 +229,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
   return {
     list: () => [...jobs.values()].sort((a, b) => b.created.localeCompare(a.created)).map(listed),
     get: (id) => jobs.get(id),
-    create(prompt, directory, schedule) {
+    create(prompt, directory, o = {}) {
       const now = new Date().toISOString()
       const job: Job = {
         id: randomBytes(4).toString('hex'),
@@ -221,10 +240,11 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         status: 'running',
         log: [],
         history: [],
-        ...(schedule && { schedule }),
+        ...(o.schedule && { schedule: o.schedule }),
+        ...(o.watch && { watch: true as const }),
       }
       jobs.set(job.id, job)
-      begin(job, prompt)
+      begin(job, o.send ?? prompt)
       return job
     },
     answer(id, yes) {

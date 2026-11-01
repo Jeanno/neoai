@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { NOTHING_NEW, nothingNew, type StartOptions } from './jobs.ts'
 
 /**
  * Jobs navi serve starts by itself (schedules.md): at a time of day, or
@@ -22,6 +23,10 @@ export interface Schedule {
   last?: string
   /** The job its last run started. */
   job?: string
+  /** A watch: quiet when nothing changed (SCH-9). */
+  quiet?: true
+  /** What a watch's last run with news answered (SCH-9). */
+  news?: string
 }
 
 export type When = Pick<Schedule, 'at' | 'days' | 'every'>
@@ -29,7 +34,9 @@ export type When = Pick<Schedule, 'at' | 'days' | 'every'>
 export interface ScheduleDeps {
   home: string
   /** Starts a job; its id. */
-  start: (prompt: string, directory: string, schedule: string) => string
+  start: (prompt: string, directory: string, o: StartOptions) => string
+  /** What a job answered, once it is done. */
+  answerOf: (job: string) => string | undefined
   /** Whether a job is still running or waiting (SCH-3). */
   busy: (job: string) => boolean
 }
@@ -38,7 +45,7 @@ export interface Schedules {
   /** Each schedule with when it next runs, soonest first. */
   list(now?: Date): (Schedule & { next: string })[]
   get(id: string): Schedule | undefined
-  add(prompt: string, directory: string, when: When): Promise<Schedule>
+  add(prompt: string, directory: string, when: When, quiet?: boolean): Promise<Schedule>
   remove(id: string): Promise<boolean>
   /** Starts it now (SCH-7); the job's id. */
   run(id: string): Promise<string | undefined>
@@ -47,6 +54,21 @@ export interface Schedules {
 }
 
 export const MIN_EVERY = 5
+const NEWS = 4000
+
+/** What a watch's run is sent (SCH-9, SCH-11): the prompt, then what to compare with. */
+export function watchPrompt(prompt: string, news: string): string {
+  return [
+    prompt,
+    '',
+    '(navi: this runs on a schedule, as a watch. The last time it had news, the answer was:',
+    '"""',
+    news,
+    '"""',
+    `If nothing the user would want to hear about has changed since then, answer with exactly ${NOTHING_NEW} and nothing else.`,
+    'Otherwise answer as usual, leading with what is new.)',
+  ].join('\n')
+}
 const LATE = 12 * 60 * 60 * 1000
 
 export const schedulesFile = (home: string) => join(home, '.neoai', 'schedules.json')
@@ -119,7 +141,13 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
   }
 
   const start = (s: Schedule, now: Date) => {
-    s.job = d.start(s.prompt, s.directory, s.id)
+    // SCH-10: the last run's answer is what the next compares with, unless it found nothing.
+    const answered = s.quiet && s.job ? d.answerOf(s.job) : undefined
+    if (answered && !nothingNew(answered)) s.news = answered.slice(0, NEWS)
+    s.job = d.start(s.prompt, s.directory, {
+      schedule: s.id,
+      ...(s.quiet && { watch: true, ...(s.news && { send: watchPrompt(s.prompt, s.news) }) }),
+    })
     s.last = now.toISOString()
     return s.job
   }
@@ -134,7 +162,7 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
         })
         .sort((a, b) => a.next.localeCompare(b.next)),
     get: (id) => all.find((s) => s.id === id),
-    async add(prompt, directory, when) {
+    async add(prompt, directory, when, quiet) {
       const s: Schedule = {
         id: randomBytes(4).toString('hex'),
         prompt,
@@ -143,6 +171,7 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
         ...(when.at !== undefined && { at: when.at }),
         ...(when.days !== undefined && { days: [...new Set(when.days)].sort() }),
         ...(when.every !== undefined && { every: when.every }),
+        ...(quiet && { quiet: true as const }),
       }
       all.push(s)
       await save()

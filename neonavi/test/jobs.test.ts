@@ -34,6 +34,8 @@ function fakeSession(approve: Approve, start: ModelMessage[]): Session {
       } else if (prompt === 'fail') {
         yield { type: 'error', error: new Error('the backend fell over') }
         yield end('')
+      } else if (prompt === 'nothing-new') {
+        yield end('NOTHING NEW.')
       } else {
         yield { type: 'escalated', from: 'small', to: 'big', local: false, reason: 'it gave no answer' }
         yield end(`Answer to ${prompt}.`)
@@ -162,6 +164,27 @@ test('only the 100 most recent jobs are kept', async () => {
   assert.equal(jobs.list().length, 100)
   assert.equal(jobs.list().at(-1)!.prompt, 'job 3')
   assert.equal((await readdir(jobsDir(home))).filter((n) => n.endsWith('.json')).length, 100)
+})
+
+// SCH-10, SCH-11
+test('a watch that finds nothing new is marked so and says nothing; one with news is notified', async () => {
+  const { jobs, notes } = await setup({
+    start: async ({ approve, history }) => ({ session: fakeSession(approve, history), model: 'small' }),
+  })
+  const quietJob = jobs.create('check the page', '/tmp', { schedule: 's1', watch: true, send: 'nothing-new' })
+  await jobs.idle()
+  assert.equal(jobs.get(quietJob.id)?.prompt, 'check the page')
+  assert.equal(jobs.get(quietJob.id)?.status, 'done')
+  assert.equal(jobs.get(quietJob.id)?.unchanged, true)
+  assert.deepEqual(notes, [])
+  const news = jobs.create('check the page', '/tmp', { schedule: 's1', watch: true, send: 'news' })
+  await jobs.idle()
+  assert.equal(jobs.get(news.id)?.unchanged, undefined)
+  assert.deepEqual(notes, ['navi is done: check the page'])
+  // Not a watch: NOTHING NEW is just an answer.
+  const plain = jobs.create('check the page', '/tmp', { send: 'nothing-new' })
+  await jobs.idle()
+  assert.equal(jobs.get(plain.id)?.unchanged, undefined)
 })
 
 // JOB-8

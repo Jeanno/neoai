@@ -60,8 +60,9 @@ add the requirement there first.
 - [x] Push to the phone through ntfy when a job waits or ends, tapping
       through to the job; only the job id leaves unless `detail`. (PSH-1 to PSH-6)
 - [ ] Answer Yes or No from the notification itself. (`spec/push.md` Open)
-- [ ] Schedules on the phone page, and a page watch that is quiet when
-      nothing changed. (`spec/schedules.md` Open)
+- [x] Watches: `--only-changes` schedules compare with the last run that
+      had news and stay silent when nothing changed. (SCH-9 to SCH-11)
+- [ ] Schedules on the phone page. (`spec/schedules.md` Open)
 - [x] navi's own browser: a separate Chromium with its own logins, read as
       text with refs (never screenshots), each action answering with what
       changed; reading is free, acting is judged and asked. (BRW-1 to BRW-15)

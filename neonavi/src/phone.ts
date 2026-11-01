@@ -134,7 +134,7 @@ export const PHONE_PAGE = `<!doctype html>
       const live = job.status === 'running' || job.status === 'waiting'
       put(head,
         el('div', { class: 'card' },
-          el('div', { class: 'status s-' + job.status }, job.status),
+          el('div', { class: 'status s-' + job.status }, job.unchanged ? 'nothing new' : job.status),
           el('div', { class: 'answer' }, job.prompt),
           el('div', { class: 'meta' }, short(job.directory) + (job.model ? ' · ' + job.model : '') + ' · ' + ago(job.created))),
         job.pending && el('div', { class: 'card pending' },
@@ -165,7 +165,7 @@ export const PHONE_PAGE = `<!doctype html>
           }) }, 'Start'))),
         err,
         jobs.length ? jobs.map((j) => el('button', { class: 'job', onclick: () => { open = j.id; refresh() } },
-          el('span', { class: 'status s-' + j.status }, j.status),
+          el('span', { class: 'status s-' + j.status }, j.unchanged ? 'nothing new' : j.status),
           el('span', { class: 'p' }, j.prompt),
           el('span', { class: 'meta' }, ago(j.created) + (j.model ? ' · ' + j.model : ''))))
           : el('p', { class: 'empty' }, 'No jobs yet.'))

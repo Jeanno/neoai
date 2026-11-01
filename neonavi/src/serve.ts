@@ -121,7 +121,8 @@ async function schedulesRoute(req: IncomingMessage, res: ServerResponse, path: s
     if (wrong) return error(res, 400, wrong)
     const directory = await placeFor(body.directory, o)
     if (!directory) return error(res, 400, `${String(body.directory)} is not a directory on this computer; give an absolute path.`)
-    const made = await schedules.add(body.prompt.trim(), directory, when)
+    if (body.quiet !== undefined && typeof body.quiet !== 'boolean') return error(res, 400, 'quiet is true or false.')
+    const made = await schedules.add(body.prompt.trim(), directory, when, body.quiet === true)
     return json(res, 201, schedules.list().find((s) => s.id === made.id))
   }
   if (!schedules.get(parts[0])) return error(res, 404, `There is no schedule ${parts[0]}.`)

@@ -58,6 +58,13 @@ up once, not one by one, unless they are more than 12 hours late
 
     navi schedule "summarise what's new on my GitHub notifications page" --at 08:30 --days weekdays
 
+Add `--only-changes` to make a schedule a watch: each run is shown what the
+last run with news said and answers `NOTHING NEW` when nothing worth telling
+you has changed. Those runs are listed as "nothing new" and send no
+notification or push, so you only hear from it when something happened.
+
+    navi schedule "check https://status.example.com and tell me about incidents" --every 30m --only-changes
+
 To have jobs reach your phone, install the ntfy app, subscribe to a long
 random topic, and put it in the config as `"push": "https://ntfy.sh/<topic>"`
 (or a ntfy server of your own); `navi push test` checks it, and prints a

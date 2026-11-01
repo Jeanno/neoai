@@ -100,7 +100,7 @@ const USAGE = [
   '       navi stats [--days N]',
   '       navi job "<what you want done>" [-C <directory>]',
   '       navi jobs [<id> [y | n | stop] | link]',
-  '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [-C <directory>]',
+  '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
   '       navi schedules [<id> run | rm]',
   '       navi push test',
 ].join('\n')
@@ -123,7 +123,8 @@ const ABOUT = [
   'navi stats           how each model has done, from the ledger; --days N (default 30)',
   'navi job "…"         hand navi serve a job to do in the background; -C sets where',
   'navi jobs            list jobs; <id> shows one, then y, n or stop; link is for a phone',
-  'navi schedule "…"    have navi serve start a job at a time of day or every so often',
+  'navi schedule "…"    have navi serve start a job at a time of day or every so often;',
+  '                     --only-changes makes it a watch that only speaks when something changed',
   'navi schedules       list schedules and their next run; <id> run starts one now, rm deletes it',
   'navi push test       send a test push to your phone (set "push" in the config first)',
 ].join('\n')
@@ -216,7 +217,8 @@ async function serve(argv: string[]) {
   const jobs = await makeJobs({ home, start: startJob, notify: makeNotify(tailnetAt[0] && `http://${tailnetAt[0]}:${n}/`, say) })
   const schedules = await makeSchedules({
     home,
-    start: (prompt, directory, schedule) => jobs.create(prompt, directory, schedule).id,
+    start: (prompt, directory, o) => jobs.create(prompt, directory, o).id,
+    answerOf: (id) => (jobs.get(id)?.status === 'done' ? jobs.get(id)?.answer : undefined),
     busy: (id) => ['running', 'waiting'].includes(jobs.get(id)?.status ?? ''),
   })
   if (tailnet.value !== undefined && !tailnetAt.length) console.error('This computer has no Tailscale address, so only it can reach navi serve.')
@@ -299,11 +301,11 @@ async function jobsApi(port: number, path: string, body?: unknown): Promise<{ st
 
 const NOT_SERVING = 'navi serve is not running. Start it with `navi serve`, or keep it running with `navi serve --install`.'
 
-const statusWord = (s: string) => (s === 'waiting' ? bold('waiting for you') : s)
+const statusWord = (s: string, unchanged?: boolean) => (s === 'waiting' ? bold('waiting for you') : unchanged ? 'nothing new' : s)
 
 /** One job as `navi jobs <id>` shows it (JOB-13). */
 function showJob(job: any) {
-  console.log(`${bold(job.id)} · ${statusWord(job.status)}${job.model ? ` · ${job.model}` : ''}`)
+  console.log(`${bold(job.id)} · ${statusWord(job.status, job.unchanged)}${job.model ? ` · ${job.model}` : ''}`)
   console.log(dim(`${job.directory}${job.schedule ? ` · from schedule ${job.schedule}` : ''}`))
   console.log(job.prompt)
   if (job.log?.length) console.log(dim(job.log.join('\n')))
@@ -355,7 +357,7 @@ async function jobsCommand(argv: string[]) {
     if (!got) return console.error(NOT_SERVING), 1
     const list = got.data.jobs ?? []
     if (!list.length) console.log('No jobs yet. Start one with `navi job "<what you want done>"`.')
-    for (const j of list) console.log(`${bold(j.id)}  ${statusWord(j.status).padEnd(10)}  ${ago(new Date(j.created)).padEnd(10)}  ${titleOf(j.prompt)}`)
+    for (const j of list) console.log(`${bold(j.id)}  ${statusWord(j.status, j.unchanged).padEnd(10)}  ${ago(new Date(j.created)).padEnd(10)}  ${titleOf(j.prompt)}`)
     return 0
   }
   const path = what === undefined ? `/jobs/${id}` : what === 'stop' ? `/jobs/${id}/stop` : `/jobs/${id}/answer`
@@ -373,18 +375,19 @@ async function scheduleCommand(argv: string[]) {
   const at = takeFlag(dir.rest, '--at', true)
   const days = takeFlag(at.rest, '--days', true)
   const every = takeFlag(days.rest, '--every', true)
-  const prompt = every.rest.join(' ').trim()
+  const quiet = takeFlag(every.rest, '--only-changes', false)
+  const prompt = quiet.rest.join(' ').trim()
   const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
   const minutes = every.value === undefined ? undefined : parseEvery(every.value)
   const on = days.value === undefined ? undefined : parseDays(days.value)
-  const usage = 'usage: navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [-C <directory>] [--port N]'
+  const usage = 'usage: navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>] [--port N]'
   if (!prompt || !Number.isInteger(n) || (at.value === undefined) === (every.value === undefined)) return console.error(usage), 1
   if (every.value !== undefined && minutes === undefined) return console.error(`not a length of time: ${every.value} (say 30m or 2h)`), 1
   if (days.value !== undefined && !on) return console.error(`not days: ${days.value} (say mon,wed, weekdays or weekends)`), 1
-  const got = await jobsApi(n, '/schedules', { prompt, directory: resolve(dir.value ?? process.cwd()), at: at.value, days: on, every: minutes })
+  const got = await jobsApi(n, '/schedules', { prompt, directory: resolve(dir.value ?? process.cwd()), at: at.value, days: on, every: minutes, quiet: quiet.value !== undefined })
   if (!got) return console.error(NOT_SERVING), 1
   if (got.status !== 201) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
-  console.log(`Scheduled ${bold(got.data.id)}: ${whenText(got.data)}, next ${nextText(new Date(got.data.next))}.`)
+  console.log(`Scheduled ${bold(got.data.id)}: ${whenText(got.data)}${got.data.quiet ? ', only when something changed' : ''}, next ${nextText(new Date(got.data.next))}.`)
   console.log(dim(`navi serve starts it as a job; \`navi schedules ${got.data.id} rm\` deletes it.`))
   return 0
 }
@@ -405,7 +408,7 @@ async function schedulesCommand(argv: string[]) {
     const list = got.data.schedules ?? []
     if (!list.length) console.log('No schedules. Add one with `navi schedule "<what you want done>" --at 08:00`.')
     for (const s of list)
-      console.log(`${bold(s.id)}  ${whenText(s).padEnd(22)}  next ${nextText(new Date(s.next)).padEnd(15)}  ${titleOf(s.prompt)}`)
+      console.log(`${bold(s.id)}  ${`${whenText(s)}${s.quiet ? ' · watch' : ''}`.padEnd(22)}  next ${nextText(new Date(s.next)).padEnd(15)}  ${titleOf(s.prompt)}`)
     return 0
   }
   const got = await jobsApi(n, `/schedules/${id}/${what === 'rm' ? 'delete' : 'run'}`, {})

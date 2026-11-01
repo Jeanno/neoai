@@ -26,25 +26,38 @@ every so often. A morning brief, a page watched every hour.
   restarting.
 - SCH-6: navi serve looks for due schedules at least every 30 seconds.
 
+## Watches
+
+- SCH-9: A schedule made a watch (`quiet`) tells each run after the first
+  what the last run with news answered (its first 4000 characters), and to
+  answer exactly `NOTHING NEW` when nothing the user would want to hear
+  about has changed since. The first run, with nothing to compare, answers
+  as usual.
+- SCH-10: A watch's job that answers `NOTHING NEW` is done and marked
+  unchanged: listed as "nothing new", with no notification or push (JOB-5,
+  PSH-1). Any other answer is notified as usual and is what the next run
+  compares against.
+- SCH-11: The job's prompt stays the user's own; what a watch adds goes to
+  the model, not into the prompt shown.
+
 ## The API
 
 - SCH-7: navi serve answers, with the token (JOB-8): `GET /schedules`
   (each schedule with its next run), `POST /schedules` with `{ prompt,
-  directory?, at?, days?, every? }` (the new schedule, 201; `every` in
-  minutes, `days` as 0 for Sunday to 6), `POST /schedules/<id>/run` (starts
-  it now, as a job, 201) and `POST /schedules/<id>/delete`. A missing
+  directory?, at?, days?, every?, quiet? }` (the new schedule, 201; `every`
+  in minutes, `days` as 0 for Sunday to 6, `quiet` true for a watch),
+  `POST /schedules/<id>/run` (starts it now, as a job, 201) and `POST
+  /schedules/<id>/delete`. A missing
   schedule is a 404; anything else wrong is a 400 saying what.
 
 ## The CLI
 
 - SCH-8: `navi schedule "<prompt>" --at HH:MM [--days mon,tue,…] [-C
-  <dir>]` or `--every <N>m|<N>h` adds a schedule (in this directory unless
-  told) and says when it next runs; `navi schedules` lists them with their
+  <dir>]` or `--every <N>m|<N>h`, with `--only-changes` for a watch (SCH-9),
+  adds a schedule (in this directory unless told) and says when it next runs; `navi schedules` lists them with their
   next run; `navi schedules <id> run` starts one now; `navi schedules <id>
   rm` deletes it. Like `navi jobs`, they talk to navi serve (JOB-13).
 
 ## Open
 
 - Schedules on the phone page.
-- A job that only tells you when something changed (a page watch that is
-  quiet when nothing did).

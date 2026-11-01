@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkWhen, makeSchedules, nextRun, nextText, parseDays, parseEvery, schedulesFile, whenText, type ScheduleDeps } from '../src/schedules.ts'
-import { makeJobs } from '../src/jobs.ts'
+import { makeJobs, type StartOptions } from '../src/jobs.ts'
 import { listen, type ServeDeps } from '../src/serve.ts'
 
 /** A local time, so the tests read the same in any time zone. */
@@ -14,17 +14,21 @@ const at = (y: number, mo: number, d: number, h = 0, mi = 0) => new Date(y, mo -
 async function setup(o: Partial<ScheduleDeps> = {}) {
   const home = await mkdtemp(join(tmpdir(), 'navi-schedules-'))
   const started: { prompt: string; schedule: string }[] = []
+  const sent: StartOptions[] = []
   const busy = new Set<string>()
+  const answers = new Map<string, string>()
   const deps: ScheduleDeps = {
     home,
-    start: (prompt, _dir, schedule) => {
-      started.push({ prompt, schedule })
+    start: (prompt, _dir, o) => {
+      started.push({ prompt, schedule: o.schedule! })
+      sent.push(o)
       return `job${started.length}`
     },
+    answerOf: (id) => answers.get(id),
     busy: (id) => busy.has(id),
     ...o,
   }
-  return { home, started, busy, deps, schedules: await makeSchedules(deps) }
+  return { home, started, sent, busy, answers, deps, schedules: await makeSchedules(deps) }
 }
 
 test('SCH-1: a schedule is at a time of day or every 5 minutes or more, not both', () => {
@@ -134,7 +138,7 @@ test('SCH-7: the schedules API needs the token, checks what it is given, and run
     },
     notify: () => {},
   })
-  const schedules = await makeSchedules({ home, start: (p, d, s) => jobs.create(p, d, s).id, busy: () => false })
+  const schedules = await makeSchedules({ home, start: (p, d, o) => jobs.create(p, d, o).id, answerOf: () => undefined, busy: () => false })
   const [server] = await listen([], noModels, 0, { jobs: { jobs, token: 'a'.repeat(64), directories: async () => [home], schedules } })
   t.after(() => server.close())
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -147,6 +151,7 @@ test('SCH-7: the schedules API needs the token, checks what it is given, and run
   assert.equal((await call('/schedules', undefined, 'b'.repeat(64))).status, 401)
   assert.equal((await call('/schedules', { prompt: 'x', every: 1 })).status, 400)
   assert.equal((await call('/schedules', { prompt: 'x', at: '08:00', directory: '/no/such/place' })).status, 400)
+  assert.equal((await call('/schedules', { prompt: 'x', at: '08:00', quiet: 'yes' })).status, 400)
   const made = await call('/schedules', { prompt: 'the brief', at: '08:00', days: [1, 2, 3, 4, 5] })
   assert.equal(made.status, 201)
   const s = await made.json()
@@ -161,4 +166,27 @@ test('SCH-7: the schedules API needs the token, checks what it is given, and run
   assert.equal((await call(`/schedules/${s.id}/delete`, {})).status, 200)
   assert.equal((await (await call('/schedules')).json()).schedules.length, 0)
   await jobs.idle()
+})
+
+test('SCH-9, SCH-11: a watch is told what its last run with news said, and the prompt stays the user\'s', async () => {
+  const { schedules, sent, answers } = await setup()
+  const s = await schedules.add('what is new on the status page?', '/tmp', { every: 60 }, true)
+  await schedules.run(s.id)
+  // The first has nothing to compare with.
+  assert.deepEqual(sent[0], { schedule: s.id, watch: true })
+  answers.set('job1', 'All systems normal.')
+  await schedules.run(s.id)
+  assert.equal(sent[1].watch, true)
+  assert.match(sent[1].send!, /^what is new on the status page\?\n/)
+  assert.match(sent[1].send!, /All systems normal\./)
+  assert.match(sent[1].send!, /exactly NOTHING NEW/)
+  // A run that found nothing leaves the comparison where it was.
+  answers.set('job2', 'NOTHING NEW')
+  await schedules.run(s.id)
+  assert.match(sent[2].send!, /All systems normal\./)
+  assert.equal(schedules.get(s.id)?.news, 'All systems normal.')
+  // A schedule that is not a watch is sent its prompt as it is.
+  const plain = await schedules.add('brief', '/tmp', { every: 60 })
+  await schedules.run(plain.id)
+  assert.deepEqual(sent[3], { schedule: plain.id })
 })
