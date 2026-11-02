@@ -43,11 +43,25 @@ export interface Exchange {
   files?: string[]
   /** The last thing navi said in answer, if it said anything. */
   answer?: string
+  /** Which of the files are photos, each to be had by its place here (JOB-37). */
+  images?: string[]
 }
 
-/** What was asked and answered, a turn each (JOB-27): navi's own notes and summaries left out. */
-export function exchanges(messages: ModelMessage[]): Exchange[] {
-  const out: Exchange[] = []
+type Picture = { mediaType: string; data: string }
+
+/** A turn's photos as they were sent: a file part named as one of its files. */
+function pictures(content: ModelMessage['content'], names: string[]): (Picture & { name: string })[] {
+  if (typeof content === 'string') return []
+  return content.flatMap((p) => {
+    if (p.type !== 'file' || !p.mediaType.startsWith('image/') || !p.filename || !names.includes(p.filename)) return []
+    const data = typeof p.data === 'string' ? p.data : p.data instanceof Uint8Array ? Buffer.from(p.data).toString('base64') : null
+    return data && !data.includes(':') ? [{ name: p.filename, mediaType: p.mediaType, data }] : []
+  })
+}
+
+function walk(messages: ModelMessage[]): { turns: Exchange[]; pics: (Picture & { name: string })[][] } {
+  const turns: Exchange[] = []
+  const pics: (Picture & { name: string })[][] = []
   for (const m of messages) {
     if (m.role === 'user') {
       const { prompt, names } = splitUserContent(m.content as Parameters<typeof splitUserContent>[0])
@@ -55,14 +69,27 @@ export function exchanges(messages: ModelMessage[]): Exchange[] {
       const rest = tailOff(notesOff(prompt).rest).trim()
       // A note navi sent alone (an escalation) goes on with the turn before it.
       if (!rest && !names.length) continue
-      out.push({ prompt: rest, ...(names.length && { files: names }) })
-    } else if (m.role === 'assistant' && out.length) {
+      const got = pictures(m.content, names)
+      turns.push({ prompt: rest, ...(names.length && { files: names }), ...(got.length && { images: got.map((g) => g.name) }) })
+      pics.push(got)
+    } else if (m.role === 'assistant' && turns.length) {
       const parts = typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : m.content
       const text = parts.flatMap((p) => (p.type === 'text' && p.text.trim() ? [p.text.trim()] : [])).join('\n\n')
-      if (text) out[out.length - 1].answer = text
+      if (text) turns[turns.length - 1].answer = text
     }
   }
-  return out
+  return { turns, pics }
+}
+
+/** The k-th photo of a turn (JOB-37), or nothing. */
+export function turnImage(messages: ModelMessage[], turn: number, k: number): Picture | undefined {
+  const got = walk(messages).pics[turn]?.[k]
+  return got && { mediaType: got.mediaType, data: got.data }
+}
+
+/** What was asked and answered, a turn each (JOB-27): navi's own notes and summaries left out. */
+export function exchanges(messages: ModelMessage[]): Exchange[] {
+  return walk(messages).turns
 }
 
 const quote = (s: string) => s.split('\n').map((l) => `> ${l}`.trimEnd()).join('\n')

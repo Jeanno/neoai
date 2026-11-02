@@ -11,6 +11,7 @@ import { addFact, readMemory } from '../src/memory.ts'
 import { makeSchedules } from '../src/schedules.ts'
 import { listen, type ServeDeps } from '../src/serve.ts'
 import { makeRecorder } from '../src/undo.ts'
+import { userContent } from '../src/attach.ts'
 
 // A real Chromium, headless; CI installs it. Elsewhere, without one, these are skipped.
 const executable = await findBrowser()
@@ -122,16 +123,20 @@ test('JOB-16: the phone sends picked files with a job, photos as JPEG', { skip }
   const given: unknown[] = []
   const jobs = await makeJobs({
     home,
-    start: async () => ({
-      model: 'small',
-      session: {
-        history: [],
-        async *turn(_p: string, o: any) {
-          given.push(o?.attachments)
-          yield { type: 'done', history: [], text: 'Seen.', empty: false, stopped: false } as const
+    start: async ({ history }) => {
+      let h = history
+      return {
+        model: 'small',
+        session: {
+          get history() { return h },
+          async *turn(p: string, o: any) {
+            given.push(o?.attachments)
+            h = [...h, { role: 'user', content: userContent(p, o?.attachments) } as import('ai').ModelMessage, { role: 'assistant', content: 'Seen.' }]
+            yield { type: 'done', history: h, text: 'Seen.', empty: false, stopped: false } as const
+          },
         },
-      },
-    }),
+      }
+    },
     notify: () => {},
   })
   const token = '9'.repeat(64)
@@ -148,13 +153,17 @@ test('JOB-16: the phone sends picked files with a job, photos as JPEG', { skip }
     { name: 'receipt.png', mimeType: 'image/png', buffer: png },
     { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('total 12.50') },
   ])
-  await page.getByText('receipt.jpg').waitFor()
+  // JOB-37: a photo chosen shows as a picture, a file by name.
+  await page.getByRole('img', { name: 'receipt.jpg' }).waitFor()
+  await page.getByText('notes.txt').waitFor()
   await page.getByRole('button', { name: 'Remove notes.txt' }).click()
   await page.getByText('notes.txt').waitFor({ state: 'detached' })
   // JOB-36: on a keyboard, Enter sends what was just typed.
   await page.getByPlaceholder('Ask navi').fill('what is the total?')
   await page.getByPlaceholder('Ask navi').press('Enter')
-  await page.locator('.you .chip', { hasText: 'receipt.jpg' }).waitFor()
+  const shown = page.locator('.you .photos img[alt="receipt.jpg"]')
+  await shown.waitFor()
+  assert.ok(await shown.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0))
   await jobs.idle()
   const [sent] = given as any[][]
   assert.equal(sent.length, 1)
@@ -171,6 +180,22 @@ test('JOB-16: the phone sends picked files with a job, photos as JPEG', { skip }
   assert.equal(given.length, 2)
   assert.deepEqual((given[1] as any[]).map((a) => a.name), ['menu.txt'])
   assert.equal(await page.locator('.file').count(), 0)
+  // Opened again, the photo comes from navi serve, and a tap shows it full size.
+  await page.reload()
+  await page.locator('.chat').first().click()
+  const kept = page.locator('.you .photos img[alt="receipt.jpg"]')
+  await page.waitForFunction(() => (document.querySelector('.you .photos img') as HTMLImageElement | null)?.src.startsWith('blob:'))
+  assert.ok(await kept.evaluate((i: HTMLImageElement) => i.naturalWidth > 0))
+  await page.getByRole('button', { name: 'Open receipt.jpg' }).click()
+  await page.getByRole('dialog', { name: 'Photo' }).click()
+  await page.getByRole('dialog').waitFor({ state: 'detached' })
+  // A file chosen after the page has redrawn still arrives, and the same one can be chosen twice.
+  await page.waitForTimeout(3500)
+  for (let i = 0; i < 2; i++) {
+    await page.getByLabel('Add photo or file').setInputFiles([{ name: 'again.png', mimeType: 'image/png', buffer: png }])
+    await page.getByRole('img', { name: 'again.jpg' }).waitFor()
+    await page.getByRole('button', { name: 'Remove again.jpg' }).click()
+  }
   await page.getByRole('button', { name: 'Back' }).click()
   assert.equal(await page.getByText('receipt.jpg').count(), 0)
 })

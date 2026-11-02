@@ -79,6 +79,15 @@ export const PHONE_PAGE = `<!doctype html>
   .file { display: inline-flex; align-items: center; gap: 2px; padding: 4px 4px 4px 10px; }
   .file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
   .file button { padding: 0 6px; background: none; color: var(--muted); font-size: 18px; line-height: 1; }
+  .file.thumb { padding: 0; position: relative; border-radius: 14px; overflow: visible; }
+  .file.thumb img { width: 58px; height: 58px; object-fit: cover; border-radius: 13px; display: block; }
+  .file.thumb button { position: absolute; top: -7px; right: -7px; width: 22px; height: 22px; padding: 0; border-radius: 11px; background: var(--text); color: var(--bg); font-size: 15px; }
+  .photos { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .photos button { padding: 0; border: 0; background: none; border-radius: 16px; overflow: hidden; }
+  .photos img { display: block; width: 128px; height: 128px; object-fit: cover; background: var(--bubble); }
+  .photos button:only-child img { width: auto; height: auto; max-width: min(240px, 70vw); max-height: 300px; min-width: 96px; min-height: 96px; }
+  .lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.92); display: grid; place-items: center; padding: 16px; }
+  .lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; }
 
   /* The list of chats. */
   .find { width: 100%; background: var(--bubble); border: 0; border-radius: 12px; padding: 9px 12px; margin: 4px 0 6px; outline: none; }
@@ -124,6 +133,7 @@ export const PHONE_PAGE = `<!doctype html>
   details.steps[open] summary::before { transform: rotate(90deg); }
   .meta { color: var(--muted); font-size: 13px; }
   .err { color: var(--bad); font-size: 14px; margin: 8px 0 0; }
+  .composer .err { margin: 0 6px 8px; }
   .note { color: var(--muted); text-align: center; padding: 32px 8px; }
   pre { background: var(--code); border-radius: 10px; padding: 10px 12px; overflow-x: auto; font: 12.5px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; }
   .suggest { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
@@ -285,13 +295,40 @@ ${MARKDOWN_JS}
   }
   // The files chosen for a new job and for a follow-up, as { name, data } with data base64 (JOB-16, JOB-20).
   let picked = [], more = []
+  // JOB-37: photos to show in a thread. What this page sent shows at once, by job and name;
+  // the rest are fetched from navi serve once each.
+  const sentPics = new Map(), gotPics = new Map()
+  let viewing = null
+  const isPic = (f) => /\.(jpe?g|png|gif|webp)$/i.test(f.name)
+  const dataUrl = (f) => 'data:image/' + ({ png: 'png', gif: 'gif', webp: 'webp' }[f.name.split('.').pop().toLowerCase()] || 'jpeg') + ';base64,' + f.data
+  const keepSent = (id, files) => { for (const f of files) if (isPic(f)) sentPics.set(id + '|' + f.name, dataUrl(f)) }
+  function picture(id, turn, k) {
+    const key = id + '/' + turn + '/' + k
+    if (!gotPics.has(key)) {
+      gotPics.set(key, null)
+      fetch('/jobs/' + id + '/turns/' + turn + '/images/' + k, { headers: { authorization: 'Bearer ' + token } })
+        .then((r) => (r.ok ? r.blob() : Promise.reject()))
+        .then((b) => { gotPics.set(key, URL.createObjectURL(b)); render() }, () => {})
+    }
+    return gotPics.get(key)
+  }
+  // One file input per box, kept across redraws: a phone's picker answers the input that opened it,
+  // and the page does not refresh while it is open (or for half a minute, if it never says).
+  const inputs = {}
+  let choosing = 0
 
   // A photo is sent as a JPEG at most 1600 pixels on a side, which also turns
   // an iPhone's HEIC into something navi reads; anything else goes as it is.
   async function readPicked(file) {
-    if (file.type.startsWith('image/') && file.type !== 'image/gif') {
+    if ((file.type.startsWith('image/') || /\.(heic|heif)$/i.test(file.name)) && file.type !== 'image/gif') {
       try {
-        const bitmap = await createImageBitmap(file)
+        // Some browsers draw a HEIC only as an <img>.
+        const bitmap = await createImageBitmap(file).catch(() => new Promise((done, fail) => {
+          const img = new Image()
+          img.onload = () => done(img)
+          img.onerror = fail
+          img.src = URL.createObjectURL(file)
+        }))
         const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height))
         const canvas = document.createElement('canvas')
         canvas.width = Math.round(bitmap.width * scale)
@@ -372,13 +409,21 @@ ${MARKDOWN_JS}
   // The box at the bottom: a pill with ＋ for files, the text, and a round send button.
   function composer(o) {
     const list = o.files
-    const chosen = list && list.length > 0 && el('div', { class: 'chips' }, list.map((f, i) => el('span', { class: 'chip file' },
-      el('span', {}, f.name),
+    const chosen = list && list.length > 0 && el('div', { class: 'chips' }, list.map((f, i) => el('span', { class: 'chip file' + (isPic(f) ? ' thumb' : '') },
+      isPic(f) ? el('img', { src: dataUrl(f), alt: f.name }) : el('span', {}, f.name),
       el('button', { 'aria-label': 'Remove ' + f.name, onclick: () => { list.splice(i, 1); render() } }, '×'))))
-    const attach = list && list.length < 4 && el('label', { class: 'attach', title: 'Add photo or file' }, icon('plus'),
-      el('input', { type: 'file', multiple: true, 'aria-label': 'Add photo or file', onchange: (e) => act(async () => {
-        for (const file of [...e.target.files].slice(0, 4 - list.length)) list.push(await readPicked(file))
-      }) }))
+    const input = inputs[o.id] || (inputs[o.id] = el('input', { type: 'file', multiple: true, 'aria-label': 'Add photo or file' }))
+    if (list) {
+      input.onchange = () => {
+        choosing = 0
+        const files = [...input.files]
+        // Cleared, so the same photo can be picked again.
+        input.value = ''
+        act(async () => { for (const file of files.slice(0, 4 - list.length)) list.push(await readPicked(file)) })
+      }
+      input.oncancel = () => { choosing = 0 }
+    }
+    const attach = list && list.length < 4 && el('label', { class: 'attach', title: 'Add photo or file', onclick: () => { choosing = Date.now() } }, icon('plus'), input)
     let go
     const text = el('textarea', { id: o.id, rows: 1, placeholder: o.placeholder, 'aria-label': o.placeholder,
       oninput: (e) => { o.set(e.target.value); fit(e.target); if (go) go.disabled = busy || !e.target.value.trim() },
@@ -387,7 +432,9 @@ ${MARKDOWN_JS}
     go = o.stop
       ? el('button', { class: 'send', 'aria-label': 'Stop', title: 'Stop', disabled: busy, onclick: o.stop }, icon('stop'))
       : el('button', { class: 'send', 'aria-label': o.label || 'Send', title: o.label || 'Send', disabled: busy || !o.value.trim(), onclick: o.send }, icon('send'))
-    return el('footer', { class: 'composer' }, o.chips, chosen, el('div', { class: 'pill' }, attach, text, go))
+    // What went wrong, just above the box, where the eye is after a tap.
+    const said = (failed || problem) && el('p', { class: 'err', role: 'alert' }, failed || problem)
+    return el('footer', { class: 'composer' }, o.chips, chosen, said, el('div', { class: 'pill' }, attach, text, go))
   }
 
   // The turns of a job as a thread: what was asked, and what navi answered.
@@ -400,8 +447,7 @@ ${MARKDOWN_JS}
     return el('div', { class: 'thread' }, turns.map((t, i) => {
       const isLast = i === turns.length - 1
       return [
-        el('div', { class: 'you' },
-          t.files && el('div', { class: 'chips' }, t.files.map((f) => el('span', { class: 'chip' }, f))),
+        el('div', { class: 'you' }, files(t, i),
           el('div', { class: 'bubble' }, t.prompt)),
         isLast
           ? el('div', { class: 'navi' },
@@ -419,6 +465,20 @@ ${MARKDOWN_JS}
           : el('div', { class: 'navi' }, t.answer ? el('div', { class: 'md' }, renderMarkdown(t.answer, el)) : el('div', { class: 'meta' }, 'No answer')),
       ]
     }))
+  }
+
+  // A turn's files above its bubble: photos as pictures, which open full size; the rest by name (JOB-37).
+  function files(t, i) {
+    const all = (t.files || []).map((f) => {
+      const k = (t.images || []).indexOf(f)
+      return { name: f, pic: k >= 0 || sentPics.has(job.id + '|' + f), src: (k >= 0 && picture(job.id, i, k)) || sentPics.get(job.id + '|' + f) }
+    })
+    const pics = all.filter((f) => f.pic), rest = all.filter((f) => !f.pic)
+    return [
+      pics.length > 0 && el('div', { class: 'photos' }, pics.map((f) => el('button', { 'aria-label': 'Open ' + f.name, onclick: () => { if (f.src) { viewing = f.src; render() } } },
+        el('img', { src: f.src || false, alt: f.name })))),
+      rest.length > 0 && el('div', { class: 'chips' }, rest.map((f) => el('span', { class: 'chip' }, f.name))),
+    ]
   }
 
   // What navi did last, as a chat app says what it is doing: a line of its log.
@@ -534,7 +594,7 @@ ${MARKDOWN_JS}
             : projects.some((p) => p.facts.length)
               ? 'Yours go with every turn, and a project' + String.fromCharCode(39) + 's with every turn in it, to whichever model answers.'
               : 'These go with every turn, to whichever model answers.'),
-          err),
+          ),
         composer({ id: 'fact', placeholder: about ? 'Something navi should know about this project' : 'Something navi should know about you', label: 'Remember',
           value: fact, set: (v) => (fact = v), send: add,
           chips: projects.length > 0 && el('div', { class: 'chips' },
@@ -568,12 +628,13 @@ ${MARKDOWN_JS}
           el('div', { class: 'title center' }, el('h1', {}, firstLine(job.prompt)),
             el('small', {}, statusOf(job) + ' · ' + short(job.directory) + (job.model ? ' · ' + job.model : ''))),
           el('span', { class: 'icon' })),
-        el('main', { class: 'content' }, thread(), err),
+        el('main', { class: 'content' }, thread()),
         composer({ id: 'reply', placeholder: live ? 'navi is working…' : 'Follow up…', files: live ? null : more, value: reply, set: (v) => (reply = v),
           stop: live && (() => act(() => api('/jobs/' + job.id + '/stop', {}))),
           // JOB-20: files with the follow-up, as with a new job.
           send: () => act(async () => {
             await api('/jobs/' + job.id + '/reply', { prompt: reply, ...(more.length && { files: more }) })
+            keepSent(job.id, more)
             reply = ''; more = []
           }) }))
       // A thread opens at its end, and follows it as it grows.
@@ -599,7 +660,7 @@ ${MARKDOWN_JS}
           finished > 0 && el('button', { class: 'plain clear', disabled: busy, onclick: () => {
             if (confirm('Delete ' + finished + ' finished job' + (finished === 1 ? '' : 's') + '? Any still working are kept.')) act(() => api('/jobs/clear', {}))
           } }, 'Clear finished jobs'),
-          err),
+          ),
         composer({ id: 'draft', placeholder: repeat === 'now' ? 'Ask navi' : 'What should it do each time?', label: repeat === 'now' ? 'Start' : 'Schedule',
           files: repeat === 'now' ? picked : null, value: draft, set: (v) => (draft = v),
           chips: el('div', { class: 'chips' },
@@ -613,6 +674,7 @@ ${MARKDOWN_JS}
             const where = dir ? { directory: dir } : {}
             if (repeat === 'now') {
               open = (await api('/jobs', { prompt: draft, ...where, ...(picked.length && { files: picked }) })).id
+              keepSent(open, picked)
               picked = []
             } else {
               await api('/schedules', { prompt: draft, ...where, quiet,
@@ -623,6 +685,9 @@ ${MARKDOWN_JS}
           }) }))
       document.title = waiting ? '(' + waiting + ') navi' : 'navi'
     }
+    // A photo tapped in a thread, full size; a tap anywhere closes it.
+    if (viewing && open) app.append(el('div', { class: 'lightbox', role: 'dialog', 'aria-label': 'Photo', onclick: () => { viewing = null; render() } }, el('img', { src: viewing, alt: '' })))
+    else viewing = null
     for (const t of app.querySelectorAll('.pill textarea')) fit(t)
     if (active) {
       const again = document.getElementById(active)
@@ -638,7 +703,7 @@ ${MARKDOWN_JS}
   // Every few seconds, and at once when the page comes back into view; never
   // while a list, time or checkbox has focus, which a redraw would close (SCH-13).
   const picking = () => ['SELECT', 'INPUT'].includes(document.activeElement?.tagName)
-  setInterval(() => { if (!document.hidden && !busy && !picking()) refresh() }, 3000)
+  setInterval(() => { if (!document.hidden && !busy && !picking() && Date.now() - choosing > 30000) refresh() }, 3000)
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh() })
 })()
 </script>

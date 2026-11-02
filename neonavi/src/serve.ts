@@ -14,7 +14,7 @@ import { isAbsolute } from 'node:path'
 import { working, type Job, type Jobs } from './jobs.ts'
 import { checkWhen, type Schedules } from './schedules.ts'
 import { addFact, forgetFact, projectRoot, readMemory } from './memory.ts'
-import { exchanges } from './transcript.ts'
+import { exchanges, turnImage } from './transcript.ts'
 import type { Suggestion } from './suggest.ts'
 import type { ModelMessage } from 'ai'
 import { PHONE_PAGE } from './phone.ts'
@@ -251,6 +251,14 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
     // MEM-23: whether the phone may ask what is worth remembering from it.
     const suggests = !!o.suggest && o.memory !== false && !working(job.status) && turns.length > 0
     return json(res, 200, { ...shownJob(job), changes: await jobChanges(home, job.directory, job.id), turns, ...(suggests && { suggests }) })
+  }
+  // JOB-37: a photo sent with a turn, so the phone can show it there; only the kinds a browser draws without running anything.
+  if (req.method === 'GET' && parts.length === 5 && parts[1] === 'turns' && parts[3] === 'images') {
+    const got = turnImage(job.history, Number(parts[2]), Number(parts[4]))
+    if (!got || !['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(got.mediaType)) return error(res, 404, 'There is no such photo.')
+    const bytes = Buffer.from(got.data, 'base64')
+    res.writeHead(200, { 'content-type': got.mediaType, 'content-length': bytes.length, 'cache-control': 'private, max-age=86400', 'x-content-type-options': 'nosniff' })
+    return res.end(bytes)
   }
   if (req.method === 'POST' && parts.length === 2 && parts[1] === 'suggest') {
     if (!o.suggest || o.memory === false) return error(res, 400, 'Memory is off, or navi serve suggests nothing.')

@@ -11,6 +11,7 @@ import type { HarnessEvent, HarnessOptions, Session } from '../src/harness.ts'
 import { jobsDir, makeJobs, matches, serveToken, tailnetAddresses, type JobDeps, type Jobs } from '../src/jobs.ts'
 import { listen, type ServeDeps } from '../src/serve.ts'
 import { makeRecorder } from '../src/undo.ts'
+import { userContent } from '../src/attach.ts'
 
 type Approve = NonNullable<HarnessOptions['approve']>
 
@@ -422,6 +423,50 @@ test('a job can be given files, which go with its first turn and are named on it
     assert.deepEqual(one.files, ['note.txt'])
     assert.equal(one.history, undefined)
     assert.ok(jobs.get(job.id)!.history.length > 0)
+  } finally {
+    server.close()
+  }
+})
+
+// JOB-37
+test("a turn's photos are named in its turns and can be had one by one, with the token; other files cannot", async () => {
+  const { jobs, home } = await setup({
+    start: async ({ history }) => {
+      let h = history
+      return {
+        model: 'small',
+        session: {
+          get history() { return h },
+          async *turn(prompt: string, o: any) {
+            h = [...h, { role: 'user', content: userContent(prompt, o?.attachments) } as ModelMessage, { role: 'assistant', content: 'A dot.' }]
+            yield { type: 'done', history: h, text: 'A dot.', empty: false, stopped: false } as const
+          },
+        } as Session,
+      }
+    },
+  })
+  const token = 'b'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const call = (path: string, body?: unknown, auth = true) =>
+    fetch(base + path, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { ...(auth && { authorization: `Bearer ${token}` }), 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64')
+  try {
+    const job = await (await call('/jobs', { prompt: 'what is this', files: [{ name: 'note.txt', data: Buffer.from('hi').toString('base64') }, { name: 'dot.png', data: png.toString('base64') }] })).json()
+    await jobs.idle()
+    const one = await (await call(`/jobs/${job.id}`)).json()
+    assert.deepEqual(one.turns, [{ prompt: 'what is this', files: ['note.txt', 'dot.png'], images: ['dot.png'], answer: 'A dot.' }])
+    const got = await call(`/jobs/${job.id}/turns/0/images/0`)
+    assert.equal(got.status, 200)
+    assert.equal(got.headers.get('content-type'), 'image/png')
+    assert.deepEqual(Buffer.from(await got.arrayBuffer()), png)
+    assert.equal((await call(`/jobs/${job.id}/turns/0/images/1`)).status, 404)
+    assert.equal((await call(`/jobs/${job.id}/turns/1/images/0`)).status, 404)
+    assert.equal((await call(`/jobs/${job.id}/turns/0/images/0`, undefined, false)).status, 401)
   } finally {
     server.close()
   }

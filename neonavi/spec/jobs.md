@@ -92,8 +92,8 @@ terminal that started them closes.
   API never sends, so a phone following a job does not fetch its photos
   again every few seconds.
 - JOB-16: The phone page has an Add photo or file button that takes photos
-  from the camera or library, or any file, shows each chosen file's name
-  with a way to remove it, and sends them with a job started now. A
+  from the camera or library, or any file, shows each chosen photo as a
+  picture and any other file by name, each with a way to remove it, and sends them with a job started now. A
   schedule takes no files. `navi job "<prompt>" -a <file>` (more than once
   for more) does the same from the terminal.
 - JOB-19: `POST /jobs/<id>/reply` may carry `files` as `POST /jobs` does
@@ -138,7 +138,7 @@ terminal that started them closes.
 ## Earlier turns
 
 - JOB-27: `GET /jobs/<id>` gives `turns`: what was asked and answered, a
-  turn each, oldest first, as `{ prompt, files?, answer? }`, the answer
+  turn each, oldest first, as `{ prompt, files?, images?, answer? }`, the answer
   being the last thing navi said in that turn. navi's own notes (an undo,
   an escalation, a watch's instructions) and compaction summaries are left
   out; the conversation itself is still never sent (JOB-15). A follow-up
@@ -206,6 +206,15 @@ terminal that started them closes.
   first page's header. On a keyboard Enter sends and Shift-Enter makes a
   new line; on a phone return makes a new line. After an undo, the job
   says what it put back (UND-13).
+- JOB-37: A turn in `GET /jobs/<id>` names its photos in `images` (those of
+  its `files` sent as a picture), and `GET /jobs/<id>/turns/<t>/images/<k>`
+  gives the k-th, with the token: only a JPEG, PNG, GIF or WebP, else a
+  404. The phone page shows a turn's photos as pictures above its bubble,
+  at once for those it sent and fetched once each otherwise; a tap shows
+  one full size. Its file button keeps one input across the page's
+  redraws, does not refresh while choosing (or for 30 seconds), and takes
+  the same file again; a HEIC is turned into a JPEG where the browser can
+  draw it.
 
 ## Open
 
