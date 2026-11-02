@@ -116,4 +116,4 @@ every so often. A morning brief, a page watched every hour.
 
 ## Open
 
-- Making a schedule from a job that went well, with its prompt and folder.
+- A schedule's run history: how its last few jobs went, at a glance.

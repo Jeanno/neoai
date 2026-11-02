@@ -90,6 +90,9 @@ Earlier in this job, and all of it with `navi jobs <id> show`
 To find a job, type in Find a job above a phone list of more than three,
 or run `navi jobs find <words>`: jobs holding every word, in the prompt or
 the answer (JOB-30, JOB-31).
+A job that went well can be repeated on a schedule: Repeat this… on the
+phone, or `navi jobs <id> repeat --at 08:00` (or `--every 2h`), with its first
+prompt in its folder (JOB-32 to JOB-34).
 Answers on the phone page are shown formatted (headings, lists, tables,
 code, links), and since an answer can quote a web page, none of it is ever
 read as HTML: only http(s) links work, and nothing in an answer can run

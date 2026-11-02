@@ -247,11 +247,21 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
       if (typeof attachments === 'string') return error(res, 400, attachments)
       return jobs.reply(job.id, body.prompt.trim(), attachments) ? json(res, 200, shownJob(jobs.get(job.id)!)) : error(res, 400, 'The job is still working; wait for it, or stop it.')
     }
+    if (parts[1] === 'schedule' && o.schedules) {
+      // JOB-32: its first prompt, where it ran, as POST /schedules makes one.
+      if (working(job.status)) return error(res, 400, 'The job is still working; wait for it, or stop it.')
+      const when = { at: body.at, days: body.days, every: body.every } as Parameters<typeof checkWhen>[0]
+      const wrong = checkWhen(when)
+      if (wrong) return error(res, 400, wrong)
+      if (body.quiet !== undefined && typeof body.quiet !== 'boolean') return error(res, 400, 'quiet is true or false.')
+      const made = await o.schedules.add(job.prompt, job.directory, when, body.quiet === true)
+      return json(res, 201, o.schedules.list().find((s) => s.id === made.id))
+    }
     if (parts[1] === 'stop') return jobs.stop(job.id) ? json(res, 200, shownJob(jobs.get(job.id)!)) : error(res, 400, 'The job is not running.')
     // JOB-24
     if (parts[1] === 'delete') return (await jobs.remove(job.id)) ? json(res, 200, { deleted: job.id }) : error(res, 400, 'The job is still working; stop it first.')
   }
-  error(res, 404, `Jobs answer GET /jobs, POST /jobs, POST /jobs/clear, GET /jobs/<id> and POST /jobs/<id>/answer, reply, stop, undo or delete, not ${req.method} ${path}.`)
+  error(res, 404, `Jobs answer GET /jobs, POST /jobs, POST /jobs/clear, GET /jobs/<id> and POST /jobs/<id>/answer, reply, stop, undo, schedule or delete, not ${req.method} ${path}.`)
 }
 
 /**

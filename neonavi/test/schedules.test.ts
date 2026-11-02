@@ -292,3 +292,46 @@ test('SCH-19, SCH-20: a paused schedule is never due, survives a restart, and re
   assert.equal((await post('/schedules/nope/pause')).status, 404)
   assert.equal((await post(`/schedules/${one.id}/stop`)).status, 404)
 })
+
+test('JOB-32: a finished job is made a schedule of its first prompt, where it ran', async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-schedules-api-'))
+  let release = () => {}
+  const jobs = await makeJobs({
+    home,
+    start: async () => ({
+      model: 'small',
+      session: {
+        history: [],
+        async *turn(prompt: string) {
+          if (prompt === 'hang') await new Promise<void>((r) => (release = r))
+          yield { type: 'done', history: [], text: 'Done.', empty: false, stopped: false } as const
+        },
+      },
+    }),
+    notify: () => {},
+  })
+  const schedules = await makeSchedules({ home, start: (p, d, o) => jobs.create(p, d, o).id, answerOf: () => undefined, busy: () => false })
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token: 'a'.repeat(64), directories: async () => [home], schedules } })
+  const [bare] = await listen([], noModels, 0, { jobs: { jobs, token: 'a'.repeat(64), directories: async () => [home] } })
+  t.after(() => {
+    server.close()
+    bare.close()
+  })
+  const post = (srv: typeof server, path: string, body: unknown) =>
+    fetch(`http://127.0.0.1:${(srv.address() as AddressInfo).port}${path}`, { method: 'POST', headers: { authorization: `Bearer ${'a'.repeat(64)}`, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const done = jobs.create('summarise the notes', home)
+  const busy = jobs.create('hang', home)
+  await new Promise((r) => setTimeout(r, 50))
+  assert.equal((await post(server, `/jobs/${busy.id}/schedule`, { every: 60 })).status, 400)
+  release()
+  await jobs.idle()
+  assert.equal((await post(server, `/jobs/${done.id}/schedule`, { every: 1 })).status, 400)
+  assert.equal((await post(server, `/jobs/${done.id}/schedule`, { every: 60, quiet: 'yes' })).status, 400)
+  assert.equal((await post(server, '/jobs/nope/schedule', { every: 60 })).status, 404)
+  assert.equal((await post(bare, `/jobs/${done.id}/schedule`, { every: 60 })).status, 404)
+  const made = await post(server, `/jobs/${done.id}/schedule`, { at: '07:00', days: [1, 2, 3, 4, 5], quiet: true })
+  assert.equal(made.status, 201)
+  const s = await made.json()
+  assert.deepEqual({ prompt: s.prompt, directory: s.directory, at: s.at, days: s.days, quiet: s.quiet }, { prompt: 'summarise the notes', directory: home, at: '07:00', days: [1, 2, 3, 4, 5], quiet: true })
+  assert.ok(s.next)
+})

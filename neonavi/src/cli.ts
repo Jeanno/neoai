@@ -104,7 +104,7 @@ const USAGE = [
   '       navi browser [--install]',
   '       navi stats [--days N]',
   '       navi job "<what you want done>" [-a <file>]… [-C <directory>]',
-  '       navi jobs [<id> [y | n | stop | undo | delete | show | reply "<follow-up>" [-a <file>]…] | find <words> | clear | link]',
+  '       navi jobs [<id> [y | n | stop | undo | delete | show | repeat (--at HH:MM [--days …] | --every 30m) [--only-changes] | reply "<follow-up>" [-a <file>]…] | find <words> | clear | link]',
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
   '       navi schedules [<id> run | pause | resume | rm | edit [--prompt …] [--at …] [--days …] [--every …] [--only-changes | --every-run]]',
   '       navi push test',
@@ -130,7 +130,7 @@ const ABOUT = [
   "navi browser         open navi's browser to sign in to sites; --install gets Chromium for it",
   'navi stats           how each model has done, from the ledger; --days N (default 30)',
   'navi job "…"         hand navi serve a job to do in the background; -a sends a file, -C sets where',
-  'navi jobs            list jobs; <id> shows one, then y, n, stop, undo, delete, show (every turn) or reply; find lists those mentioning words; clear deletes finished ones; link is for a phone',
+  'navi jobs            list jobs; <id> shows one, then y, n, stop, undo, delete, show (every turn), repeat (on a schedule) or reply; find lists those mentioning words; clear deletes finished ones; link is for a phone',
   'navi schedule "…"    have navi serve start a job at a time of day or every so often;',
   '                     --only-changes makes it a watch that only speaks when something changed',
   'navi schedules       list schedules and their next run; <id> run starts one now, pause, resume, edit changes it, rm deletes it',
@@ -395,7 +395,7 @@ async function replyJobCommand(n: number, id: string, argv: string[]) {
   return 0
 }
 
-const JOBS_USAGE = 'usage: navi jobs [<id> [y | n | stop | undo | delete | show | reply "<follow-up>" [-a <file>]…] | find <words> | clear | link] [--port N]'
+const JOBS_USAGE = 'usage: navi jobs [<id> [y | n | stop | undo | delete | show | repeat (--at HH:MM [--days …] | --every 30m) [--only-changes] | reply "<follow-up>" [-a <file>]…] | find <words> | clear | link] [--port N]'
 
 /** `navi jobs [<id> [y | n | stop | undo | delete | reply …] | clear | link] [--port N]` (JOB-12, JOB-13, JOB-20, JOB-26). */
 async function jobsCommand(argv: string[]) {
@@ -403,6 +403,7 @@ async function jobsCommand(argv: string[]) {
   const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
   const [id, what, ...extra] = port.rest
   if (what === 'reply' && Number.isInteger(n)) return replyJobCommand(n, id, extra)
+  if (what === 'repeat' && Number.isInteger(n)) return repeatJobCommand(n, id, extra)
   if (id === 'find' && Number.isInteger(n)) {
     // JOB-31
     const words = [what, ...extra].filter(Boolean).join(' ')
@@ -473,6 +474,25 @@ async function jobsCommand(argv: string[]) {
   if (!got) return console.error(NOT_SERVING), 1
   if (got.status !== 200) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
   showJob(got.data)
+  return 0
+}
+
+/** `navi jobs <id> repeat (--at HH:MM [--days …] | --every N) [--only-changes]` (JOB-33). */
+async function repeatJobCommand(n: number, id: string, argv: string[]) {
+  const at = takeFlag(argv, '--at', true)
+  const days = takeFlag(at.rest, '--days', true)
+  const every = takeFlag(days.rest, '--every', true)
+  const quiet = takeFlag(every.rest, '--only-changes', false)
+  if (quiet.rest.length || (at.value === undefined) === (every.value === undefined)) return console.error(JOBS_USAGE), 1
+  const minutes = every.value === undefined ? undefined : parseEvery(every.value)
+  const on = days.value === undefined ? undefined : parseDays(days.value)
+  if (every.value !== undefined && minutes === undefined) return console.error(`not a length of time: ${every.value} (say 30m or 2h)`), 1
+  if (days.value !== undefined && !on) return console.error(`not days: ${days.value} (say mon,wed, weekdays or weekends)`), 1
+  const got = await jobsApi(n, `/jobs/${id}/schedule`, { at: at.value, days: on, every: minutes, quiet: quiet.value !== undefined })
+  if (!got) return console.error(NOT_SERVING), 1
+  if (got.status !== 201) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
+  console.log(`Scheduled ${bold(got.data.id)}: ${whenText(got.data)}${got.data.quiet ? ', only when something changed' : ''}, next ${nextText(new Date(got.data.next))}.`)
+  console.log(dim(titleOf(got.data.prompt)))
   return 0
 }
 

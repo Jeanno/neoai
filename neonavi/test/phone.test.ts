@@ -442,3 +442,45 @@ test('SCH-18, SCH-21: the phone edits, pauses and resumes a schedule, and a refr
   await page.getByText('check the status page and the disks').waitFor()
   assert.equal(schedules.get(s.id)?.prompt, 'check the status page and the disks')
 })
+
+test('JOB-34: Repeat this makes a schedule of a finished job and goes back to the list', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const jobs = await makeJobs({
+    home,
+    start: async () => ({
+      model: 'small',
+      session: { history: [], async *turn() { yield { type: 'done', history: [], text: 'Three new notes.', empty: false, stopped: false } as const } },
+    }),
+    notify: () => {},
+  })
+  const schedules = await makeSchedules({ home, start: (p, d, o) => jobs.create(p, d, o).id, answerOf: () => undefined, busy: () => false })
+  jobs.create('summarise the new notes', home)
+  await jobs.idle()
+  const token = 'f'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], schedules } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByText('summarise the new notes').click()
+  await page.getByRole('button', { name: 'Repeat this…' }).click()
+  // Cancel folds it away again.
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await page.getByRole('button', { name: 'Repeat this…' }).click()
+  await page.getByLabel('Repeat', { exact: true }).selectOption('weekdays')
+  await page.getByLabel('Repeat at').fill('06:45')
+  await page.getByLabel('Only tell me when something changes').check()
+  await page.getByRole('button', { name: 'Schedule' }).click()
+  await page.getByText('At 06:45 on weekdays · watch').waitFor()
+  const [made] = schedules.list()
+  assert.deepEqual({ prompt: made.prompt, directory: made.directory, at: made.at, days: made.days, quiet: made.quiet },
+    { prompt: 'summarise the new notes', directory: home, at: '06:45', days: [1, 2, 3, 4, 5], quiet: true })
+  // A job a schedule started is not offered again.
+  await page.getByRole('button', { name: 'Run now' }).click()
+  await page.getByRole('button', { name: '‹ Jobs' }).waitFor()
+  await page.getByRole('button', { name: 'Delete job' }).waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Repeat this…' }).count(), 0)
+})

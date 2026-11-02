@@ -368,7 +368,7 @@ test('JOB-31: navi jobs find lists the jobs that mention the words', async () =>
   }
 })
 
-test('SCH-17, SCH-21: navi schedules <id> edit, pause and resume', async () => {
+test('SCH-17, SCH-21, JOB-33: navi schedules <id> edit, pause and resume, and navi jobs <id> repeat', async () => {
   const { makeJobs, serveToken } = await import('../src/jobs.ts')
   const { makeSchedules } = await import('../src/schedules.ts')
   const { listen } = await import('../src/serve.ts')
@@ -396,6 +396,15 @@ test('SCH-17, SCH-21: navi schedules <id> edit, pause and resume', async () => {
     const refused = await navi(['schedules', s.id, 'edit', '--days', 'mon', '--port', port], { home })
     assert.equal(refused.code, 1)
     assert.match(refused.stderr, /days go with at/)
+    // JOB-33: a job again, on a schedule.
+    const done = jobs.create('tidy the notes', home)
+    await jobs.idle()
+    const repeated = await navi(['jobs', done.id, 'repeat', '--at', '06:30', '--days', 'weekdays', '--only-changes', '--port', port], { home })
+    assert.equal(repeated.code, 0, repeated.stderr)
+    assert.match(repeated.stdout, /Scheduled .*: at 06:30 on weekdays, only when something changed, next/)
+    assert.equal(schedules.list().find((x) => x.prompt === 'tidy the notes')?.directory, home)
+    assert.equal((await navi(['jobs', done.id, 'repeat', '--port', port], { home })).code, 1)
+    assert.match((await navi(['jobs', done.id, 'repeat', '--every', '1m', '--port', port], { home })).stderr, /5 at the least/)
     // SCH-21: paused, listed as paused, and back.
     assert.match((await navi(['schedules', s.id, 'pause', '--port', port], { home })).stdout, /Paused schedule/)
     assert.match((await navi(['schedules', '--port', port], { home })).stdout, /paused/)

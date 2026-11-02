@@ -165,6 +165,8 @@ ${MARKDOWN_JS}
   let remembering = false, memory = { facts: [], off: false }, fact = ''
   // JOB-28: whether a job's earlier turns are shown, kept across refreshes.
   let earlierOpen = false
+  // JOB-34: repeating the open job on a schedule, as { repeat, time, quiet }, or null.
+  let repeating = null
   // SCH-18: the schedule being edited, as { id, prompt, repeat, time, quiet }, kept across refreshes.
   let editing = null
   const repeatOf = (s) => s.every === 30 ? '30' : s.every === 60 ? '60' : !s.at ? 'keep'
@@ -275,7 +277,7 @@ ${MARKDOWN_JS}
     }
     const waiting = jobs.filter((j) => j.status === 'waiting').length
     const finished = jobs.filter((j) => !['queued', 'running', 'waiting'].includes(j.status)).length
-    const head = el('h1', {}, open || remembering ? el('button', { class: 'plain', onclick: () => { open = null; job = null; reply = ''; more = []; remembering = false; failed = ''; earlierOpen = false; render(); refresh() } }, '‹ Jobs') : 'navi',
+    const head = el('h1', {}, open || remembering ? el('button', { class: 'plain', onclick: () => { open = null; job = null; reply = ''; more = []; remembering = false; failed = ''; earlierOpen = false; repeating = null; render(); refresh() } }, '‹ Jobs') : 'navi',
       el('small', {}, waiting ? waiting + ' waiting' : jobs.some((j) => j.status === 'running' || j.status === 'queued') ? 'working' : ''))
     const err = (failed || problem) && el('p', { class: 'err' }, failed || problem)
     if (remembering) {
@@ -344,6 +346,27 @@ ${MARKDOWN_JS}
                 await api('/jobs/' + job.id + '/reply', { prompt: reply, ...(more.length && { files: more }) })
                 reply = ''; more = []
               }) }, 'Send'))),
+        // JOB-34: a job that went well, again on a schedule.
+        !live && !job.schedule && (repeating
+          ? el('div', { class: 'card' },
+              el('div', { class: 'meta' }, 'Repeat this job'),
+              el('div', { class: 'row' },
+                el('select', { id: 'again-repeat', 'aria-label': 'Repeat', onchange: (e) => { repeating.repeat = e.target.value; render() } },
+                  REPEATS.slice(1).map(([v, t]) => el('option', { value: v, selected: v === repeating.repeat }, t))),
+                (repeating.repeat === 'daily' || repeating.repeat === 'weekdays') &&
+                  el('input', { id: 'again-time', type: 'time', 'aria-label': 'Repeat at', value: repeating.time, oninput: (e) => (repeating.time = e.target.value) })),
+              el('label', { class: 'check' },
+                el('input', { id: 'again-quiet', type: 'checkbox', checked: repeating.quiet, onchange: (e) => (repeating.quiet = e.target.checked) }),
+                'Only tell me when something changes'),
+              el('div', { class: 'row' },
+                el('button', { disabled: busy, onclick: () => act(async () => {
+                  const r = repeating
+                  await api('/jobs/' + job.id + '/schedule', { quiet: r.quiet,
+                    ...(r.repeat === 'daily' || r.repeat === 'weekdays' ? { at: r.time, ...(r.repeat === 'weekdays' && { days: [1, 2, 3, 4, 5] }) } : { every: Number(r.repeat) }) })
+                  repeating = null; open = null; job = null; reply = ''; more = []; earlierOpen = false
+                }) }, 'Schedule'),
+                el('button', { class: 'no', onclick: () => { repeating = null; render() } }, 'Cancel')))
+          : el('button', { class: 'plain more', onclick: () => { repeating = { repeat: 'daily', time: '08:00', quiet: false }; failed = ''; render() } }, 'Repeat this…')),
         // JOB-26: done with, it can go.
         !live && el('button', { class: 'plain more', disabled: busy, onclick: () => {
           if (confirm('Delete this job? Its answer and log go; files it changed stay as they are.')) act(async () => {

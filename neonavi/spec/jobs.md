@@ -177,5 +177,20 @@ terminal that started them closes.
   match as JOB-30 does, in the same form as `navi jobs`, and exits 1 saying
   so when none does.
 
+## Repeating
+
+- JOB-32: `POST /jobs/<id>/schedule` with `{ at?, days?, every?, quiet? }`
+  makes a schedule (SCH-1) of a job that is not working: its first prompt,
+  in its directory, checked and answered as `POST /schedules` (SCH-7).
+  Follow-ups and files sent with the job are not part of it. Without
+  schedules (navi serve made without them) it is a 404.
+- JOB-33: `navi jobs <id> repeat (--at HH:MM [--days …] | --every 30m|2h)
+  [--only-changes]` does the same from the terminal, and says when it
+  next runs, as `navi schedule` does (SCH-8).
+- JOB-34: The phone page has Repeat this… on a job that is not working
+  (and not from a schedule already): the choices a new schedule has, the
+  time and the watch checkbox, then Schedule, which goes back to the list
+  where the new schedule is shown.
+
 ## Open
 
