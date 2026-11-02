@@ -46,7 +46,21 @@ Putting files back the way they were before navi's last turn changed them.
   Undo changes button, asked to confirm, then says what happened.
   `navi jobs <id> undo` does the same from the terminal.
 
+## Redo
+
+- UND-14: `navi redo` (and `/redo` at the `navi>` prompt) brings back what
+  the latest undo in this directory put back, a job's undo (UND-11)
+  included: each change, oldest first, is written again where the file
+  still holds what the undo left, and a file the undo removed is made
+  again. A file changed since the undo is left as it is and named. Shell
+  commands are not run again; redo lists them. The turns redone can be
+  undone again, and redoing again goes back through earlier undos.
+- UND-15: Any file navi changes after an undo ends what can be redone in
+  that directory, as in an editor.
+- UND-16: The model is told at the start of the next turn which files hold
+  its changes again (as UND-7). `-C <directory>` redoes another directory's.
+  Nothing to redo is said plainly and exits 1.
+
 ## Open
 
 - Undo from Raycast.
-- Redo.

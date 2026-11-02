@@ -97,7 +97,9 @@ add the requirement there first.
       (UND-1 to UND-9)
 - [x] Undo a job's changes from the phone page (Undo changes) or
       `navi jobs <id> undo`, leaving other jobs' alone. (UND-10 to UND-13)
-- [ ] Undo from Raycast; redo. (`spec/undo.md` Open)
+- [x] Redo: `navi redo` and `/redo` bring back what an undo put back, never
+      over a change made since; the model is told. (UND-14 to UND-16)
+- [ ] Undo from Raycast. (`spec/undo.md` Open)
 - [x] navi's own browser: a separate Chromium with its own logins, read as
       text with refs (never screenshots), each action answering with what
       changed; reading is free, acting is judged and asked. (BRW-1 to BRW-15)

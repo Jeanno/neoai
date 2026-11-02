@@ -20,7 +20,7 @@ import { readLedger, stats } from './ledger.ts'
 import { makeJobs, serveToken, tailnetAddresses, titleOf, working, type JobDeps } from './jobs.ts'
 import { push, pushConfig } from './push.ts'
 import { addFact, forgetFact, memoryFile, readMemory } from './memory.ts'
-import { listUndo, namer, undo, undoneReport } from './undo.ts'
+import { listUndo, namer, redo, redoneLines, undo, undoneReport } from './undo.ts'
 import { makeSchedules, nextText, parseDays, parseEvery, whenText } from './schedules.ts'
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -88,6 +88,7 @@ const HELP = [
   '/model <spec>      switch for this session: <provider>:<model>, local, best, or a list',
   '/attach <file>     send an image, PDF or text file with the next prompt',
   "/undo              put back the files navi's last turn changed",
+  '/redo              bring back what the last /undo put back',
   '/help              this list',
   '^C                 stop an answer; at an empty prompt, leave',
   'exit, quit, ^D     leave',
@@ -108,6 +109,7 @@ const USAGE = [
   '       navi push test',
   '       navi memory [add "<fact>" | forget <n | words>]',
   '       navi undo [--list] [-C <directory>]',
+  '       navi redo [-C <directory>]',
 ].join('\n')
 
 /** What each form does, for --help (CLI-24). */
@@ -134,6 +136,7 @@ const ABOUT = [
   'navi push test       send a test push to your phone (set "push" in the config first)',
   'navi memory          what navi remembers about you; add a fact, or forget one by number or words',
   "navi undo            put back the files navi's last turn here changed; --list shows what can be",
+  'navi redo            bring back what the last undo here put back, unless changed since',
 ].join('\n')
 
 /** Each link that did not answer, and why (MOD-21). */
@@ -568,6 +571,28 @@ async function undoHere(cwd: string): Promise<boolean> {
   return true
 }
 
+/** UND-14, UND-16 */
+async function redoHere(cwd: string): Promise<boolean> {
+  const got = await redo(homedir(), cwd)
+  if (!got) {
+    console.error('Nothing to redo here: undo something first. A change navi makes after an undo ends what can be redone.')
+    return false
+  }
+  console.error(dim(`redoing the turn that began "${got.turns[0].prompt}"${got.turns.length > 1 ? ` and ${got.turns.length - 1} after it` : ''}`))
+  for (const l of redoneLines(got)) console.error(l.startsWith('not run') ? dim(`  ${l}`) : `  ${l}`)
+  return true
+}
+
+/** `navi redo [-C <directory>]` (UND-16). */
+async function redoCommand(argv: string[]) {
+  const dir = takeFlag(argv, '-C', true)
+  if (dir.rest.length || dir.value === '') {
+    console.error('usage: navi redo [-C <directory>]')
+    return 1
+  }
+  return (await redoHere(resolve(dir.value ?? process.cwd()))) ? 0 : 1
+}
+
 /** `navi undo [--list] [-C <directory>]` (UND-8). */
 async function undoCommand(argv: string[]) {
   const list = takeFlag(argv, '--list', false)
@@ -696,6 +721,7 @@ async function main() {
   if (argv[0] === 'schedules') return schedulesCommand(argv.slice(1))
   if (argv[0] === 'memory') return memoryCommand(argv.slice(1))
   if (argv[0] === 'undo') return undoCommand(argv.slice(1))
+  if (argv[0] === 'redo') return redoCommand(argv.slice(1))
   const steps = takeFlag(argv, '--max-steps', true)
   argv = steps.rest
   const resume = takeFlag(argv, '--resume', false)
@@ -927,6 +953,7 @@ async function main() {
       if (command?.name === 'model') await switchModel(command.spec)
       else if (command?.name === 'help') console.error(HELP)
       else if (command?.name === 'undo') await undoHere(cwd)
+      else if (command?.name === 'redo') await redoHere(cwd)
       else if (command?.name === 'attach' && !command.path) console.error('usage: /attach <file>')
       else if (command?.name === 'attach') {
         try {

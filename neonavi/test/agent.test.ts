@@ -100,6 +100,7 @@ test('every shell command is asked about separately', async () => {
 test('only /model and /help at the prompt are commands', () => {
   const { commandFrom } = args
   assert.deepEqual(commandFrom('/model'), { name: 'model', spec: '' })
+  assert.deepEqual(commandFrom('/redo'), { name: 'redo' })
   assert.deepEqual(commandFrom('/model anthropic:claude-sonnet-5-5, local'), { name: 'model', spec: 'anthropic:claude-sonnet-5-5, local' })
   assert.deepEqual(commandFrom('/help'), { name: 'help' })
   // CLI-23: alone, /attach is still the command, never a prompt.

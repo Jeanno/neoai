@@ -111,6 +111,9 @@ is told on its next turn. `navi undo --list` shows what can be undone, and
 their own: its page on the phone lists the files it changed with an Undo
 changes button, and `navi jobs <id> undo` does the same from the terminal
 (`spec/undo.md`).
+Undid too much? `navi redo` (or `/redo`) brings back what the last undo put
+back, again leaving any file you have changed since; a change navi makes
+after an undo ends what can be redone, as in an editor (UND-14 to UND-16).
 
 navi remembers a few things about you between conversations. Tell it
 something lasting ("remember I want temperatures in Celsius") and it offers

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { KEPT_TURNS, listUndo, makeRecorder, MAX_KEPT, takeNote, undo, undoFile } from '../src/undo.ts'
+import { KEPT_TURNS, listUndo, makeRecorder, MAX_KEPT, redo, redoneLines, takeNote, undo, undoFile } from '../src/undo.ts'
 
 const place = async () => {
   const home = await mkdtemp(join(tmpdir(), 'navi-undo-h-'))
@@ -109,4 +109,59 @@ test('the next turn is told once what was put back', async () => {
   await undo(home, cwd)
   assert.match((await takeNote(home, cwd)) ?? '', /undid your file changes from the turn that began "rename things": a\.txt is back/)
   assert.equal(await takeNote(home, cwd), undefined)
+})
+
+// UND-14, UND-16
+test('redo brings back what an undo put back, never over a change since, and can be undone again', async () => {
+  const { home, cwd, at } = await place()
+  await writeFile(at('a.txt'), 'one\n')
+  await writeFile(at('b.txt'), 'bee\n')
+  const r = makeRecorder(home, cwd, 'tidy up')
+  await write(r, at('a.txt'), 'two\n')
+  await write(r, at('new.txt'), 'fresh\n')
+  await write(r, at('b.txt'), 'BEE\n')
+  r.ran('npm test')
+  await r.saved()
+  await undo(home, cwd)
+  await takeNote(home, cwd)
+  // Changed by hand after the undo: redo leaves it.
+  await writeFile(at('b.txt'), 'mine\n')
+
+  const got = await redo(home, cwd)
+  assert.deepEqual({ redone: got?.redone, left: got?.left }, { redone: ['a.txt', 'new.txt'], left: ['b.txt'] })
+  assert.equal(await readFile(at('a.txt'), 'utf8'), 'two\n')
+  assert.equal(await readFile(at('new.txt'), 'utf8'), 'fresh\n')
+  assert.equal(await readFile(at('b.txt'), 'utf8'), 'mine\n')
+  assert.ok(redoneLines(got!).includes('not run again: $ npm test'))
+  assert.match((await takeNote(home, cwd))!, /redid your file changes from the turn that began "tidy up".*a\.txt, new\.txt hold what you wrote again; b\.txt changed since, so it was left as the user has it\./)
+  assert.equal(await redo(home, cwd), undefined)
+
+  // Undoable again, and redoable again after that.
+  assert.equal((await listUndo(home, cwd)).length, 1)
+  assert.deepEqual((await undo(home, cwd))?.restored, ['a.txt'])
+  assert.ok(await redo(home, cwd))
+  assert.equal(await readFile(at('a.txt'), 'utf8'), 'two\n')
+})
+
+// UND-14, UND-15
+test('redo walks back through earlier undos, and a new change ends it', async () => {
+  const { home, cwd, at } = await place()
+  for (const [i, text] of ['first', 'second'].entries()) {
+    const r = makeRecorder(home, cwd, `turn ${i}`, () => new Date(Date.UTC(2026, 10, 1, 0, i)))
+    await write(r, at('f.txt'), text)
+    await r.saved()
+  }
+  await undo(home, cwd)
+  await undo(home, cwd)
+  await assert.rejects(stat(at('f.txt')))
+  assert.equal((await redo(home, cwd))?.turns[0].prompt, 'turn 0')
+  assert.equal(await readFile(at('f.txt'), 'utf8'), 'first')
+  assert.equal((await redo(home, cwd))?.turns[0].prompt, 'turn 1')
+  assert.equal(await readFile(at('f.txt'), 'utf8'), 'second')
+
+  await undo(home, cwd)
+  const r = makeRecorder(home, cwd, 'something else')
+  await write(r, at('g.txt'), 'new')
+  await r.saved()
+  assert.equal(await redo(home, cwd), undefined)
 })

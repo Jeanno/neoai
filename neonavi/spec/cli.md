@@ -87,8 +87,8 @@
 ## Commands
 
 - CLI-19: At the `navi>` prompt, a line that is exactly `/model`, or starts
-  with `/model ` or `/attach `, or is `/help` or `/undo` (UND-4), is a
-  command, not a prompt.
+  with `/model ` or `/attach `, or is `/help`, `/undo` (UND-4) or `/redo`
+  (UND-14), is a command, not a prompt.
 - CLI-20: `/model` prints the model answering, as SET-1 words it, and the
   saved chain, with the session's own when `--model` or an earlier `/model`
   set one. `/model <spec>` takes what `--model` takes and switches to it for

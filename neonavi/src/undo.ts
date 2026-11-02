@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { chmod, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
-import { isAbsolute, join, relative } from 'node:path'
+import { dirname, isAbsolute, join, relative } from 'node:path'
 
 /** Putting back the files navi's last turn changed (undo.md). */
 
@@ -11,6 +11,8 @@ export const MAX_KEPT = 1_000_000
 export type Change = { path: string; before: string | null; after: string } | { path: string; big: true }
 
 export interface Turn {
+  /** Its own, as two turns can start in the same millisecond. */
+  id?: string
   at: string
   prompt: string
   changes: Change[]
@@ -25,6 +27,8 @@ interface Kept {
   turns: Turn[]
   /** What the next turn is told was undone (UND-7). */
   note?: string
+  /** What each undo took back, latest last, for redo (UND-14). */
+  undone?: Turn[][]
 }
 
 /** Keyed as a session is (SES-1). */
@@ -34,7 +38,8 @@ export const undoFile = (home: string, cwd: string) =>
 async function load(home: string, cwd: string): Promise<Kept> {
   try {
     const got = JSON.parse(await readFile(undoFile(home, cwd), 'utf8'))
-    if (Array.isArray(got?.turns)) return { cwd, turns: got.turns, ...(typeof got.note === 'string' && { note: got.note }) }
+    if (Array.isArray(got?.turns))
+      return { cwd, turns: got.turns, ...(typeof got.note === 'string' && { note: got.note }), ...(Array.isArray(got.undone) && { undone: got.undone }) }
   } catch {
     // None yet, or cut short: nothing to undo.
   }
@@ -58,14 +63,16 @@ export interface Recorder {
 
 /** Records one turn's changes as they are made (UND-1, UND-2); a turn that changes no file is not kept. */
 export function makeRecorder(home: string, cwd: string, prompt: string, now = () => new Date(), job?: string): Recorder {
-  const turn: Turn = { at: now().toISOString(), prompt: prompt.slice(0, 200), changes: [], commands: [], ...(job && { job }) }
+  const turn: Turn = { id: randomBytes(6).toString('hex'), at: now().toISOString(), prompt: prompt.slice(0, 200), changes: [], commands: [], ...(job && { job }) }
   let writes = Promise.resolve()
   const save = () => {
     if (!turn.changes.length) return
     writes = writes.then(async () => {
       try {
         const kept = await load(home, cwd)
-        kept.turns = [...kept.turns.filter((t) => t.at !== turn.at), structuredClone(turn)].slice(-KEPT_TURNS)
+        kept.turns = [...kept.turns.filter((t) => t.id !== turn.id), structuredClone(turn)].slice(-KEPT_TURNS)
+        // UND-15: a new change ends what could be redone.
+        delete kept.undone
         await store(home, kept)
       } catch {
         // Unrecorded is not worth failing the turn over.
@@ -148,12 +155,67 @@ export async function undo(home: string, cwd: string, job?: string): Promise<Und
   out.restored = out.restored.filter((p) => !out.removed.includes(p))
   out.left = out.left.filter((p) => !out.restored.includes(p) && !out.removed.includes(p))
   const back = [...out.restored, ...out.removed]
+  // UND-14: redo can bring back what was put back.
+  if (back.length) kept.undone = [...(kept.undone ?? []), turns].slice(-KEPT_TURNS)
   if (back.length) {
     const said = `(navi: the user undid your file changes from the turn that began "${turns.at(-1)!.prompt}"${turns.length > 1 ? ' and the ones after it' : ''}: ${back.join(', ')} ${back.length === 1 ? 'is' : 'are'} back as before. Read a file again before changing it.)`
     kept.note = kept.note ? `${kept.note}\n${said}` : said
   }
   await store(home, kept)
   return out
+}
+
+export interface Redone {
+  /** The turns redone, oldest first. */
+  turns: Turn[]
+  /** Holding what navi wrote again. */
+  redone: string[]
+  /** Changed since the undo; left as it is (UND-14). */
+  left: string[]
+}
+
+/**
+ * Redoes what the latest undo here took back (UND-14): each change, oldest
+ * first, written again where the file still holds what the undo put back;
+ * nothing when there is nothing to redo. The turns become undoable again.
+ */
+export async function redo(home: string, cwd: string): Promise<Redone | undefined> {
+  const kept = await load(home, cwd)
+  const turns = kept.undone?.pop()?.slice().reverse()
+  if (!turns?.length) return
+  const out: Redone = { turns, redone: [], left: [] }
+  const name = await namer(cwd)
+  for (const c of turns.flatMap((t) => t.changes)) {
+    if ('big' in c) continue
+    const now = await readFile(c.path, 'utf8').catch(() => null)
+    if (now === c.after) continue
+    if (now !== c.before) {
+      out.left.push(name(c.path))
+      continue
+    }
+    await mkdir(dirname(c.path), { recursive: true })
+    await writeFile(c.path, c.after)
+    out.redone.push(name(c.path))
+  }
+  out.redone = [...new Set(out.redone)]
+  out.left = [...new Set(out.left)].filter((p) => !out.redone.includes(p))
+  kept.turns = [...kept.turns, ...turns].sort((a, b) => a.at.localeCompare(b.at)).slice(-KEPT_TURNS)
+  if (!kept.undone?.length) delete kept.undone
+  if (out.redone.length) {
+    const said = `(navi: the user redid your file changes from the turn that began "${turns[0].prompt}"${turns.length > 1 ? ' and the ones after it' : ''}, after undoing them: ${out.redone.join(', ')} ${out.redone.length === 1 ? 'holds' : 'hold'} what you wrote again${out.left.length ? `; ${out.left.join(', ')} changed since, so ${out.left.length === 1 ? 'it was' : 'they were'} left as the user has ${out.left.length === 1 ? 'it' : 'them'}` : ''}. Read a file again before changing it.)`
+    kept.note = kept.note ? `${kept.note}\n${said}` : said
+  }
+  await store(home, kept)
+  return out
+}
+
+/** What a redo did, a line each (UND-14). */
+export function redoneLines(r: Redone): string[] {
+  return [
+    ...r.redone.map((p) => `redid ${p}`),
+    ...r.left.map((p) => `left ${p}: it changed since the undo`),
+    ...r.turns.flatMap((t) => t.commands).map((c) => `not run again: $ ${c}`),
+  ]
 }
 
 /** What an undo did, a line each (UND-5, UND-6): for the terminal, a job's log and the phone. */
