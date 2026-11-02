@@ -1,5 +1,6 @@
 import { wrapLanguageModel } from 'ai'
 import { auto, diagnose, probe, providerById, type AutoOptions } from 'neorouter'
+import { thinkTags } from './think.ts'
 
 export interface Entry {
   /** 'remote' is a provider or custom endpoint; prompts leave the machine. */
@@ -157,19 +158,24 @@ export function modelFor(chosen: Pick<Chosen, 'entry' | 'options'>, config: Reco
   return withOptions(auto({ ...chosen.options, ...(o.think !== undefined && { think: o.think }) }), o)
 }
 
-/** A model asked with a link's token cap and temperature, unless a caller asks otherwise (MOD-24). */
+/**
+ * A model asked with a link's token cap and temperature, unless a caller asks
+ * otherwise (MOD-24), and with thinking written into its text taken out (MOD-26).
+ */
 export function withOptions(model: ReturnType<typeof auto>, o: LinkOptions): ReturnType<typeof auto> {
-  if (o.maxTokens === undefined && o.temperature === undefined) return model
   const wrapped = wrapLanguageModel({
     model,
-    middleware: {
-      // What a caller asks for itself still wins.
-      transformParams: async ({ params }) => ({
-        ...params,
-        ...(params.maxOutputTokens == null && o.maxTokens !== undefined && { maxOutputTokens: o.maxTokens }),
-        ...(params.temperature == null && o.temperature !== undefined && { temperature: o.temperature }),
-      }),
-    },
+    middleware: [
+      {
+        // What a caller asks for itself still wins.
+        transformParams: async ({ params }) => ({
+          ...params,
+          ...(params.maxOutputTokens == null && o.maxTokens !== undefined && { maxOutputTokens: o.maxTokens }),
+          ...(params.temperature == null && o.temperature !== undefined && { temperature: o.temperature }),
+        }),
+      },
+      thinkTags,
+    ],
   })
   // Still streams tool calls as auto() does, so the harness need not ask for it whole.
   return Object.assign(wrapped, { streamsToolCalls: (model as { streamsToolCalls?: boolean }).streamsToolCalls })

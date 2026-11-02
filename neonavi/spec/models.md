@@ -107,6 +107,15 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
   the chain itself (`"model"`) is unchanged, so setup and older readers are
   unaffected.
 
+- MOD-26: Thinking a model writes into its answer is taken out of the text
+  and passed on as reasoning, for every model navi makes from the chain or
+  the escalation spec: a leading `<think>…</think>`, or a bare `</think>` at
+  the start (a server whose chat template opened the tag in the prompt).
+  Streamed, the start of each step's text is held only while it could still
+  be such a tag; a whole answer (the judge's, the summariser's) also loses
+  thinking that comes before a bare `</think>`. A tag later in an answer is
+  left as written. Blank lines before an answer are dropped too.
+
 ## Open
 
 - Options for navi serve's OpenAI-compatible endpoint, which passes on what

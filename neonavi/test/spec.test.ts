@@ -119,7 +119,8 @@ test('a model is asked with its link’s cap and temperature unless the caller a
     },
     doStream: async () => { throw new Error('unused') },
   } as unknown as Parameters<typeof withOptions>[0]
-  assert.equal(withOptions(base, {}), base)
+  // MOD-26: always wrapped, for the thinking it may write; nothing else asked of it.
+  assert.equal((withOptions(base, {}) as { streamsToolCalls?: boolean }).streamsToolCalls, true)
   const m = withOptions(base, { maxTokens: 300, temperature: 0.1 })
   assert.equal((m as { streamsToolCalls?: boolean }).streamsToolCalls, true)
   assert.ok(m.provider.startsWith('neorouter'))
