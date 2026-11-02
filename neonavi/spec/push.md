@@ -72,6 +72,13 @@ reaches you without the phone page open.
   hold what a page keeps private.
 - PSH-16: The quiet hours summary (PSH-12) names a waiting job by its first
   line only.
+- PSH-17: A job waiting on a browser action keeps a picture of the page as
+  it looks (a JPEG of the tab, taken once when asking; none if that fails
+  or takes over 10 seconds), in memory only, until it is answered. Its
+  `pending` says `shot: true` once there is one, and `GET
+  /jobs/<id>/page.jpg` gives it, with the token; otherwise a 404. The phone
+  page shows it in the approval card, so a click or a form is answered
+  having seen the page. It is never pushed (PSH-15).
 
 ## Open
 

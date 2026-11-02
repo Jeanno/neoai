@@ -39,6 +39,8 @@ export interface Tab {
    * doing. `fn` gets a tab that is not locked again.
    */
   lock: <T>(fn: (tab: Tab) => Promise<T>) => Promise<T>
+  /** The current tab as the user would see it, a JPEG (PSH-17); it changes nothing, so it waits on no lock. */
+  shot: () => Promise<Buffer>
 }
 
 export interface BrowserOptions {
@@ -492,6 +494,7 @@ export function makeTab(o: BrowserOptions): Tab {
       }
     },
     lock: (fn) => fn(unlocked),
+    shot: async () => (await tab()).screenshot({ type: 'jpeg', quality: 60, timeout: 10_000 }),
   }
 
   // One thing at a time in the tab: the model may ask for several at once.
@@ -511,6 +514,8 @@ export function makeTab(o: BrowserOptions): Tab {
     describe: (a) => serial(() => unlocked.describe(a)),
     act: (a, approved) => serial(() => unlocked.act(a, approved)),
     lock: (fn) => serial(() => fn(unlocked)),
+    // Asked for while an action awaits approval, with the tab held: it must not queue behind that.
+    shot: () => unlocked.shot(),
   }
 }
 

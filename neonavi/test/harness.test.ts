@@ -634,6 +634,7 @@ function fakeTab(o: { moves?: boolean } = {}) {
       return `clicked ${a.ref}`
     },
     lock: (fn) => fn(tab),
+    shot: async () => Buffer.from('a jpeg'),
   }
   return { tab, done }
 }
@@ -641,7 +642,7 @@ function fakeTab(o: { moves?: boolean } = {}) {
 // BRW-11: reading runs freely; an action is judged, then asked, with its page, and never remembered.
 test('browser actions are judged, then asked about with their page', async () => {
   const { tab, done } = fakeTab()
-  const asked: { command: string; url?: string }[] = []
+  const asked: { command: string; url?: string; shot?: string }[] = []
   const model = fake([
     [
       call('c0', 'browser_open', { url: 'https://shop.test/' }),
@@ -656,14 +657,15 @@ test('browser actions are judged, then asked about with their page', async () =>
     config: {},
     browser: () => tab,
     approve: async (command, { action }) => {
-      asked.push({ command, url: action?.url })
+      // PSH-17: the page as it looks comes with it.
+      asked.push({ command, url: action?.url, shot: String(await action?.shot?.()) })
       return command.includes('Buy') ? 'always' : false
     },
   })
   const events = await collect(h.session().turn('shop'))
   assert.deepEqual(asked, [
-    { command: 'click link "Buy" on shop.test', url: 'https://shop.test/' },
-    { command: 'click link "Delete" on shop.test', url: 'https://shop.test/' },
+    { command: 'click link "Buy" on shop.test', url: 'https://shop.test/', shot: 'a jpeg' },
+    { command: 'click link "Delete" on shop.test', url: 'https://shop.test/', shot: 'a jpeg' },
   ])
   assert.deepEqual(done.sort(), ['Buy', 'safe-cmd'])
   assert.ok(events.some((e) => e.type === 'auto-approved' && e.command === 'click link "safe-cmd" on shop.test'))

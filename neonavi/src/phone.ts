@@ -86,6 +86,8 @@ export const PHONE_PAGE = `<!doctype html>
   .photos button { padding: 0; border: 0; background: none; border-radius: 16px; overflow: hidden; }
   .photos img { display: block; width: 128px; height: 128px; object-fit: cover; background: var(--bubble); }
   .photos button:only-child img { width: auto; height: auto; max-width: min(240px, 70vw); max-height: 300px; min-width: 96px; min-height: 96px; }
+  .approval .page { display: block; width: 100%; margin-top: 8px; padding: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bubble); }
+  .approval .page img { display: block; width: 100%; max-height: 320px; min-height: 80px; object-fit: cover; object-position: top; }
   .lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.92); display: grid; place-items: center; padding: 16px; }
   .lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; }
 
@@ -489,11 +491,28 @@ ${MARKDOWN_JS}
     return at < 0 ? [] : job.log.slice(at + 1).filter((l) => /^\\s/.test(l)).map((l) => l.trim())
   }
 
+  // The picture of the page an approval is about, fetched once per approval.
+  let pageShot = { key: '', src: null }
+  function pageShotOf(j) {
+    const key = j.id + '|' + j.pending.command
+    if (pageShot.key !== key) {
+      if (pageShot.src) URL.revokeObjectURL(pageShot.src)
+      pageShot = { key, src: null }
+      fetch('/jobs/' + j.id + '/page.jpg', { headers: { authorization: 'Bearer ' + token } })
+        .then((r) => (r.ok ? r.blob() : Promise.reject()))
+        .then((b) => { if (pageShot.key === key) { pageShot.src = URL.createObjectURL(b); render() } }, () => {})
+    }
+    return pageShot.src
+  }
+
   // An approval, in the thread where it is asked.
   const approval = () => el('div', { class: 'card approval', style: 'margin-top:10px' },
     el('div', { class: 'head' }, 'Allow this?'),
     el('pre', {}, job.pending.command),
     job.pending.url && el('div', { class: 'meta', style: 'margin-top:6px' }, 'On ' + job.pending.url),
+    // PSH-17: the page as it looks, to answer having seen it; a tap shows it full size.
+    job.pending.shot && el('button', { class: 'page', 'aria-label': 'Open the page', onclick: () => { if (pageShot.src) { viewing = pageShot.src; render() } } },
+      el('img', { src: pageShotOf(job) || false, alt: 'The page' })),
     job.pending.diff && el('pre', {}, job.pending.diff),
     el('div', { class: 'buttons' },
       el('button', { class: 'no', disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/answer', { yes: false })) }, 'No'),

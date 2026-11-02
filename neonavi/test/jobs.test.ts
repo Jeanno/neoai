@@ -35,7 +35,7 @@ function fakeSession(approve: Approve, start: ModelMessage[]): Session {
       } else if (prompt === 'edit' || prompt === 'click') {
         const o = prompt === 'edit'
           ? { change: { path: 'a.ts', created: false, diff: '@@ line 1 @@\n  keep\n- old\n+ new', added: 1, removed: 1 } }
-          : { action: { url: 'https://shop.example/cart?id=7' } }
+          : { action: { url: 'https://shop.example/cart?id=7', shot: async () => Buffer.from('the cart, as a jpeg') } }
         const ok = await approve(prompt === 'edit' ? 'edit a.ts (+1 -1)' : 'click "Buy now"', { signal: signal ?? new AbortController().signal, ...o })
         yield end(ok ? 'Did it.' : 'Left it.')
       } else if (prompt === 'long') {
@@ -703,6 +703,39 @@ test("a waiting change's notification shows its changed lines, and an action's i
   assert.equal(notes[1], 'navi is waiting for you: click: click "Buy now"\non shop.example/cart')
   jobs.answer(click.id, false)
   await jobs.idle()
+})
+
+// PSH-17
+test('a job waiting on a browser action has a picture of the page, with the token, until it is answered', async () => {
+  const { jobs, home } = await setup()
+  const token = 'c'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const get = (path: string, auth = true) => fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, { headers: auth ? { authorization: `Bearer ${token}` } : {} })
+  try {
+    const edit = jobs.create('edit', '/tmp')
+    await until(jobs, edit.id, 'waiting')
+    // A file change has no page.
+    assert.equal(jobs.get(edit.id)!.pending!.shot, undefined)
+    assert.equal((await get(`/jobs/${edit.id}/page.jpg`)).status, 404)
+    jobs.answer(edit.id, true)
+    const click = jobs.create('click', '/tmp')
+    await until(jobs, click.id, 'waiting')
+    while (!jobs.get(click.id)!.pending?.shot) await new Promise((r) => setTimeout(r, 5))
+    const got = await get(`/jobs/${click.id}/page.jpg`)
+    assert.equal(got.status, 200)
+    assert.equal(got.headers.get('content-type'), 'image/jpeg')
+    assert.equal(await got.text(), 'the cart, as a jpeg')
+    assert.equal((await get(`/jobs/${click.id}/page.jpg`, false)).status, 401)
+    // Never written down with the job.
+    const saved = await readFile(join(jobsDir(home), `${click.id}.json`), 'utf8')
+    assert.ok(!saved.includes('the cart'))
+    jobs.answer(click.id, false)
+    await jobs.idle()
+    assert.equal((await get(`/jobs/${click.id}/page.jpg`)).status, 404)
+    assert.equal(jobs.shot(click.id), undefined)
+  } finally {
+    server.close()
+  }
 })
 
 // JOB-24, JOB-25

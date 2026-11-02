@@ -31,7 +31,7 @@ export interface Gate {
    * Returns true to let a browser action be done (BRW-11): `line` says what
    * and `url` where. Left out, every action declines.
    */
-  act?: (action: { line: string; url: string }, signal?: AbortSignal, toolCallId?: string) => Promise<boolean>
+  act?: (action: { line: string; url: string; shot?: () => Promise<Buffer> }, signal?: AbortSignal, toolCallId?: string) => Promise<boolean>
   /** Returns true to let a fact be remembered (MEM-7). Left out, every fact declines. */
   remember?: (fact: string, signal?: AbortSignal, toolCallId?: string, project?: string) => Promise<boolean>
 }
@@ -136,7 +136,8 @@ export function makeTools(
     browser!().lock(async (tab) => {
       const asked = await tab.describe(action)
       if ('problem' in asked) return asked.problem
-      if (!gate.act || !(await gate.act(asked, signal, id)))
+      // PSH-17: the page as it looks, for a front end that can show it while asking.
+      if (!gate.act || !(await gate.act({ ...asked, shot: () => tab.shot() }, signal, id)))
         return `The user declined to ${asked.line}. Do not retry it; try another approach.`
       // Approval can take minutes: an action is not done on a page that moved on meanwhile.
       return tab.act(action, asked)

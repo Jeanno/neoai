@@ -68,6 +68,12 @@ export interface Escalation {
   local: boolean
 }
 
+/** A browser action asked about (BRW-11): the page's URL, and a way to see it as it looks (PSH-17). */
+export interface PageAction {
+  url: string
+  shot?: () => Promise<Buffer>
+}
+
 export interface HarnessOptions {
   model: Model
   /** Tokens the model holds; compaction keeps history under 70% of it (SES-8). */
@@ -87,7 +93,7 @@ export interface HarnessOptions {
    * project's (MEM-16), `remember for <project>: <fact>`, and `project` is
    * the project's root.
    */
-  approve?: (command: string, o: { signal: AbortSignal; change?: FileChange; action?: { url: string }; memory?: string; project?: string }) => Promise<Answer>
+  approve?: (command: string, o: { signal: AbortSignal; change?: FileChange; action?: PageAction; memory?: string; project?: string }) => Promise<Answer>
   /**
    * Makes a tab in navi's browser (`makeTab` from `neonavi/browser`), once per
    * session on first use. Left out, there are no browser tools (BRW-13).
@@ -200,7 +206,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
   const systemTokens = estimateTokens([{ role: 'system', content: system }])
 
   /** The front end's answer, or a decline if it throws or the turn stops first. */
-  const askUser = (command: string, signal: AbortSignal, change?: FileChange, action?: { url: string }, memory?: string, project?: string) =>
+  const askUser = (command: string, signal: AbortSignal, change?: FileChange, action?: PageAction, memory?: string, project?: string) =>
     new Promise<Answer>((resolve) => {
       if (!o.approve || signal.aborted) return resolve(false)
       // Removed once answered: a long turn would otherwise pile listeners on one signal.
@@ -261,7 +267,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       // LED-15: what sort of turn a correction or repeat is about.
       const about = { aboutKind: kindOf(before.text, before.files) }
       let declined = 0
-      const ask = (command: string, signal: AbortSignal, change?: FileChange, action?: { url: string }, memory?: string, project?: string) =>
+      const ask = (command: string, signal: AbortSignal, change?: FileChange, action?: PageAction, memory?: string, project?: string) =>
         askUser(command, signal, change, action, memory, project).then((ok) => {
           if (ok === false && !signal.aborted) declined++
           return ok
@@ -319,13 +325,13 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         return (await ask(summarize(c), toolSignal ?? signal, c)) !== false
       }
       // Judged as shell commands are (BRW-11), but never remembered: "always" is a plain yes.
-      const act = async ({ line, url }: { line: string; url: string }, toolSignal?: AbortSignal, id?: string) => {
+      const act = async ({ line, url, shot }: { line: string; url: string; shot?: () => Promise<Buffer> }, toolSignal?: AbortSignal, id?: string) => {
         await after(id)
         if (config.approve !== 'ask' && (await judge(o.model, line, prompt, { url })) === 'safe') {
           emit({ type: 'auto-approved', command: line })
           return true
         }
-        return (await ask(line, toolSignal ?? signal, undefined, { url })) !== false
+        return (await ask(line, toolSignal ?? signal, undefined, { url, ...(shot && { shot }) })) !== false
       }
       // Always asked, whatever the mode or judge (MEM-7): a fact is sent with every later turn.
       const remember = async (fact: string, toolSignal?: AbortSignal, id?: string, where?: string) => {

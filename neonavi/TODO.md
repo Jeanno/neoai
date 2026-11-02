@@ -110,8 +110,18 @@ add the requirement there first.
 - [x] A queue: two jobs at once (`"jobsAtOnce"`), the rest `queued` in
       order and stoppable; one waiting on you holds no place. (JOB-21 to
       JOB-23)
-- [x] A followed-up job's earlier turns: folded on the phone page, every
+- [x] A followed-up job's earlier turns: a thread on the phone page, every
       turn with `navi jobs <id> show`. (JOB-27 to JOB-29)
+- [x] The phone page laid out as chat apps are: conversations with status
+      dots, a job as a thread, a pill box at the bottom; Schedules and memory
+      behind header icons. (JOB-36)
+- [x] Photos sent with a job show in its thread, and picking one is
+      reliable across the page's refreshes. (JOB-37)
+- [x] An approval of a browser action shows the page on the phone. (PSH-17)
+- [ ] navi's browser stuck when a Chrome left on its profile answers
+      DevTools but never lets Playwright connect: every browser tool fails
+      until it is quit. Seen live; start a fresh one after a failed connect.
+      (`spec/browser.md`)
 - [x] Find a job by words in its prompt or answer: a box on the phone list,
       `navi jobs find <words>`. (JOB-30, JOB-31)
 - [x] Repeat a finished job on a schedule, from the phone or

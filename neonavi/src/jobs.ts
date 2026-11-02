@@ -28,6 +28,8 @@ export interface Pending {
   url?: string
   /** A file change's diff. */
   diff?: string
+  /** A picture of the page is to be had (PSH-17). */
+  shot?: boolean
 }
 
 export interface Job {
@@ -118,6 +120,8 @@ export interface Jobs {
   remove(id: string): Promise<boolean>
   /** Deletes every job that is not working (JOB-25); how many. */
   clear(): Promise<number>
+  /** The page a waiting browser action is on, as a JPEG (PSH-17). */
+  shot(id: string): Buffer | undefined
   /** Settles once no job is running: for tests and shutdown. */
   idle(): Promise<void>
 }
@@ -169,6 +173,8 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
   const answers = new Map<string, (yes: boolean) => void>()
   // PSH-8: in memory only, one per waiting approval.
   const keys = new Map<string, string>()
+  /** Pictures of the page a waiting browser action is on (PSH-17). */
+  const shots = new Map<string, Buffer>()
   const stops = new Map<string, AbortController>()
   const running = new Set<Promise<void>>()
 
@@ -227,6 +233,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         const settle = (yes: boolean) => {
           answers.delete(job.id)
           keys.delete(job.id)
+          shots.delete(job.id)
           o.signal.removeEventListener('abort', no)
           delete job.pending
           if (job.status === 'waiting') job.status = 'running'
@@ -237,6 +244,13 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         const no = () => settle(false)
         answers.set(job.id, settle)
         o.signal.addEventListener('abort', no, { once: true })
+        // PSH-17: kept only while this approval waits, and never saved.
+        o.action?.shot?.().then((jpeg) => {
+          if (answers.get(job.id) !== settle || !job.pending) return
+          shots.set(job.id, jpeg)
+          job.pending.shot = true
+          void save(job)
+        }, () => {})
       })
     try {
       const { session, model } = await d.start({ job: job.id, directory: job.directory, history: job.history, approve, ...(answered && { answered }) })
@@ -393,6 +407,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
       for (const j of done) await forget(j.id)
       return done.length
     },
+    shot: (id) => shots.get(id),
     async idle() {
       while (running.size) await Promise.all([...running])
       await writes

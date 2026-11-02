@@ -252,6 +252,13 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
     const suggests = !!o.suggest && o.memory !== false && !working(job.status) && turns.length > 0
     return json(res, 200, { ...shownJob(job), changes: await jobChanges(home, job.directory, job.id), turns, ...(suggests && { suggests }) })
   }
+  // PSH-17: the page a waiting browser action is on.
+  if (req.method === 'GET' && parts.length === 2 && parts[1] === 'page.jpg') {
+    const jpeg = jobs.shot(job.id)
+    if (!jpeg) return error(res, 404, 'There is no picture of a page for this job now.')
+    res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': jpeg.length, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
+    return res.end(jpeg)
+  }
   // JOB-37: a photo sent with a turn, so the phone can show it there; only the kinds a browser draws without running anything.
   if (req.method === 'GET' && parts.length === 5 && parts[1] === 'turns' && parts[3] === 'images') {
     const got = turnImage(job.history, Number(parts[2]), Number(parts[4]))

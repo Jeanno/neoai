@@ -679,3 +679,45 @@ test('MEM-23: a finished job asks what is worth remembering only on a tap, and k
   assert.equal(await page.getByRole('button', { name: 'Remember' }).count(), 1)
   assert.equal(asked, 1)
 })
+
+test('PSH-17: an approval of a browser action shows the page, full size on a tap', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  const shooter = await browser.newPage({ viewport: { width: 400, height: 300 } })
+  await shooter.setContent('<h1 style="color:#0a7">Your cart</h1><button>Buy now</button>')
+  const jpeg = await shooter.screenshot({ type: 'jpeg' })
+  const jobs = await makeJobs({
+    home,
+    start: async ({ approve }) => ({
+      model: 'small',
+      session: {
+        history: [],
+        async *turn() {
+          const ok = await approve('click button "Buy now" on shop.test', { signal: new AbortController().signal, action: { url: 'https://shop.test/cart', shot: async () => jpeg } })
+          yield { type: 'done', history: [], text: ok ? 'Bought.' : 'Left it.', empty: false, stopped: false } as const
+        },
+      },
+    }),
+    notify: () => {},
+  })
+  const job = jobs.create('buy the thing in my cart', home)
+  const token = 'b2'.repeat(32)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home] } })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  while (!jobs.get(job.id)?.pending?.shot) await new Promise((r) => setTimeout(r, 10))
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByText('buy the thing in my cart').click()
+  const shown = page.getByRole('img', { name: 'The page' })
+  await page.waitForFunction(() => (document.querySelector('.approval .page img') as HTMLImageElement | null)?.naturalWidth === 400)
+  assert.ok(await shown.isVisible())
+  await page.getByRole('button', { name: 'Open the page' }).click()
+  await page.getByRole('dialog').click()
+  await page.getByRole('dialog').waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: 'Yes' }).click()
+  await page.getByText('Bought.').waitFor()
+  assert.equal(await page.locator('.approval').count(), 0)
+})

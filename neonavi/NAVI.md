@@ -93,9 +93,10 @@ holds no place (JOB-21 to JOB-23).
 A job you are done with can be deleted (`navi jobs <id> delete`, or Delete
 job on the phone page), and `navi jobs clear` or Clear finished jobs
 deletes every one not still working (JOB-24 to JOB-26).
-A job followed up keeps its earlier answers: on the phone page under
-Earlier in this job, and all of it with `navi jobs <id> show`
-(JOB-27 to JOB-29).
+A job followed up keeps its earlier answers: on the phone page as one
+thread, as in a chat app, and all of it with `navi jobs <id> show`
+(JOB-27 to JOB-29, JOB-36). Photos sent with a job show in its thread, full
+size on a tap (JOB-37).
 To find a job, type in Find a job above a phone list of more than three,
 or run `navi jobs find <words>`: jobs holding every word, in the prompt or
 the answer (JOB-30, JOB-31).
@@ -109,7 +110,8 @@ read as HTML: only http(s) links work, and nothing in an answer can run
 
 The phone page has them too: its box can start a job now or schedule it
 (every 30 minutes, every hour, or each day or weekday at a time, as a watch
-if you like), and its Schedules list has Run now and Delete for each.
+if you like), and its Schedules screen (the clock at the top) has Run now,
+Pause, Edit and Delete for each.
 
 To have jobs reach your phone, install the ntfy app, subscribe to a long
 random topic, and put it in the config as `"push": "https://ntfy.sh/<topic>"`
@@ -199,6 +201,8 @@ to see what happened. Pages are read after their scripts run, and a task can
 spread over several tabs, including ones a site opens itself. Opening and reading pages runs freely; clicking,
 typing and choosing are judged like shell commands, and anything that could
 send, buy, post, delete or change a setting asks you first (`do? … [y/N]`).
+On the phone page, that question comes with a picture of the page as it
+looks, so you see what you are saying yes to (`spec/push.md` PSH-17).
 `"browser": false` in the config removes it (`spec/browser.md`).
 
     navi browser
