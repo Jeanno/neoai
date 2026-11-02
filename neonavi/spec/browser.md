@@ -47,6 +47,10 @@ has to look at the whole page again to see what happened.
   10s is read as its plain text instead, saying so: it can be read but not
   acted on by ref, and is read so, without waiting again, until its tab moves
   to another URL.
+- BRW-17: Reading never waits on a page that has not loaded: a tab still
+  waiting on its page answers within 10s that the page has not finished
+  loading, to read it again in a moment or open it again, and the tab can
+  then open another page as usual.
 - BRW-6: `browser_open(url)` opens an http or https page in the session's tab
   and returns its title, its URL after redirects, and its first part (BRW-5).
   Any other scheme is refused.

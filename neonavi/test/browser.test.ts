@@ -38,6 +38,7 @@ before(async () => {
       res.end(`<title>Late</title><div id=app>Loading…</div><script>setTimeout(() => {
         document.getElementById('app').innerHTML = '<h1>Dashboard</h1><button>Refresh</button>'
       }, 800)</script>`)
+    else if (url.pathname === '/never') return // answered only when the server closes
     else if (url.pathname === '/found') res.end(`<title>Found</title><p>Results for ${url.searchParams.get('q')}</p>`)
     else res.end(SHOP)
   })
@@ -47,6 +48,7 @@ before(async () => {
 
 after(async () => {
   await quitBrowser(home).catch(() => {})
+  server.closeAllConnections()
   server.close()
   // The browser may still be writing its profile as it goes.
   await rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
@@ -228,4 +230,15 @@ test('a browser that answers but will not be attached to is asked to close, and 
     stuck.close()
     await rm(own, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
+})
+
+// BRW-17
+test('a page that never loads is read as not loaded yet, without waiting on it', { skip }, async () => {
+  const tab = makeTab({ home, headless: true, loadMs: 1000 })
+  assert.match(await tab.open(`${base}/never`), /^could not open .*\/never: .*Timeout/)
+  const started = Date.now()
+  assert.match(await tab.read({}), /has not finished loading; read it again in a moment, or open it again/)
+  assert.ok(Date.now() - started < 9000, `read took ${Date.now() - started}ms`)
+  // And the tab is not spoiled for the next page.
+  assert.match(await tab.open(`${base}/about`), /^About\n/)
 })

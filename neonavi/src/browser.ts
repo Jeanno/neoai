@@ -52,6 +52,8 @@ export interface BrowserOptions {
   headless?: boolean
   /** For tests: how long attaching may take before the browser is taken for stuck (BRW-16). */
   attachMs?: number
+  /** For tests: how long a page may take to load (BRW-6). */
+  loadMs?: number
 }
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -129,7 +131,8 @@ async function launch(exe: string, profile: string, headless: boolean): Promise<
     '--remote-debugging-address=127.0.0.1',
     '--no-first-run',
     '--no-default-browser-check',
-    ...(headless ? ['--headless=new'] : []),
+    // A test's browser leaves the keychain alone: under a home of its own, Chrome waits on it and loads nothing.
+    ...(headless ? ['--headless=new', '--use-mock-keychain'] : []),
     'about:blank',
   ]
   spawn(exe, args, { detached: true, stdio: 'ignore' }).unref()
@@ -323,6 +326,10 @@ async function deepen(page: Page, text: string, left: { parts: number; until: nu
   return lines.join('\n')
 }
 
+/** Whatever a page runs, given up on after `ms`: one that never loaded never runs it (BRW-17). */
+const within = <T>(ms: number, run: Promise<T>) =>
+  Promise.race([run, new Promise<never>((_, no) => setTimeout(() => no(new Error(`Timeout ${ms}ms: the page did not answer`)), ms).unref())])
+
 /** Pages found too complex, by the URL they were found at: read as text until they move on, not waited on again. */
 const complex = new WeakMap<Page, string>()
 
@@ -333,8 +340,10 @@ async function linesOf(page: Page): Promise<string[]> {
     return pageLines(await snapshot(page))
   } catch (e) {
     if (!/Timeout/.test(reason(e))) throw e
+    const text = await within(3000, page.evaluate<string>("document.body?.innerText ?? ''")).catch(() => null)
+    // BRW-17: a page that never loaded has nothing to read yet, and is not waited on.
+    if (text === null) return ['(the page has not finished loading; read it again in a moment, or open it again)']
     complex.set(page, page.url())
-    const text = await page.evaluate<string>("document.body?.innerText ?? ''")
     return textLines(text)
   }
 }
@@ -363,7 +372,7 @@ const QUIET = `new Promise((done) => {
 async function settle(page: Page) {
   await page.waitForLoadState('domcontentloaded', { timeout: 2000 }).catch(() => {})
   await page.waitForLoadState('networkidle', { timeout: 1500 }).catch(() => {})
-  await page.evaluate(QUIET).catch(() => {})
+  await within(2000, page.evaluate(QUIET)).catch(() => {})
 }
 
 const hostOf = (url: string) => {
@@ -452,7 +461,7 @@ export function makeTab(o: BrowserOptions): Tab {
       try {
         // A new tab only once there is a first one; the first is new anyway.
         const p = fresh && current && alive(current) ? (current = adopt(await newTab(await connect(o)))) : await tab()
-        await p.goto(parsed.href, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+        await p.goto(parsed.href, { waitUntil: 'domcontentloaded', timeout: o.loadMs ?? 30_000 })
         await settle(p)
         return await answer(p)
       } catch (e) {
@@ -496,7 +505,7 @@ export function makeTab(o: BrowserOptions): Tab {
         // A page restored from the back-forward cache never loads again; committing is enough.
         // Restored from the cache, a page has no response to return, so the address tells.
         const from = p.url()
-        await p.goBack({ waitUntil: 'commit', timeout: 30_000 })
+        await p.goBack({ waitUntil: 'commit', timeout: o.loadMs ?? 30_000 })
         if (p.url() === from) return 'There is no page to go back to.'
         await settle(p)
         return await answer(p)

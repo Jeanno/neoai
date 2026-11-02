@@ -122,6 +122,12 @@ add the requirement there first.
       DevTools but never lets Playwright connect: it is now asked to close
       (or ended, only if it runs on navi's profile) and a fresh one started.
       (BRW-16)
+- [x] Reading a page that never loaded waited forever (a job hung for six
+      minutes): it now answers within 10s that the page has not loaded. (BRW-17)
+- [x] A browser eval: 11 tasks on local sites, scored from the answer and what
+      the sites received (`eval/browser`). The local model scores 11/11.
+- [ ] Harder eval tasks, or a WebArena-Lite subset for numbers comparable with
+      other agents (needs Docker).
 - [x] Find a job by words in its prompt or answer: a box on the phone list,
       `navi jobs find <words>`. (JOB-30, JOB-31)
 - [x] Repeat a finished job on a schedule, from the phone or
