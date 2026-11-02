@@ -635,6 +635,7 @@ function fakeTab(o: { moves?: boolean } = {}) {
     },
     lock: (fn) => fn(tab),
     shot: async () => Buffer.from('a jpeg'),
+    look: async () => ({ url: 'https://shop.test/', jpeg: Buffer.from('a jpeg') }),
   }
   return { tab, done }
 }
@@ -714,9 +715,12 @@ test('browser tools come only with a browser, on, and one tab per session', asyn
   assert.deepEqual(await names({ config: { browser: false }, browser: () => tab }), [])
   assert.deepEqual(await names({ config: { web_search: false }, browser: () => tab }), [])
   assert.deepEqual((await names({ config: {}, browser: () => tab })).sort(), [
-    'browser_back', 'browser_click', 'browser_close_tab', 'browser_open', 'browser_press', 'browser_read', 'browser_select',
-    'browser_switch', 'browser_tabs', 'browser_type',
+    'browser_back', 'browser_click', 'browser_close_tab', 'browser_look', 'browser_open', 'browser_press', 'browser_read',
+    'browser_select', 'browser_switch', 'browser_tabs', 'browser_type',
   ])
+  // BRW-18: for a model that cannot take images.
+  assert.ok(!(await names({ config: { browser: { look: false } }, browser: () => tab })).includes('browser_look'))
+  assert.ok((await names({ config: { browser: { look: false } }, browser: () => tab })).includes('browser_read'))
 
   let made = 0
   const model = fake([
@@ -915,3 +919,20 @@ test('the ledger keeps counts of each turn, never what was said, and only for a 
   await turn({ front: 'cli', config: { web_search: false, ledger: false } })
   assert.equal((await ledgerOf(home)).length, 1)
 })
+
+// BRW-18
+test('browser_look hands the model a picture of the page, with its URL', async () => {
+  const { tab } = fakeTab()
+  const model = fake([[call('c1', 'browser_look', {}), finish('tool-calls')], [...text('t', 'a bar chart'), finish('stop')]])
+  // Never asked about: it changes nothing, so it runs with no approver at all.
+  await collect((await harness(model, { config: {}, browser: () => tab })).session().turn('what is on the chart?'))
+  const result = (model.doStreamCalls[1].prompt as any[]).find((m) => m.role === 'tool').content[0].output
+  assert.deepEqual(result, {
+    type: 'content',
+    value: [
+      { type: 'text', text: 'The page as it looks now: https://shop.test/' },
+      { type: 'media', data: Buffer.from('a jpeg').toString('base64'), mediaType: 'image/jpeg' },
+    ],
+  })
+})
+

@@ -48,6 +48,9 @@ const SHIPPING: Record<string, Record<string, number>> = {
   Italy: { Rome: 8.8, Milan: 7.95 },
 }
 
+/** The chart's months and sales, in thousands. */
+export const SALES: [string, number][] = [['Jan', 42], ['Feb', 55], ['Mar', 38], ['Apr', 91], ['May', 47], ['Jun', 60]]
+
 export const shippingFor = (city: string, kg: number) => {
   const base = Object.values(SHIPPING).find((c) => city in c)![city]
   return Math.round((base + Math.max(0, kg - 1) * 1.6) * 100) / 100
@@ -160,6 +163,14 @@ document.getElementById('hours').onclick=()=>{if(document.getElementById('banner
 $('country').onchange=()=>{const c=S[$('country').value]||{};$('city').innerHTML='<option value="">Choose…</option>'+Object.keys(c).map(x=>'<option>'+x+'</option>').join('');$('city').disabled=!Object.keys(c).length};
 $('calc').onclick=()=>{const c=S[$('country').value]||{},b=c[$('city').value],kg=Number($('kg').value);if(b===undefined||!kg){$('out').textContent='Choose a country, a city and a weight.';return}
 $('out').textContent='Shipping: €'+(Math.round((b+Math.max(0,kg-1)*1.6)*100)/100).toFixed(2)}</script>`))
+
+    // 12. A chart drawn on a canvas: nothing of it is in the page's text.
+    if (p === '/sales')
+      return html(page('Sales', `<h1>Monthly sales</h1><canvas id=c width=640 height=360></canvas><script>
+const c = document.getElementById('c').getContext('2d'), months = ${JSON.stringify(SALES.map(([m]) => m))}, v = ${JSON.stringify(SALES.map(([, n]) => n))}
+c.fillStyle = '#fff'; c.fillRect(0, 0, 640, 360); c.font = '16px sans-serif'
+months.forEach((m, i) => { const h = v[i] * 3; c.fillStyle = '#3b6fd1'; c.fillRect(40 + i * 100, 320 - h, 60, h); c.fillStyle = '#222'; c.fillText(m, 50 + i * 100, 345); c.fillText(String(v[i]), 52 + i * 100, 312 - h) })
+</script>`))
 
     // 11. A cart and checkout, where the order must not be placed.
     if (p === '/store') {

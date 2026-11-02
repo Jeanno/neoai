@@ -68,6 +68,8 @@ for (const task of TASKS.filter((t) => !only || only.includes(t.id))) {
   const cell = (s: string) => s.replace(/\|/g, '\\|').replace(/\s+/g, ' ').slice(0, 140)
   rows.push(`| ${task.id} | ${task.tests} | ${why ? '✗' : '✓'} | ${secs} s | ${job.log.length} (${browsed}) | ${asked.length} | ${cell(why ?? answer)} |`)
   console.log(`${why ? 'FAIL' : 'PASS'} ${task.id} ${secs}s ${why ?? ''}`)
+  // What it did and said, to see why.
+  if (why) console.log(`  ${(job.log as string[]).join('\n  ')}\n  answer: ${answer.replace(/\s+/g, ' ').slice(0, 400)}`)
   await api(`/jobs/${job.id}/delete`, {}).catch(() => {})
 }
 server.close()

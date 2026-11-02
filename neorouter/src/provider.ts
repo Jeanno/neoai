@@ -54,8 +54,15 @@ export function toMessages(prompt: LanguageModelV2CallOptions['prompt']): {
       continue
     }
     if (m.role === 'tool') {
-      for (const p of m.content)
+      // A chat API's tool message is text only: a picture a tool returned follows as the user's, so a vision model sees it.
+      const pictures: OaiPart[] = []
+      for (const p of m.content) {
         messages.push({ role: 'tool', tool_call_id: p.toolCallId, content: outputText(p.output) })
+        for (const v of p.output?.type === 'content' ? p.output.value : [])
+          if (v.type === 'media' && v.mediaType.startsWith('image/'))
+            pictures.push({ type: 'image_url', image_url: { url: imageURL(v.data, v.mediaType) } })
+      }
+      if (pictures.length) messages.push({ role: 'user', content: [{ type: 'text', text: `The picture${pictures.length > 1 ? 's' : ''} the tool returned:` }, ...pictures] })
       continue
     }
     const calls: OaiToolCall[] = []
@@ -112,6 +119,9 @@ function responseFormat(o: LanguageModelV2CallOptions) {
 function outputText(output: any): string {
   if (output == null) return ''
   if (output.type === 'text' || output.type === 'error-text') return String(output.value)
+  // Its pictures go in a message of their own (toMessages); here, its words.
+  if (output.type === 'content')
+    return output.value.map((v: any) => (v.type === 'text' ? v.text : `[${v.mediaType} sent below]`)).join('\n')
   return JSON.stringify(output.value ?? output)
 }
 

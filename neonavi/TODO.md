@@ -126,6 +126,9 @@ add the requirement there first.
       minutes): it now answers within 10s that the page has not loaded. (BRW-17)
 - [x] A browser eval: 11 tasks on local sites, scored from the answer and what
       the sites received (`eval/browser`). The local model scores 11/11.
+- [x] navi can see the browser page: `browser_look` sends a vision model a
+      picture of it; neorouter now passes a tool's pictures on as images.
+      The canvas chart task passes with it (6s) and fails without it. (BRW-18)
 - [ ] Harder eval tasks, or a WebArena-Lite subset for numbers comparable with
       other agents (needs Docker).
 - [x] Find a job by words in its prompt or answer: a box on the phone list,

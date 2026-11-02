@@ -51,6 +51,12 @@ has to look at the whole page again to see what happened.
   waiting on its page answers within 10s that the page has not finished
   loading, to read it again in a moment or open it again, and the tab can
   then open another page as usual.
+- BRW-18: `browser_look()` returns a picture of the current tab as it
+  looks (a JPEG of what fits in the window), with its URL, for what text
+  cannot carry: charts, canvases, pictures, layout. It changes nothing, so
+  runs freely. The picture reaches a vision model as an image beside the
+  tool's answer. The tool is left out with `"browser": {"look": false}`,
+  for a model that cannot take images.
 - BRW-6: `browser_open(url)` opens an http or https page in the session's tab
   and returns its title, its URL after redirects, and its first part (BRW-5).
   Any other scheme is refused.

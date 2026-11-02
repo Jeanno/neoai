@@ -343,6 +343,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         { approve, change, act, remember },
         {
           web, fetch, write, cwd: o.cwd, ripgrep: o.ripgrep, search: searchBackend(config.search), browser,
+          look: (config.browser as { look?: unknown } | undefined)?.look !== false,
           ...(remembering && { memory: home, ...(project && { project }) }),
           wrote: recorder.wrote,
         },

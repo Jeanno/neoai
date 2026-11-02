@@ -60,6 +60,8 @@ export interface ToolOptions {
   search?: SearchBackend
   /** The session's browser tab, made on first use; left out, there are no browser tools (BRW-13). */
   browser?: () => Tab
+  /** false leaves out browser_look, for a model that cannot take images (BRW-18). */
+  look?: boolean
   /** The home whose memory the remember tool adds to; left out, there is no remember tool (MEM-4). */
   memory?: string
   /** The project the working directory is in, whose facts remember can add to (MEM-16). */
@@ -70,7 +72,7 @@ export interface ToolOptions {
 
 export function makeTools(
   gate: Gate,
-  { web = true, fetch = true, cwd = process.cwd(), ripgrep, write = true, search: backend, browser, memory, project, wrote }: ToolOptions = {},
+  { web = true, fetch = true, cwd = process.cwd(), ripgrep, write = true, search: backend, browser, look = true, memory, project, wrote }: ToolOptions = {},
 ) {
   const search = makeSearch({ cwd, ripgrep })
   const at = (path: string) => resolve(cwd, path)
@@ -352,6 +354,26 @@ export function makeTools(
       execute: async ({ offset, find }) => browser!().read({ offset, find }),
     }),
 
+    browser_look: tool({
+      description:
+        'See the browser page as it looks: a picture of what fits in the window. Use it for what the text ' +
+        'cannot carry, such as charts, pictures, canvases or layout; read the page for anything else.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        try {
+          const { url, jpeg } = await browser!().look()
+          return { url, jpeg: jpeg.toString('base64') }
+        } catch (e) {
+          return { problem: `could not see the page: ${e instanceof Error ? e.message : String(e)}` }
+        }
+      },
+      // BRW-18: the picture goes to the model as an image, beside where it was taken.
+      toModelOutput: (out) =>
+        'jpeg' in out && out.jpeg
+          ? { type: 'content', value: [{ type: 'text', text: `The page as it looks now: ${out.url}` }, { type: 'media', data: out.jpeg, mediaType: 'image/jpeg' }] }
+          : { type: 'text', value: 'problem' in out ? String(out.problem) : 'could not see the page' },
+    }),
+
     browser_back: tool({
       description: 'Go back one page in the browser.',
       inputSchema: z.object({}),
@@ -388,6 +410,7 @@ export function makeTools(
   // Removed rather than typed optional, so callers keep exact tool types.
   if (!web) delete (tools as Partial<typeof tools>).web_search
   if (!web || !fetch) delete (tools as Partial<typeof tools>).fetch_url
+  if (!browser || !look) delete (tools as Partial<typeof tools>).browser_look
   if (!browser)
     for (const name of [
       'browser_open', 'browser_tabs', 'browser_switch', 'browser_close_tab', 'browser_read', 'browser_back',

@@ -136,3 +136,31 @@ test('a user image is sent as an image_url part beside the text', () => {
   ])
   assert.deepEqual(warnings, [])
 })
+
+test('a picture a tool returns follows its tool message as an image the model can see', () => {
+  const { messages } = toMessages([
+    { role: 'assistant', content: [{ type: 'tool-call', toolCallId: 'call_1', toolName: 'look', input: {} }] },
+    {
+      role: 'tool',
+      content: [
+        {
+          type: 'tool-result',
+          toolCallId: 'call_1',
+          toolName: 'look',
+          output: { type: 'content', value: [{ type: 'text', text: 'The page at x' }, { type: 'media', data: 'AAAA', mediaType: 'image/jpeg' }] },
+        },
+      ],
+    },
+  ] as any)
+  assert.deepEqual(messages.slice(1), [
+    { role: 'tool', tool_call_id: 'call_1', content: 'The page at x\n[image/jpeg sent below]' },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'The picture the tool returned:' },
+        { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,AAAA' } },
+      ],
+    },
+  ])
+})
+

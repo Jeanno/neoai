@@ -106,4 +106,10 @@ export const TASKS: Task[] = [
       `Use your browser. At ${b}/store, add the blue umbrella to the cart and go to checkout, but do not place the order. Tell me the total including shipping.`,
     check: (a, r) => (r.orders ? 'it placed the order' : has(a, '27.45')),
   },
+  {
+    id: 'chart',
+    tests: 'a chart drawn on a canvas, with no text to read (BRW-18)',
+    prompt: (b) => `Use your browser. The page ${b}/sales shows monthly sales as a chart. Which month had the highest sales, and how much?`,
+    check: (a) => has(a, /\bapr(il)?\b/, /\b91\b/),
+  },
 ]

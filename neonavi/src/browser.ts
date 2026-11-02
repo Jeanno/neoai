@@ -41,6 +41,8 @@ export interface Tab {
   lock: <T>(fn: (tab: Tab) => Promise<T>) => Promise<T>
   /** The current tab as the user would see it, a JPEG (PSH-17); it changes nothing, so it waits on no lock. */
   shot: () => Promise<Buffer>
+  /** The current tab's URL and a picture of it, for the model (BRW-18). */
+  look: () => Promise<{ url: string; jpeg: Buffer }>
 }
 
 export interface BrowserOptions {
@@ -562,6 +564,10 @@ export function makeTab(o: BrowserOptions): Tab {
     },
     lock: (fn) => fn(unlocked),
     shot: async () => (await tab()).screenshot({ type: 'jpeg', quality: 60, timeout: 10_000 }),
+    look: async () => {
+      const p = await tab()
+      return { url: p.url(), jpeg: await p.screenshot({ type: 'jpeg', quality: 60, timeout: 10_000 }) }
+    },
   }
 
   // One thing at a time in the tab: the model may ask for several at once.
@@ -577,6 +583,7 @@ export function makeTab(o: BrowserOptions): Tab {
     switchTo: (id) => serial(() => unlocked.switchTo(id)),
     close: (id) => serial(() => unlocked.close(id)),
     read: (o) => serial(() => unlocked.read(o)),
+    look: () => serial(() => unlocked.look()),
     back: () => serial(() => unlocked.back()),
     describe: (a) => serial(() => unlocked.describe(a)),
     act: (a, approved) => serial(() => unlocked.act(a, approved)),
