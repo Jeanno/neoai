@@ -1,11 +1,14 @@
-import { Action, ActionPanel, getPreferenceValues, Icon, Keyboard, List } from '@raycast/api'
-import { useState } from 'react'
+import { Action, ActionPanel, getPreferenceValues, Icon, Keyboard, List, showToast, Toast } from '@raycast/api'
+import { homedir } from 'node:os'
+import { useEffect, useState } from 'react'
 import { ApprovalSection, SetUpAction } from './common'
 import { NO_MODEL_TITLE } from './lib/offer-set-up'
 import { exchanges, newChat, titleFrom, withoutThinking, type Chat, type Exchange } from './lib/chats'
 import { saveChat } from './lib/history'
 import { whereLabel } from './lib/labels'
+import { naviHome } from './lib/model'
 import { answerOf, turnMarkdown } from './lib/turn'
+import { redoLast, undoableFor, undoLast } from './lib/undo-last'
 import { useNavi } from './lib/use-navi'
 
 export function Conversation({ initialChat }: { initialChat?: Chat }) {
@@ -14,6 +17,42 @@ export function Conversation({ initialChat }: { initialChat?: Chat }) {
   const [input, setInput] = useState('')
   const [pending, setPending] = useState<string | null>(null)
   const { navi, turn, streaming, approval, run, stop, recheck } = useNavi()
+  // RAY-13: the question whose file changes can be put back, if the latest kept turn is in this chat.
+  const [undoable, setUndoable] = useState<string | null>(null)
+
+  async function checkUndo(question?: string) {
+    const turn = question && (await undoableFor(homedir(), await naviHome(), question))
+    setUndoable(turn ? question : null)
+  }
+  useEffect(() => {
+    checkUndo(exchanges(chat.history)[0]?.question)
+  }, [chat.id])
+
+  async function undoChanges() {
+    const dir = await naviHome()
+    const lines = await undoLast(homedir(), dir)
+    setUndoable(null)
+    if (!lines) {
+      await showToast({ style: Toast.Style.Failure, title: 'Nothing to undo' })
+      return
+    }
+    await showToast({
+      style: Toast.Style.Success,
+      title: 'Undid file changes',
+      message: lines.join('\n'),
+      // RAY-14: a mistaken undo is one action away from being taken back.
+      primaryAction: {
+        title: 'Redo',
+        onAction: async (toast) => {
+          const redone = await redoLast(homedir(), dir)
+          toast.style = redone ? Toast.Style.Success : Toast.Style.Failure
+          toast.title = redone ? 'Redid file changes' : 'Nothing to redo'
+          toast.message = redone?.join('\n')
+          await checkUndo(exchanges(chat.history)[0]?.question)
+        },
+      },
+    })
+  }
 
   async function send() {
     const question = input.trim()
@@ -37,6 +76,7 @@ export function Conversation({ initialChat }: { initialChat?: Chat }) {
     }
     setChat(updated)
     await saveChat(updated)
+    await checkUndo(question)
   }
 
   const shown: Exchange[] = exchanges(chat.history)
@@ -53,6 +93,14 @@ export function Conversation({ initialChat }: { initialChat?: Chat }) {
           <Action title="Stop" icon={Icon.Stop} shortcut={{ modifiers: ['cmd', 'shift'], key: '.' }} onAction={stop} />
         )}
         {answer && <Action.CopyToClipboard title="Copy Answer" content={answer} />}
+        {exchange && !streaming && exchange.question === undoable && (
+          <Action
+            title="Undo File Changes"
+            icon={Icon.Undo}
+            shortcut={{ modifiers: ['cmd'], key: 'z' }}
+            onAction={undoChanges}
+          />
+        )}
         {exchange && (
           <Action.CopyToClipboard
             title="Copy Question"

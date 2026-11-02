@@ -10,7 +10,9 @@
     "./spec": "./src/spec.ts",
     "./harness": "./src/harness.ts",
     "./setup": "./src/setup-core.ts",
-    "./browser": "./src/browser.ts"
+    "./browser": "./src/browser.ts",
+    "./undo": "./src/undo.ts",
+    "./ledger": "./src/ledger.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -63,4 +63,4 @@ Putting files back the way they were before navi's last turn changed them.
 
 ## Open
 
-- Undo from Raycast.
+- Undo of a job's turns from Raycast: Raycast has no jobs yet.

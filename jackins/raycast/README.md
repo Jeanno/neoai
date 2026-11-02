@@ -94,6 +94,12 @@ that could change something, it stops and shows you the command: choose
 file it shows the change, with **Write File** and **Don't Write**. Leaving
 the answer or stopping it also means no.
 
+Changed your mind about a file Navi changed in **Navi Chat**? Select that
+question and press **⌘ Z** (**Undo File Changes**): the files go back as they
+were, and the message that pops up lists them. Its **Redo** button brings the
+changes back. Only Navi's latest change can be undone this way; a file you
+have edited since is left alone.
+
 While an answer or summary is showing:
 
 | Keys       | What it does                       |

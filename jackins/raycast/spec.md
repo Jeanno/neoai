@@ -54,6 +54,13 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
 - RAY-12: The extension keeps the ledger (LED-1) as `raycast` and escalates
   (ESC-1); an escalation is a note in the conversation naming the new model,
   REMOTE called out, and why.
+- RAY-13: Navi Chat offers Undo File Changes (⌘Z) on the question whose turn
+  is the latest one kept for undo in `~/.navi-raycast` (UND-1), and on no
+  other. It puts the files back as `navi undo` does (UND-4, UND-5), shows what
+  it did a line each, is counted in the ledger (LED-9) unless the ledger is
+  off, and the next turn is told (UND-7).
+- RAY-14: The undo's toast offers Redo (UND-14), which brings the changes back
+  and offers the undo again.
 
 ## Open
 

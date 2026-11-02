@@ -136,7 +136,7 @@ add the requirement there first.
       a line each, navi's own notes as quotes. (SES-15 to SES-17)
 - [x] Redo: `navi redo` and `/redo` bring back what an undo put back, never
       over a change made since; the model is told. (UND-14 to UND-16)
-- [ ] Undo from Raycast. (`spec/undo.md` Open)
+- [x] Undo from Raycast: Undo File Changes (⌘Z) in Navi Chat, with Redo in its toast. (RAY-13, RAY-14)
 - [x] navi's own browser: a separate Chromium with its own logins, read as
       text with refs (never screenshots), each action answering with what
       changed; reading is free, acting is judged and asked. (BRW-1 to BRW-15)
