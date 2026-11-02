@@ -18,7 +18,7 @@ import { userContent, type Attachment } from './attach.ts'
 
 export { attach, splitUserContent, type Attachment } from './attach.ts'
 import { searchBackend } from './web.ts'
-import { record, type LedgerEntry } from './ledger.ts'
+import { CORRECTION_WINDOW, readsAsCorrection, record, type LedgerEntry } from './ledger.ts'
 import type { Tab } from './browser.ts'
 export { allowable, type Answer } from './approve.ts'
 
@@ -163,8 +163,11 @@ export interface Session {
 export interface Harness {
   /** The system prompt every turn is sent with (prompt.md). */
   readonly system: string
-  /** A conversation, empty or continued from a stored history (HAR-3). */
-  session: (history?: ModelMessage[]) => Session
+  /**
+   * A conversation, empty or continued from a stored history (HAR-3); with
+   * `answered`, the model whose answer ends that history and when (LED-7).
+   */
+  session: (history?: ModelMessage[], o?: { answered?: { model: string; at: number } }) => Session
 }
 
 export async function createHarness(o: HarnessOptions): Promise<Harness> {
@@ -206,8 +209,10 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         .then((ok) => settle(ok === true || ok === 'always' ? ok : false), declined)
     })
 
-  const session = (start: ModelMessage[] = []): Session => {
+  const session = (start: ModelMessage[] = [], so: { answered?: { model: string; at: number } } = {}): Session => {
     let history = start
+    // LED-7: the last answer here, so a prompt correcting it is counted against its model.
+    let answered = so.answered
     let busy = false
     let tab: Tab | null = null
     const browser = browsing ? () => (tab ??= o.browser!()) : undefined
@@ -475,9 +480,11 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           attachments: attachments?.length ?? 0,
           outcome: stopped ? 'stopped' : text.trim() ? 'answered' : failed ? 'error' : 'empty',
           ...(escalated && { escalated }),
+          ...(answered && Date.now() - answered.at < CORRECTION_WINDOW && readsAsCorrection(prompt) && { corrects: answered.model }),
         }
         await record(home, entry)
       }
+      answered = !stopped && text.trim() ? { model: answering.model, at: Date.now() } : undefined
       // On disk before done, so an undo straight after finds it.
       await recorder.saved()
       emit({ type: 'done', history, text, empty: !text.trim(), stopped })

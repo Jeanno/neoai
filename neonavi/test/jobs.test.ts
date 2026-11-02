@@ -599,6 +599,26 @@ test("a project's facts can be read, added to and forgotten through the API, for
   }
 })
 
+// LED-7
+test("a follow-up's session is told whose answer it follows, and when", async () => {
+  const seen: unknown[] = []
+  const { jobs } = await setup({
+    start: async ({ approve, history, answered }) => (seen.push(answered), { session: fakeSession(approve, history), model: 'small' }),
+  })
+  const job = jobs.create('summarise the repo', '/tmp')
+  await jobs.idle()
+  const at = Date.parse(jobs.get(job.id)!.updated)
+  jobs.reply(job.id, 'no, the other repo')
+  await jobs.idle()
+  jobs.create('fail', '/tmp')
+  await jobs.idle()
+  const failed = jobs.list().find((j) => j.status === 'failed')!
+  jobs.reply(failed.id, 'try again')
+  await jobs.idle()
+  // The model that answered (it escalated to big); nothing before the first turn, nor after a failure.
+  assert.deepEqual(seen, [undefined, { model: 'big', at }, undefined, undefined])
+})
+
 // PSH-14, PSH-15
 test("a waiting change's notification shows its changed lines, and an action's its page", async () => {
   const { jobs, notes } = await setup()

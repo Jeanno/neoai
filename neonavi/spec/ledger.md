@@ -26,9 +26,19 @@ what was said.
   turn, the median time, and how many of its turns escalated away. With
   nothing recorded it says so. Nothing is changed.
 
+- LED-7: A turn whose prompt reads as a correction of the answer before it
+  in the same conversation, within 30 minutes, records `corrects`: the model
+  that gave that answer, and nothing of the prompt. It reads as one by its
+  first words only ("no", "that's wrong", "not quite", "it still doesn't",
+  "try again", "you forgot", …, but not "no worries" or "no need"), so a
+  question about something wrong is not taken for it. The first turn of a
+  conversation, resumed or new, corrects nothing.
+- LED-8: `navi stats` shows, for a model that has been corrected, the share
+  of its answers that were (`25% of answers corrected`).
+
 ## Open
 
 - Route by the ledger: start a kind of turn on the model that has done it
   well, and escalate sooner from one that has not.
-- An outcome signal from the user: a retry or a correction right after an
-  answer.
+- Other signals from the user: undoing a turn's changes, or asking the same
+  thing again in other words.

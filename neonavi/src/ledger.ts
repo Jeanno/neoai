@@ -24,6 +24,23 @@ export interface LedgerEntry {
   outcome: 'answered' | 'empty' | 'error' | 'stopped'
   /** The model the turn started on and why it left it (LED-3). */
   escalated?: { from: string; reason: string }
+  /** The model whose answer this turn's prompt corrected (LED-7); never the prompt. */
+  corrects?: string
+}
+
+/** How soon after an answer a correction still counts as one (LED-7). */
+export const CORRECTION_WINDOW = 30 * 60_000
+
+const KIND = /^(no\b(?![ ,]*(worries|problem|thanks|need|rush|hurry))|nope\b|wrong\b|incorrect\b|not (quite|right|it|what|that|correct)\b|that('s| is| was)? (wrong|not|incorrect|didn'?t|did not|doesn'?t|does not)\b|(it|this|that) (still )?(doesn'?t|does not|didn'?t|did not|isn'?t|is not|won'?t|wasn'?t)\b|still (doesn'?t|does not|didn'?t|not|broken|fail|fails|failing|wrong|the same)\b|try again\b|you (missed|forgot|didn'?t|did not|broke|got it wrong)\b|(that|it|this) (broke|failed)\b)/
+
+/**
+ * Whether a prompt reads as the user saying the answer before was wrong
+ * (LED-7): by its first words only, so asking about a thing that is wrong
+ * is not taken for it.
+ */
+export function readsAsCorrection(prompt: string): boolean {
+  const start = prompt.trim().toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/^[^a-z]+/, '')
+  return KIND.test(start)
 }
 
 const MAX_BYTES = 5 * 1024 * 1024
@@ -87,6 +104,8 @@ export function stats(entries: LedgerEntry[], days: number): string {
   for (const [model, turns] of rows) {
     const n = turns.length
     const count = (o: LedgerEntry['outcome']) => turns.filter((t) => t.outcome === o).length
+    // LED-8: of its answers, how many the user then corrected.
+    const corrected = entries.filter((e) => e.corrects === model).length
     const parts = n
       ? [
           `${n} turn${n === 1 ? '' : 's'}`,
@@ -94,6 +113,7 @@ export function stats(entries: LedgerEntry[], days: number): string {
           ...(count('empty') ? [`${pct(count('empty'), n)} empty`] : []),
           ...(count('error') ? [`${pct(count('error'), n)} failed`] : []),
           ...(count('stopped') ? [`${pct(count('stopped'), n)} stopped`] : []),
+          ...(corrected && count('answered') ? [`${pct(Math.min(corrected, count('answered')), count('answered'))} of answers corrected`] : []),
           `${per(turns.reduce((s, t) => s + t.steps, 0), n)} steps`,
           `${per(turns.reduce((s, t) => s + t.toolErrors, 0), n)} tool errors`,
           `median ${seconds(median(turns.map((t) => t.ms)))}`,

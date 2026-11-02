@@ -45,6 +45,8 @@ add the requirement there first.
 - [x] Local first: a struggling turn escalates to `"escalate"`, keeping what
       was done. (ESC-1 to ESC-5)
 - [x] A ledger of how each turn went, as counts, and `navi stats`. (LED-1 to LED-6)
+- [x] The ledger notes an answer the user corrects next, by model only, and
+      `navi stats` shows the share corrected. (LED-7, LED-8)
 - [ ] Route by the ledger: start a kind of turn where it has gone well.
       (`spec/ledger.md` Open)
 

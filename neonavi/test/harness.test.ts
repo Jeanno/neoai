@@ -717,6 +717,27 @@ const ledgerOf = async (cwd: string) =>
     .filter(Boolean)
     .map((l) => JSON.parse(l))
 
+// LED-7: a prompt that corrects the answer before it is counted against that answer's model.
+test('the ledger notes when a turn corrects the answer before it, by model, never the words', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-led-'))
+  const model = fake([
+    [...text('t1', 'It is 41.'), finish('stop')],
+    [...text('t2', 'Sorry, 42.'), finish('stop')],
+    [...text('t3', 'Done.'), finish('stop')],
+    [...text('t4', 'Ok.'), finish('stop')],
+  ])
+  const h = await createHarness({ model, contextWindow: 100_000, cwd: home, home, config: { web_search: false }, front: 'cli', name: { model: 'small', local: true } })
+  const s = h.session()
+  await collect(s.turn('what is the answer'))
+  await collect(s.turn("No, that's wrong"))
+  await collect(s.turn('now the docs'))
+  // A new conversation has nothing before it to correct.
+  await collect(h.session().turn('no, start over'))
+  const entries = await ledgerOf(home)
+  assert.deepEqual(entries.map((e) => e.corrects), [undefined, 'small', undefined, undefined])
+  assert.doesNotMatch(JSON.stringify(entries), /wrong|over/)
+})
+
 /** A stronger model for escalation (ESC-1), answering in one step. */
 const stronger = (answer = 'Done properly.') => {
   const model = fake([[...text('s', answer), finish('stop')]])

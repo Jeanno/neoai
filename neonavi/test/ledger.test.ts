@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { appendFile, mkdtemp, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ledgerFile, readLedger, record, stats, type LedgerEntry } from '../src/ledger.ts'
+import { ledgerFile, readLedger, readsAsCorrection, record, stats, type LedgerEntry } from '../src/ledger.ts'
 
 const entry = (o: Partial<LedgerEntry> = {}): LedgerEntry => ({
   at: new Date().toISOString(),
@@ -61,4 +61,46 @@ test('stats are one line per model, most turns first, with escalations counted a
       '  claude on Anthropic (REMOTE): 1 turn · 100% answered · 2.0 steps · 0.0 tool errors · median 20s',
     ].join('\n'),
   )
+})
+
+// LED-7: by the first words only.
+test('a prompt reads as a correction by how it starts', () => {
+  for (const p of [
+    'No, the other file',
+    'nope',
+    "That's wrong, it is 42",
+    'that’s not what I asked',
+    'It still doesn’t work',
+    'still failing with the same error',
+    'Try again, but shorter',
+    'you forgot the tests',
+    'not quite: use tabs',
+    'Wrong file.',
+    '...no',
+    'it broke the build',
+    'this didnt help',
+  ])
+    assert.ok(readsAsCorrection(p), p)
+  for (const p of [
+    'No worries, now do the docs',
+    'no need to run the tests',
+    'Thanks! Now the README',
+    'Why is the build wrong?',
+    'what does "not quite" mean in this log',
+    'Is it still working?',
+    'note this down',
+    'nothing else, thanks',
+    '',
+  ])
+    assert.ok(!readsAsCorrection(p), p)
+})
+
+// LED-8
+test('stats show the share of a model’s answers the user then corrected', () => {
+  const out = stats(
+    [entry(), entry(), entry(), entry({ corrects: 'qwen on Darkbloom' }), entry({ model: 'claude on Anthropic', local: false })],
+    7,
+  )
+  assert.match(out, /qwen on Darkbloom: 4 turns · 100% answered · 25% of answers corrected · /)
+  assert.doesNotMatch(out.split('\n')[2], /corrected/)
 })

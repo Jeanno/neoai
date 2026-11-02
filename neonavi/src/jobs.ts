@@ -82,7 +82,14 @@ export type Listed = Omit<Job, 'history' | 'log' | 'asked'>
 export interface JobDeps {
   home: string
   /** A session to run a job's turn in; throws when no model answers. */
-  start: (o: { job: string; directory: string; history: ModelMessage[]; approve: NonNullable<HarnessOptions['approve']> }) => Promise<{ session: Session; model: string }>
+  /** `answered`: the model whose answer the job last gave, and when, for the ledger (LED-7). */
+  start: (o: {
+    job: string
+    directory: string
+    history: ModelMessage[]
+    approve: NonNullable<HarnessOptions['approve']>
+    answered?: { model: string; at: number }
+  }) => Promise<{ session: Session; model: string }>
   /**
    * A notification (JOB-5), for the desktop and a phone (PSH-1); `urgent` when
    * it waits on you, with the key that answers that approval (PSH-8).
@@ -195,7 +202,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
     for (const old of all.slice(KEPT)) if (!working(old.status)) await forget(old.id)
   }
 
-  async function run(job: Job, prompt: string, attachments?: Attachment[]) {
+  async function run(job: Job, prompt: string, attachments?: Attachment[], answered?: { model: string; at: number }) {
     const stop = new AbortController()
     stops.set(job.id, stop)
     job.status = 'running'
@@ -229,7 +236,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         o.signal.addEventListener('abort', no, { once: true })
       })
     try {
-      const { session, model } = await d.start({ job: job.id, directory: job.directory, history: job.history, approve })
+      const { session, model } = await d.start({ job: job.id, directory: job.directory, history: job.history, approve, ...(answered && { answered }) })
       job.model = model
       const errors: string[] = []
       for await (const e of session.turn(prompt, { signal: stop.signal, ...(attachments?.length && { attachments }) })) {
@@ -268,18 +275,19 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
 
   // JOB-21: a place each for those running; one waiting on you holds none.
   const atOnce = Number.isInteger(d.atOnce) && d.atOnce! >= 1 ? d.atOnce! : AT_ONCE
-  const queue: { job: Job; prompt: string; attachments?: Attachment[] }[] = []
+  type Answered = { model: string; at: number }
+  const queue: { job: Job; prompt: string; attachments?: Attachment[]; answered?: Answered }[] = []
   const busy = () => [...jobs.values()].filter((j) => j.status === 'running').length
   const pump = () => {
     while (queue.length && busy() < atOnce) {
       const next = queue.shift()!
-      launch(next.job, next.prompt, next.attachments)
+      launch(next.job, next.prompt, next.attachments, next.answered)
     }
   }
-  const launch = (job: Job, prompt: string, attachments?: Attachment[]) => {
+  const launch = (job: Job, prompt: string, attachments?: Attachment[], answered?: Answered) => {
     // Running from here, so the next look at the queue counts it.
     job.status = 'running'
-    const p = run(job, prompt, attachments).catch(() => {})
+    const p = run(job, prompt, attachments, answered).catch(() => {})
     running.add(p)
     void p.finally(() => {
       running.delete(p)
@@ -287,10 +295,12 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
     })
   }
   const begin = (job: Job, prompt: string, attachments?: Attachment[]) => {
-    if (busy() < atOnce && !queue.length) return launch(job, prompt, attachments)
+    // A follow-up to an answer can correct it (LED-7).
+    const answered = job.status === 'done' && job.answer && job.model ? { model: job.model, at: Date.parse(job.updated) } : undefined
+    if (busy() < atOnce && !queue.length) return launch(job, prompt, attachments, answered)
     job.status = 'queued'
     job.log.push(`· queued: ${queue.length ? `${queue.length} ahead of it` : 'next'}, as ${atOnce} run at once`)
-    queue.push({ job, prompt, attachments })
+    queue.push({ job, prompt, attachments, ...(answered && { answered }) })
     void save(job)
   }
 

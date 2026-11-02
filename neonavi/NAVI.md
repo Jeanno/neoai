@@ -202,7 +202,10 @@ gives no answer) carries on there, with everything done so far
 (`spec/escalate.md`). Each turn also leaves a line of counts in
 `~/.neoai/ledger.jsonl` (which model, how long, which tools, how it ended;
 never what was said), and `navi stats` shows how each model has done
-(`spec/ledger.md`; `"ledger": false` turns it off).
+(`spec/ledger.md`; `"ledger": false` turns it off). When your next message
+starts as a correction ("no, …", "that's wrong", "still doesn't work"), the
+answer before it is counted as corrected against the model that gave it,
+and `navi stats` shows each model's share (LED-7, LED-8).
 
     navi stats
 

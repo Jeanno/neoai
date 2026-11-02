@@ -270,7 +270,7 @@ async function serve(argv: string[]) {
 }
 
 /** A job's session (JOB-1): the chain, escalation, the browser and the ledger, as the CLI's. */
-async function startJob({ job, directory, history, approve }: Parameters<JobDeps['start']>[0]) {
+async function startJob({ job, directory, history, approve, answered }: Parameters<JobDeps['start']>[0]) {
   const config = await readConfig()
   const { chosen, failures } = await walkChain(parseModelSpec(config.model, Object.keys(config.custom ?? {})))
   if (!chosen) throw new Error(`navi has no model to answer with: ${failedLines(failures).join('; ')}`)
@@ -287,7 +287,7 @@ async function startJob({ job, directory, history, approve }: Parameters<JobDeps
     // Nothing is remembered from a job (JOB-4): its "yes" is only a yes.
     approve: async (command, o) => ((await approve(command, o)) === true),
   })
-  return { session: harness.session(history), model: modelLabel(chosen) }
+  return { session: harness.session(history, { answered }), model: modelLabel(chosen) }
 }
 
 /**
