@@ -94,6 +94,20 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
   that rejects the request is asked again without it. Provider models are left
   as they are; reasoning is kept on.
 
+## Options per link
+
+- MOD-24: `"modelOptions"` in the config gives a link options, keyed by the
+  link as the chain would name it (`"Darkbloom:qwen3.6"`, `"local"`, …; keys
+  naming the same model are one, so `"local"` is `"fast"`): `maxTokens`, at
+  most that many tokens in each answer; `temperature`, from 0 to 2; and
+  `think`, true to let a reasoning model think where MOD-11 would ask it not
+  to. They apply wherever navi uses that link: a turn, a job, an escalation,
+  Raycast. What a caller asks for itself still wins.
+- MOD-25: A value that is not one of these, or out of range, is left out;
+  the chain itself (`"model"`) is unchanged, so setup and older readers are
+  unaffected.
+
 ## Open
 
-- Per-link options such as reasoning effort or a token cap.
+- Options for navi serve's OpenAI-compatible endpoint, which passes on what
+  the app asks for.

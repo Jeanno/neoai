@@ -269,6 +269,13 @@ Unset means `["local"]`: nothing leaves the machine until you choose a provider.
 Each link resolves the backend it names or fails so the next is tried, and if
 none resolve navi says so and exits 1. There is no keyless tier.
 
+A link can have options of its own, keyed as the chain names it: a cap on
+each answer, a temperature, or `think` to let a reasoning model think
+(navi asks it not to otherwise). They apply to turns, jobs, escalation and
+Raycast alike (`spec/models.md`, MOD-24):
+
+    "modelOptions": { "local": { "maxTokens": 4096, "temperature": 0.2 } }
+
 Other flags: `-r` / `--resume` (open the loop with this directory's history),
 `--max-steps N` (default 32).
 

@@ -16,7 +16,7 @@ import {
   type Listing,
   type Verdict,
 } from 'neorouter'
-import { parseModelSpec, walkChain, type Chosen, type Entry, type Failure as ChainFailure } from './spec.ts'
+import { modelFor, parseModelSpec, walkChain, type Chosen, type Entry, type Failure as ChainFailure } from './spec.ts'
 import type { Escalation } from './harness.ts'
 
 /**
@@ -194,14 +194,14 @@ export function modelLabel(chosen: { backend: string; modelId: string; local: bo
  * config, as the harness takes it: resolved on first use, like `model`.
  * Undefined when the config names none.
  */
-export function escalationFor(config: { escalate?: unknown; custom?: Record<string, unknown> }): (() => Promise<Escalation | null>) | undefined {
+export function escalationFor(config: { escalate?: unknown; custom?: Record<string, unknown>; modelOptions?: unknown }): (() => Promise<Escalation | null>) | undefined {
   const spec = config.escalate
   if (typeof spec !== 'string' && !(Array.isArray(spec) && spec.every((s) => typeof s === 'string'))) return undefined
   const chain = parseModelSpec(spec, Object.keys(config.custom ?? {}))
   if (!chain.length) return undefined
   return async () => {
     const { chosen } = await walkChain(chain)
-    return chosen && { model: auto(chosen.options), contextWindow: chosen.contextWindow, name: modelLabel(chosen), local: chosen.local }
+    return chosen && { model: modelFor(chosen, config), contextWindow: chosen.contextWindow, name: modelLabel(chosen), local: chosen.local }
   }
 }
 

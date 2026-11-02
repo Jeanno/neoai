@@ -1,4 +1,5 @@
-import { diagnose, probe, providerById, type AutoOptions } from 'neorouter'
+import { wrapLanguageModel } from 'ai'
+import { auto, diagnose, probe, providerById, type AutoOptions } from 'neorouter'
 
 export interface Entry {
   /** 'remote' is a provider or custom endpoint; prompts leave the machine. */
@@ -119,4 +120,57 @@ export async function walkChain(
 /** walkChain without the reasons. */
 export async function resolveChain(chain: Entry[], options: { launch?: boolean } = {}): Promise<Chosen | null> {
   return (await walkChain(chain, options)).chosen
+}
+
+/** What one link of the chain is asked with, from `"modelOptions"` in the config (MOD-24). */
+export interface LinkOptions {
+  /** At most this many tokens in each answer. */
+  maxTokens?: number
+  temperature?: number
+  /** true lets a reasoning model think (MOD-11 asks it not to). */
+  think?: boolean
+}
+
+/**
+ * The options for a link (MOD-24): those given under a key that names the
+ * same model (`"local"` and `"fast"` are one), merged in the order written;
+ * a value that is not one of these is left out (MOD-25).
+ */
+export function linkOptions(entry: Entry, given: unknown, custom: string[] = []): LinkOptions {
+  if (!given || typeof given !== 'object' || Array.isArray(given)) return {}
+  const same = JSON.stringify(entry)
+  const out: LinkOptions = {}
+  for (const [key, raw] of Object.entries(given as Record<string, unknown>)) {
+    const named = parseModelSpec(key, custom)
+    if (named.length !== 1 || JSON.stringify(named[0]) !== same || !raw || typeof raw !== 'object') continue
+    const o = raw as Record<string, unknown>
+    if (Number.isInteger(o.maxTokens) && (o.maxTokens as number) > 0) out.maxTokens = o.maxTokens as number
+    if (typeof o.temperature === 'number' && o.temperature >= 0 && o.temperature <= 2) out.temperature = o.temperature
+    if (typeof o.think === 'boolean') out.think = o.think
+  }
+  return out
+}
+
+/** The model for a chosen link, asked as its options say (MOD-24). */
+export function modelFor(chosen: Pick<Chosen, 'entry' | 'options'>, config: Record<string, unknown>): ReturnType<typeof auto> {
+  const o = linkOptions(chosen.entry, config.modelOptions, Object.keys((config.custom as object | undefined) ?? {}))
+  return withOptions(auto({ ...chosen.options, ...(o.think !== undefined && { think: o.think }) }), o)
+}
+
+/** A model asked with a link's token cap and temperature, unless a caller asks otherwise (MOD-24). */
+export function withOptions(model: ReturnType<typeof auto>, o: LinkOptions): ReturnType<typeof auto> {
+  if (o.maxTokens === undefined && o.temperature === undefined) return model
+  const wrapped = wrapLanguageModel({
+    model,
+    middleware: {
+      // What a caller asks for itself still wins.
+      transformParams: async ({ params }) => ({
+        ...params,
+        ...(params.maxOutputTokens == null && o.maxTokens !== undefined && { maxOutputTokens: o.maxTokens }),
+        ...(params.temperature == null && o.temperature !== undefined && { temperature: o.temperature }),
+      }),
+    },
+  })
+  // Still streams tool calls as auto() does, so the harness need not ask for it whole.
+  return Object.assign(wrapped, { streamsToolCalls: (model as { streamsToolCalls?: boolean }).streamsToolCalls })
 }

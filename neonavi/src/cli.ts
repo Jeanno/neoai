@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { basename, resolve } from 'node:path'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { commandFrom, promptFrom, startsFresh } from './args.ts'
-import { parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
+import { modelFor, parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
 import { colorDiff, makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
 import { serveMcp, type Ask } from './mcp.ts'
@@ -161,7 +161,7 @@ async function mcp(argv: string[]) {
     if (!chosen) throw new Error(`navi has no model to answer with: ${failedLines(failures).join('; ')}`)
     // No approve callback: what would need a y is declined (MCP-4).
     const harness = await createHarness({
-      model: auto(chosen.options),
+      model: modelFor(chosen, config),
       contextWindow: chosen.contextWindow,
       cwd: directory,
       config,
@@ -275,7 +275,7 @@ async function startJob({ job, directory, history, approve, answered }: Paramete
   const { chosen, failures } = await walkChain(parseModelSpec(config.model, Object.keys(config.custom ?? {})))
   if (!chosen) throw new Error(`navi has no model to answer with: ${failedLines(failures).join('; ')}`)
   const harness = await createHarness({
-    model: auto(chosen.options),
+    model: modelFor(chosen, config),
     contextWindow: chosen.contextWindow,
     cwd: directory,
     config,
@@ -938,7 +938,7 @@ async function main() {
     midLine = false
   }
   const harnessFor = (chosen: Chosen) => createHarness({
-    model: auto(chosen.options),
+    model: modelFor(chosen, config),
     contextWindow: chosen.contextWindow,
     cwd,
     config,

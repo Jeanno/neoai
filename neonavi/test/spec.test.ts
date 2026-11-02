@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { optionsFor, parseModelSpec } from '../src/spec.ts'
+import { linkOptions, optionsFor, parseModelSpec, withOptions } from '../src/spec.ts'
+import { generateText } from 'ai'
 
 const LOCAL = { where: 'local', prefer: 'fast' }
 
@@ -83,4 +84,46 @@ test('a local link is scoped to the machine, a remote one to its provider', () =
     model: 'm',
     provider: 'groq',
   })
+})
+
+// MOD-24, MOD-25
+test('a link takes its options from a key naming the same model, valid values only', () => {
+  const custom = ['Darkbloom']
+  const [qwen, fast, other] = parseModelSpec(['Darkbloom:qwen', 'fast', 'Darkbloom:other'], custom)
+  const given = {
+    'Darkbloom:qwen': { maxTokens: 2048, temperature: 0.2, think: true },
+    // "local" and "fast" are one link.
+    local: { maxTokens: 512 },
+    'Darkbloom:other': { maxTokens: -1, temperature: 3, think: 'yes', reasoning: 'high' },
+    'not:a model, nor one': { maxTokens: 9 },
+  }
+  assert.deepEqual(linkOptions(qwen, given, custom), { maxTokens: 2048, temperature: 0.2, think: true })
+  assert.deepEqual(linkOptions(fast, given, custom), { maxTokens: 512 })
+  assert.deepEqual(linkOptions(other, given, custom), {})
+  assert.deepEqual(linkOptions(qwen, undefined, custom), {})
+  assert.deepEqual(linkOptions(qwen, ['Darkbloom:qwen'], custom), {})
+})
+
+// MOD-24
+test('a model is asked with its link’s cap and temperature unless the caller asks otherwise, and still streams', async () => {
+  const seen: Record<string, unknown>[] = []
+  const base = {
+    specificationVersion: 'v2',
+    provider: 'neorouter',
+    modelId: 'm',
+    supportedUrls: {},
+    streamsToolCalls: true,
+    doGenerate: async (o: Record<string, unknown>) => {
+      seen.push({ max: o.maxOutputTokens, temperature: o.temperature })
+      return { content: [{ type: 'text', text: 'ok' }], finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, warnings: [] }
+    },
+    doStream: async () => { throw new Error('unused') },
+  } as unknown as Parameters<typeof withOptions>[0]
+  assert.equal(withOptions(base, {}), base)
+  const m = withOptions(base, { maxTokens: 300, temperature: 0.1 })
+  assert.equal((m as { streamsToolCalls?: boolean }).streamsToolCalls, true)
+  assert.ok(m.provider.startsWith('neorouter'))
+  await generateText({ model: m, prompt: 'hi' })
+  await generateText({ model: m, prompt: 'hi', maxOutputTokens: 50, temperature: 0.9 })
+  assert.deepEqual(seen, [{ max: 300, temperature: 0.1 }, { max: 50, temperature: 0.9 }])
 })

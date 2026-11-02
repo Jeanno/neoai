@@ -2,13 +2,13 @@ import './quiet'
 import { mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { parseModelSpec, walkChain, type Chosen } from 'neonavi/spec'
-import { auto, readConfig, reset } from 'neorouter'
+import { modelFor, parseModelSpec, walkChain, type Chosen } from 'neonavi/spec'
+import { readConfig, reset } from 'neorouter'
 import { describe, labelFor, links, modelLabel, type LinkFailure } from 'neonavi/setup'
 
 export interface Navi {
   chosen: Chosen
-  model: ReturnType<typeof auto>
+  model: ReturnType<typeof modelFor>
   /** The model as the user would know it (RAY-9, SET-25), e.g. "qwen3-4b" or "claude-sonnet-5-5 on Anthropic". */
   label: string
   /** False when prompts leave the machine. */
@@ -61,7 +61,7 @@ async function resolve(): Promise<Navi | null> {
   const { chosen, failures } = await walkChain(parseModelSpec(parts, custom))
   lastFailures = failures.map((f) => ({ index: f.index, label: labelFor(parts[f.index], custom), why: f.why }))
   if (!chosen) return null
-  return { chosen, model: auto(chosen.options), label: modelLabel(chosen), local: chosen.local }
+  return { chosen, model: modelFor(chosen, config), label: modelLabel(chosen), local: chosen.local }
 }
 
 /**
