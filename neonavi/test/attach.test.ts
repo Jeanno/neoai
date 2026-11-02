@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { attach, splitUserContent, userContent } from '../src/attach.ts'
+import { attach, attachUploads, MAX_UPLOAD, splitUserContent, userContent } from '../src/attach.ts'
 import { commandFrom, unshell } from '../src/args.ts'
 import { estimateTokens } from '../src/compact.ts'
 
@@ -140,4 +140,30 @@ test('a file over 50 MB is refused, naming it', async () => {
   await writeFile(join(d, 'huge.log'), '')
   await truncate(join(d, 'huge.log'), 51 * 1024 * 1024)
   await assert.rejects(attach('huge.log', d), /^Error: huge\.log is 51 MB; navi attaches files up to 50 MB$/)
+})
+
+// JOB-14
+test('files sent with a job are attached as files on disk would be, under their own names', async () => {
+  const b64 = (s: string | Buffer) => Buffer.from(s).toString('base64')
+  const got = await attachUploads([
+    { name: 'dot.png', data: PNG.toString('base64') },
+    { name: '../../etc/notes.md', data: b64('buy milk\n') },
+    { name: 'paper.pdf', data: pdf('Attention').toString('base64') },
+  ])
+  assert.ok(Array.isArray(got))
+  assert.deepEqual(got[0], { kind: 'image', name: 'dot.png', mediaType: 'image/png', data: PNG.toString('base64') })
+  // Only the last part of a name is kept.
+  assert.deepEqual(got[1], { kind: 'text', name: 'notes.md', text: 'buy milk\n' })
+  assert.match((got[2] as any).text, /Attention/)
+
+  // The same name twice stays two files.
+  const twice = await attachUploads([{ name: 'a.txt', data: b64('one') }, { name: 'a.txt', data: b64('two') }])
+  assert.deepEqual((twice as any[]).map((a) => a.text), ['one', 'two'])
+
+  assert.match(String(await attachUploads([{ name: 'blob.bin', data: b64(Buffer.from([0, 1, 2, 255])) }])), /can't attach blob\.bin is neither/)
+  assert.doesNotMatch(String(await attachUploads([{ name: 'blob.bin', data: b64(Buffer.from([0, 255])) }])), /navi-upload/)
+  assert.match(String(await attachUploads('nope')), /list/)
+  assert.match(String(await attachUploads([{ name: 'x' }])), /name and its data/)
+  assert.match(String(await attachUploads(Array(5).fill({ name: 'a.txt', data: 'YQ==' }))), /at most 4/)
+  assert.match(String(await attachUploads([{ name: 'big.txt', data: Buffer.alloc(MAX_UPLOAD + 1, 97).toString('base64') }])), /25 MB/)
 })

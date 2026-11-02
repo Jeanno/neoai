@@ -113,3 +113,50 @@ test('UND-13: a finished job shows what it changed, and Undo changes puts it bac
   assert.equal(await readFile(join(home, 'notes.txt'), 'utf8'), 'messy')
   await page.getByRole('button', { name: 'Undo changes' }).waitFor({ state: 'detached' })
 })
+
+test('JOB-16: the phone sends picked files with a job, photos as JPEG', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const given: unknown[] = []
+  const jobs = await makeJobs({
+    home,
+    start: async () => ({
+      model: 'small',
+      session: {
+        history: [],
+        async *turn(_p: string, o: any) {
+          given.push(o?.attachments)
+          yield { type: 'done', history: [], text: 'Seen.', empty: false, stopped: false } as const
+        },
+      },
+    }),
+    notify: () => {},
+  })
+  const token = '9'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64')
+  await page.getByLabel('Add photo or file').setInputFiles([
+    { name: 'receipt.png', mimeType: 'image/png', buffer: png },
+    { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('total 12.50') },
+  ])
+  await page.getByText('receipt.jpg').waitFor()
+  await page.getByRole('button', { name: 'Remove notes.txt' }).click()
+  await page.getByText('notes.txt').waitFor({ state: 'detached' })
+  await page.getByPlaceholder('What should navi do?').fill('what is the total?')
+  await page.getByRole('button', { name: 'Start' }).click()
+  await page.getByText('With receipt.jpg').waitFor()
+  await jobs.idle()
+  const [sent] = given as any[][]
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].name, 'receipt.jpg')
+  assert.equal(sent[0].mediaType, 'image/jpeg')
+  // Picked files are gone once sent.
+  await page.getByRole('button', { name: '‹ Jobs' }).click()
+  assert.equal(await page.getByText('receipt.jpg').count(), 0)
+})

@@ -11,9 +11,10 @@ import { optionsFor, type Entry } from './spec.ts'
 import { timingSafeEqual } from 'node:crypto'
 import { stat as statPath } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
-import type { Jobs } from './jobs.ts'
+import type { Job, Jobs } from './jobs.ts'
 import { checkWhen, type Schedules } from './schedules.ts'
 import { PHONE_PAGE } from './phone.ts'
+import { attachUploads } from './attach.ts'
 import { jobChanges, undo, undoneReport } from './undo.ts'
 import { homedir } from 'node:os'
 
@@ -141,6 +142,9 @@ async function schedulesRoute(req: IncomingMessage, res: ServerResponse, path: s
   error(res, 404, `Schedules answer GET /schedules, POST /schedules and POST /schedules/<id>/run or delete, not ${req.method} ${path}.`)
 }
 
+/** A job as the API shows it: never its conversation, which can hold whole photos (JOB-15). */
+const shownJob = ({ history: _h, ...rest }: Job) => rest
+
 /** The jobs API (JOB-7); the token is already checked. */
 async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string, o: JobsOptions) {
   const { jobs } = o
@@ -153,12 +157,15 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
     if (typeof body.prompt !== 'string' || !body.prompt.trim()) return error(res, 400, 'Give the job a prompt.')
     const directory = await placeFor(body.directory, o)
     if (!directory) return error(res, 400, `${String(body.directory)} is not a directory on this computer; give an absolute path.`)
-    return json(res, 201, jobs.create(body.prompt.trim(), directory))
+    // JOB-14: every file attached, or no job.
+    const attachments = body.files === undefined ? [] : await attachUploads(body.files)
+    if (typeof attachments === 'string') return error(res, 400, attachments)
+    return json(res, 201, shownJob(jobs.create(body.prompt.trim(), directory, { attachments })))
   }
   const job = parts[0] ? jobs.get(parts[0]) : undefined
   if (!job) return error(res, 404, `There is no job ${parts[0] ?? ''}.`)
   const home = o.home ?? homedir()
-  if (req.method === 'GET' && parts.length === 1) return json(res, 200, { ...job, changes: await jobChanges(home, job.directory, job.id) })
+  if (req.method === 'GET' && parts.length === 1) return json(res, 200, { ...shownJob(job), changes: await jobChanges(home, job.directory, job.id) })
   if (req.method === 'POST' && parts.length === 2 && parts[1] === 'undo') {
     // UND-11: not while it may still be writing.
     if (job.status === 'running' || job.status === 'waiting') return error(res, 400, 'The job is still working; stop it or wait for it first.')
@@ -173,13 +180,13 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
     if (typeof body === 'string') return error(res, 400, body)
     if (parts[1] === 'answer') {
       if (typeof body.yes !== 'boolean') return error(res, 400, 'Answer with { "yes": true } or { "yes": false }.')
-      return jobs.answer(job.id, body.yes) ? json(res, 200, jobs.get(job.id)) : error(res, 400, 'The job is not waiting on an approval.')
+      return jobs.answer(job.id, body.yes) ? json(res, 200, shownJob(jobs.get(job.id)!)) : error(res, 400, 'The job is not waiting on an approval.')
     }
     if (parts[1] === 'reply') {
       if (typeof body.prompt !== 'string' || !body.prompt.trim()) return error(res, 400, 'Give the follow-up a prompt.')
-      return jobs.reply(job.id, body.prompt.trim()) ? json(res, 200, jobs.get(job.id)) : error(res, 400, 'The job is still working; wait for it, or stop it.')
+      return jobs.reply(job.id, body.prompt.trim()) ? json(res, 200, shownJob(jobs.get(job.id)!)) : error(res, 400, 'The job is still working; wait for it, or stop it.')
     }
-    if (parts[1] === 'stop') return jobs.stop(job.id) ? json(res, 200, jobs.get(job.id)) : error(res, 400, 'The job is not running.')
+    if (parts[1] === 'stop') return jobs.stop(job.id) ? json(res, 200, shownJob(jobs.get(job.id)!)) : error(res, 400, 'The job is not running.')
   }
   error(res, 404, `Jobs answer GET /jobs, POST /jobs, GET /jobs/<id> and POST /jobs/<id>/answer, reply, stop or undo, not ${req.method} ${path}.`)
 }

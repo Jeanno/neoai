@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 import { auto } from 'neorouter'
 import { homedir } from 'node:os'
-import { resolve } from 'node:path'
-import { realpath } from 'node:fs/promises'
+import { basename, resolve } from 'node:path'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import { commandFrom, promptFrom, startsFresh } from './args.ts'
 import { parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
 import { colorDiff, makeApprover, makeLine } from './approve.ts'
@@ -10,7 +10,7 @@ import { makeSpinner } from './spinner.ts'
 import { serveMcp, type Ask } from './mcp.ts'
 import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } from './serve.ts'
 import { ago, clearAllSessions, clearSession, listSessions, addPrompt, loadPrompts, loadSession, saveSession, sessionFile } from './session.ts'
-import { attachStdin } from './attach.ts'
+import { attachStdin, MAX_UPLOAD } from './attach.ts'
 import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
 import { readConfig, reset } from 'neorouter'
 import { configuredBrowser, disconnect, findBrowser, installBrowser, makeTab, showBrowser } from './browser.ts'
@@ -101,7 +101,7 @@ const USAGE = [
   '       navi mcp',
   '       navi browser [--install]',
   '       navi stats [--days N]',
-  '       navi job "<what you want done>" [-C <directory>]',
+  '       navi job "<what you want done>" [-a <file>]… [-C <directory>]',
   '       navi jobs [<id> [y | n | stop | undo] | link]',
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
   '       navi schedules [<id> run | rm]',
@@ -126,7 +126,7 @@ const ABOUT = [
   'navi mcp             navi as a tool for MCP clients such as Claude Code',
   "navi browser         open navi's browser to sign in to sites; --install gets Chromium for it",
   'navi stats           how each model has done, from the ledger; --days N (default 30)',
-  'navi job "…"         hand navi serve a job to do in the background; -C sets where',
+  'navi job "…"         hand navi serve a job to do in the background; -a sends a file, -C sets where',
   'navi jobs            list jobs; <id> shows one, then y, n, stop or undo; link is for a phone',
   'navi schedule "…"    have navi serve start a job at a time of day or every so often;',
   '                     --only-changes makes it a watch that only speaks when something changed',
@@ -317,7 +317,7 @@ const statusWord = (s: string, unchanged?: boolean) => (s === 'waiting' ? bold('
 /** One job as `navi jobs <id>` shows it (JOB-13). */
 function showJob(job: any) {
   console.log(`${bold(job.id)} · ${statusWord(job.status, job.unchanged)}${job.model ? ` · ${job.model}` : ''}`)
-  console.log(dim(`${job.directory}${job.schedule ? ` · from schedule ${job.schedule}` : ''}`))
+  console.log(dim(`${job.directory}${job.schedule ? ` · from schedule ${job.schedule}` : ''}${job.files?.length ? ` · with ${job.files.join(', ')}` : ''}`))
   console.log(job.prompt)
   if (job.log?.length) console.log(dim(job.log.join('\n')))
   if (job.pending) {
@@ -330,17 +330,33 @@ function showJob(job: any) {
   if (job.changes?.length) console.log(dim(`\nchanged ${job.changes.join(', ')}; \`navi jobs ${job.id} undo\` puts them back`))
 }
 
-/** `navi job "<prompt>" [-C <directory>] [--port N]` (JOB-13). */
+/** `navi job "<prompt>" [-a <file>]… [-C <directory>] [--port N]` (JOB-13, JOB-16). */
 async function startJobCommand(argv: string[]) {
   const port = takeFlag(argv, '--port', true)
   const dir = takeFlag(port.rest, '-C', true)
-  const prompt = dir.rest.join(' ').trim()
+  let rest = dir.rest
+  const paths: string[] = []
+  for (;;) {
+    const a = takeFlag(rest, rest.includes('-a') ? '-a' : '--attach', true)
+    if (a.value === undefined) break
+    paths.push(a.value)
+    rest = a.rest
+  }
+  const prompt = rest.join(' ').trim()
   const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
-  if (!prompt || !Number.isInteger(n)) {
-    console.error('usage: navi job "<what you want done>" [-C <directory>] [--port N]')
+  if (!prompt || !Number.isInteger(n) || paths.some((p) => !p)) {
+    console.error('usage: navi job "<what you want done>" [-a <file>]… [-C <directory>] [--port N]')
     return 1
   }
-  const got = await jobsApi(n, '/jobs', { prompt, directory: resolve(dir.value ?? process.cwd()) })
+  const files: { name: string; data: string }[] = []
+  for (const p of paths) {
+    // Read here and sent whole: navi serve reads it as -a would (JOB-14).
+    const size = (await stat(p).catch(() => null))?.size
+    if (size === undefined) return console.error(`can't attach ${p}: no such file`), 1
+    if (size > MAX_UPLOAD) return console.error(`can't attach ${p}: a job takes up to ${MAX_UPLOAD / 1024 / 1024} MB of files`), 1
+    files.push({ name: basename(p), data: (await readFile(p)).toString('base64') })
+  }
+  const got = await jobsApi(n, '/jobs', { prompt, directory: resolve(dir.value ?? process.cwd()), ...(files.length && { files }) })
   if (!got) return console.error(NOT_SERVING), 1
   if (got.status !== 201) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
   console.log(`Started job ${bold(got.data.id)}. Follow it with \`navi jobs ${got.data.id}\`.`)

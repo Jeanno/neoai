@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, extname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -202,4 +202,42 @@ export async function attachStdin(input: NodeJS.ReadableStream & { isTTY?: boole
   const text = Buffer.concat(chunks).toString('utf8')
   if (text.includes('\u0000') || text.includes('\ufffd')) throw new Error('stdin is not text; save it to a file and attach that')
   return { kind: 'text', name: 'stdin', text: cut(text) }
+}
+
+export const MAX_UPLOADS = 4
+export const MAX_UPLOAD = 25 * 1024 * 1024
+
+/**
+ * Files sent with a job as `{ name, data }`, data base64 (JOB-14), each read
+ * as attach() reads a file, under its own name; why not, naming the file.
+ */
+export async function attachUploads(files: unknown): Promise<Attachment[] | string> {
+  if (!Array.isArray(files)) return 'files must be a list of { name, data }.'
+  if (files.length > MAX_UPLOADS) return `A job takes at most ${MAX_UPLOADS} files.`
+  const given: { name: string; bytes: Buffer }[] = []
+  for (const f of files) {
+    if (typeof f?.name !== 'string' || typeof f?.data !== 'string') return 'Each file needs a name and its data, base64.'
+    // Only the last part of the name, with nothing a path or terminal acts on.
+    const name = basename(f.name.replace(/\\/g, '/')).replace(/[\u0000-\u001f\u007f]/g, '').trim() || 'file'
+    given.push({ name: name === '.' || name === '..' ? 'file' : name, bytes: Buffer.from(f.data, 'base64') })
+  }
+  if (given.reduce((n, f) => n + f.bytes.length, 0) > MAX_UPLOAD) return `The files are more than ${mb(MAX_UPLOAD)} together.`
+  const dir = await mkdtemp(join(tmpdir(), 'navi-upload-'))
+  try {
+    const out: Attachment[] = []
+    for (const [i, f] of given.entries()) {
+      // A folder each, so two files of one name stay apart.
+      const own = join(dir, String(i))
+      await mkdir(own, { mode: 0o700 })
+      await writeFile(join(own, f.name), f.bytes, { mode: 0o600 })
+      try {
+        out.push(await attach(f.name, own))
+      } catch (e) {
+        return `can't attach ${(e as Error).message}`
+      }
+    }
+    return out
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 }

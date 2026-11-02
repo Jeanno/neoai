@@ -69,6 +69,10 @@ add the requirement there first.
       had news and stay silent when nothing changed. (SCH-9 to SCH-11)
 - [x] Schedules on the phone page: made, listed, run now and deleted
       there. (SCH-12, SCH-13)
+- [x] Files with a job: photos (scaled to JPEG on the phone, HEIC
+      included) or any file from the phone page, `navi job -a` from the
+      terminal, read as -a reads them. (JOB-14 to JOB-16)
+- [ ] The phone page shows answers as raw Markdown (`**bold**`); render it.
 - [x] Memory: a short file of facts about you sent with every turn, added
       by the model only with your yes, whatever the judge says; `navi memory`
       lists, adds and forgets. (MEM-1 to MEM-11, PRM-14)

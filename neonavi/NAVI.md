@@ -65,6 +65,12 @@ notification or push, so you only hear from it when something happened.
 
     navi schedule "check https://status.example.com and tell me about incidents" --every 30m --only-changes
 
+A job can take files: on the phone page, Add photo or file takes a photo
+from the camera or library (sent as a JPEG at most 1600 pixels on a side) or
+any file, up to four; from the terminal, `navi job "…" -a receipt.jpg`. navi
+serve reads them as `-a` does, so a photo of a receipt or a whiteboard, a PDF
+or a text file all work (`spec/jobs.md` JOB-14 to JOB-16).
+
 The phone page has them too: its box can start a job now or schedule it
 (every 30 minutes, every hour, or each day or weekday at a time, as a watch
 if you like), and its Schedules list has Run now and Delete for each.

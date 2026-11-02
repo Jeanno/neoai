@@ -41,6 +41,12 @@ export const PHONE_PAGE = `<!doctype html>
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 20px 4px 8px; }
   .sched .p { display: block; margin: 2px 0; }
   .sched .status { color: var(--accent); }
+  .files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .file { display: inline-flex; align-items: center; gap: 4px; background: var(--code); border-radius: 8px; padding: 2px 2px 2px 10px; font-size: 14px; max-width: 100%; }
+  .file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file button { padding: 4px 8px; }
+  .pick { display: inline-block; color: var(--accent); font-weight: 600; padding: 8px 4px; cursor: pointer; }
+  .pick input { display: none; }
   button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 11px 16px; background: var(--accent); color: var(--accent-text); }
   button.plain { background: transparent; color: var(--accent); padding: 8px 4px; }
   button.no { background: var(--code); color: var(--text); }
@@ -125,6 +131,32 @@ export const PHONE_PAGE = `<!doctype html>
 
   let jobs = [], schedules = [], dirs = [], open = linked, job = null, problem = '', draft = '', reply = '', dir = '', busy = false
   let repeat = 'now', time = '08:00', quiet = false
+  // JOB-16: files for the next job, as { name, data } with data base64.
+  let picked = []
+
+  // A photo is sent as a JPEG at most 1600 pixels on a side, which also turns
+  // an iPhone's HEIC into something navi reads; anything else goes as it is.
+  async function readPicked(file) {
+    if (file.type.startsWith('image/') && file.type !== 'image/gif') {
+      try {
+        const bitmap = await createImageBitmap(file)
+        const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(bitmap.width * scale)
+        canvas.height = Math.round(bitmap.height * scale)
+        canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+        const data = canvas.toDataURL('image/jpeg', 0.85).split(',')[1]
+        return { name: file.name.replace(/\.[^.]*$/, '') + '.jpg', data }
+      } catch {}
+    }
+    const data = await new Promise((done, fail) => {
+      const reader = new FileReader()
+      reader.onload = () => done(String(reader.result).split(',')[1] || '')
+      reader.onerror = () => fail(reader.error)
+      reader.readAsDataURL(file)
+    })
+    return { name: file.name, data }
+  }
 
   async function refresh() {
     if (!token) return render()
@@ -164,7 +196,8 @@ export const PHONE_PAGE = `<!doctype html>
         el('div', { class: 'card' },
           el('div', { class: 'status s-' + job.status }, job.unchanged ? 'nothing new' : job.status),
           el('div', { class: 'answer' }, job.prompt),
-          el('div', { class: 'meta' }, short(job.directory) + (job.model ? ' · ' + job.model : '') + ' · ' + ago(job.created))),
+          el('div', { class: 'meta' }, short(job.directory) + (job.model ? ' · ' + job.model : '') + ' · ' + ago(job.created)),
+          job.files && el('div', { class: 'meta' }, 'With ' + job.files.join(', '))),
         job.pending && el('div', { class: 'card pending' },
           el('div', { class: 'status s-waiting' }, 'Allow this?'),
           el('pre', {}, job.pending.command),
@@ -196,13 +229,21 @@ export const PHONE_PAGE = `<!doctype html>
           el('div', { class: 'row' },
             el('select', { id: 'repeat', 'aria-label': 'When', onchange: (e) => { repeat = e.target.value; render() } }, REPEATS.map(([v, t]) => el('option', { value: v, selected: v === repeat }, t))),
             timed() && el('input', { id: 'time', type: 'time', 'aria-label': 'Time', value: time, oninput: (e) => (time = e.target.value) })),
+          repeat === 'now' && picked.length > 0 && el('div', { class: 'files' }, picked.map((f, i) => el('span', { class: 'file' },
+            el('span', {}, f.name),
+            el('button', { class: 'plain', 'aria-label': 'Remove ' + f.name, onclick: () => { picked.splice(i, 1); render() } }, '×')))),
+          repeat === 'now' && picked.length < 4 && el('label', { class: 'pick' }, 'Add photo or file',
+            el('input', { type: 'file', multiple: true, 'aria-label': 'Add photo or file', onchange: (e) => act(async () => {
+              for (const file of [...e.target.files].slice(0, 4 - picked.length)) picked.push(await readPicked(file))
+            }) })),
           repeat !== 'now' && el('label', { class: 'check' },
             el('input', { id: 'quiet', type: 'checkbox', checked: quiet, onchange: (e) => (quiet = e.target.checked) }),
             'Only tell me when something changes'),
           el('div', { class: 'row' }, start = el('button', { disabled: busy || !draft.trim(), onclick: () => act(async () => {
             const where = dir ? { directory: dir } : {}
             if (repeat === 'now') {
-              open = (await api('/jobs', { prompt: draft, ...where })).id
+              open = (await api('/jobs', { prompt: draft, ...where, ...(picked.length && { files: picked }) })).id
+              picked = []
             } else {
               await api('/schedules', { prompt: draft, ...where, quiet,
                 ...(timed() ? { at: time, ...(repeat === 'weekdays' && { days: [1, 2, 3, 4, 5] }) } : { every: Number(repeat) }) })

@@ -77,6 +77,26 @@ terminal that started them closes.
   navi serve on 127.0.0.1 (port 8484 unless `--port`), and when it is not
   running say how to start it (`navi serve`, or `navi serve --install`).
 
+## Files
+
+- JOB-14: `POST /jobs` may carry `files`: up to 4 of `{ name, data }`, the
+  data base64, 25 MB at most together once decoded. Each is read as a file
+  given to `attach()` would be (HAR-7: an image scaled and shown, a PDF's
+  text or pages, text), under its own name, and sent with the job's first
+  turn. A file that cannot be attached refuses the whole job with a 400
+  naming it, and no job starts. The files are written to a private temporary
+  directory only while they are read, and removed after.
+- JOB-15: A job lists the names of the files it was given as `files`; the
+  files themselves are kept only in its conversation (HAR-8), which the jobs
+  API never sends, so a phone following a job does not fetch its photos
+  again every few seconds.
+- JOB-16: The phone page has an Add photo or file button that takes photos
+  from the camera or library, or any file, shows each chosen file's name
+  with a way to remove it, and sends them with a job started now. A
+  schedule takes no files. `navi job "<prompt>" -a <file>` (more than once
+  for more) does the same from the terminal.
+
 ## Open
 
 - A queue, so a busy computer runs a few at a time.
+- Files with a follow-up.

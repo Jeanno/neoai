@@ -4,6 +4,7 @@ import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
 import type { ModelMessage } from 'ai'
 import type { Answer, HarnessOptions, Session } from './harness.ts'
+import type { Attachment } from './attach.ts'
 
 /**
  * Work navi does in the background, inside navi serve (jobs.md): each job a
@@ -44,6 +45,8 @@ export interface Job {
   watch?: true
   /** A watch's run that found nothing new, so said nothing (SCH-10). */
   unchanged?: true
+  /** The names of the files it was given (JOB-15). */
+  files?: string[]
 }
 
 /** How a job is started beyond its prompt and directory. */
@@ -52,6 +55,8 @@ export interface StartOptions {
   /** What the model is sent in place of the prompt (SCH-11). */
   send?: string
   watch?: boolean
+  /** Sent with the first turn (JOB-14). */
+  attachments?: Attachment[]
 }
 
 /** A watch's answer when nothing changed (SCH-10). */
@@ -162,7 +167,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
     }
   }
 
-  async function run(job: Job, prompt: string) {
+  async function run(job: Job, prompt: string, attachments?: Attachment[]) {
     const stop = new AbortController()
     stops.set(job.id, stop)
     job.status = 'running'
@@ -196,7 +201,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
       const { session, model } = await d.start({ job: job.id, directory: job.directory, history: job.history, approve })
       job.model = model
       const errors: string[] = []
-      for await (const e of session.turn(prompt, { signal: stop.signal })) {
+      for await (const e of session.turn(prompt, { signal: stop.signal, ...(attachments?.length && { attachments }) })) {
         if (e.type === 'tool-call') job.log.push(`· ${e.name}(${brief(e.input)})`)
         else if (e.type === 'tool-result' && e.error) job.log.push(`  failed: ${brief(e.output)}`)
         else if (e.type === 'auto-approved') job.log.push(`· ${e.allowed ? 'allowed' : 'auto-approved'}: ${e.command}`)
@@ -230,8 +235,8 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
     await prune()
   }
 
-  const begin = (job: Job, prompt: string) => {
-    const p = run(job, prompt).catch(() => {})
+  const begin = (job: Job, prompt: string, attachments?: Attachment[]) => {
+    const p = run(job, prompt, attachments).catch(() => {})
     running.add(p)
     void p.finally(() => running.delete(p))
   }
@@ -254,9 +259,10 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         history: [],
         ...(o.schedule && { schedule: o.schedule }),
         ...(o.watch && { watch: true as const }),
+        ...(o.attachments?.length && { files: o.attachments.map((a) => a.name) }),
       }
       jobs.set(job.id, job)
-      begin(job, o.send ?? prompt)
+      begin(job, o.send ?? prompt, o.attachments)
       return job
     },
     answer(id, yes) {

@@ -374,3 +374,41 @@ test("a notification's key answers its own approval once, without the token, and
     server.close()
   }
 })
+
+// JOB-14, JOB-15
+test('a job can be given files, which go with its first turn and are named on it, never sent back', async () => {
+  const given: unknown[] = []
+  const { jobs, home } = await setup({
+    start: async ({ approve, history }) => {
+      const session = fakeSession(approve, history)
+      return { session: { ...session, get history() { return session.history }, turn: (p, o) => (given.push(o?.attachments), session.turn(p, o)) }, model: 'small' }
+    },
+  })
+  const token = 'h'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const call = (path: string, body?: unknown) =>
+    fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  try {
+    const bad = await call('/jobs', { prompt: 'read it', files: [{ name: 'blob.bin', data: Buffer.from([0, 255]).toString('base64') }] })
+    assert.equal(bad.status, 400)
+    assert.match((await bad.json()).error.message, /blob\.bin/)
+    assert.equal(jobs.list().length, 0)
+
+    const made = await call('/jobs', { prompt: 'what does it say', files: [{ name: 'note.txt', data: Buffer.from('call the plumber').toString('base64') }] })
+    assert.equal(made.status, 201)
+    const job = await made.json()
+    assert.deepEqual(job.files, ['note.txt'])
+    await jobs.idle()
+    assert.deepEqual(given, [[{ kind: 'text', name: 'note.txt', text: 'call the plumber' }]])
+    const one = await (await call(`/jobs/${job.id}`)).json()
+    assert.deepEqual(one.files, ['note.txt'])
+    assert.equal(one.history, undefined)
+    assert.ok(jobs.get(job.id)!.history.length > 0)
+  } finally {
+    server.close()
+  }
+})
