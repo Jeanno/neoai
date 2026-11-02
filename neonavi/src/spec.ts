@@ -125,8 +125,10 @@ export async function resolveChain(chain: Entry[], options: { launch?: boolean }
 
 /** What one link of the chain is asked with, from `"modelOptions"` in the config (MOD-24). */
 export interface LinkOptions {
-  /** At most this many tokens in each answer. */
+  /** At most this many tokens in each answer, unless a caller asks otherwise. */
   maxTokens?: number
+  /** At most this many tokens in each answer, whatever a caller asks (MOD-27). */
+  tokenCap?: number
   temperature?: number
   /** true lets a reasoning model think (MOD-11 asks it not to). */
   think?: boolean
@@ -146,11 +148,15 @@ export function linkOptions(entry: Entry, given: unknown, custom: string[] = [])
     if (named.length !== 1 || JSON.stringify(named[0]) !== same || !raw || typeof raw !== 'object') continue
     const o = raw as Record<string, unknown>
     if (Number.isInteger(o.maxTokens) && (o.maxTokens as number) > 0) out.maxTokens = o.maxTokens as number
+    if (Number.isInteger(o.tokenCap) && (o.tokenCap as number) > 0) out.tokenCap = o.tokenCap as number
     if (typeof o.temperature === 'number' && o.temperature >= 0 && o.temperature <= 2) out.temperature = o.temperature
     if (typeof o.think === 'boolean') out.think = o.think
   }
   return out
 }
+
+/** A token count asked for, held to the link's cap (MOD-27). */
+export const capTokens = (asked: number, o: LinkOptions) => (o.tokenCap !== undefined ? Math.min(asked, o.tokenCap) : asked)
 
 /** The model for a chosen link, asked as its options say (MOD-24). */
 export function modelFor(chosen: Pick<Chosen, 'entry' | 'options'>, config: Record<string, unknown>): ReturnType<typeof auto> {
@@ -167,12 +173,15 @@ export function withOptions(model: ReturnType<typeof auto>, o: LinkOptions): Ret
     model,
     middleware: [
       {
-        // What a caller asks for itself still wins.
-        transformParams: async ({ params }) => ({
-          ...params,
-          ...(params.maxOutputTokens == null && o.maxTokens !== undefined && { maxOutputTokens: o.maxTokens }),
-          ...(params.temperature == null && o.temperature !== undefined && { temperature: o.temperature }),
-        }),
+        // What a caller asks for itself still wins, but for the cap (MOD-27).
+        transformParams: async ({ params }) => {
+          const asked = params.maxOutputTokens ?? o.maxTokens ?? o.tokenCap
+          return {
+            ...params,
+            ...(asked !== undefined && { maxOutputTokens: capTokens(asked, o) }),
+            ...(params.temperature == null && o.temperature !== undefined && { temperature: o.temperature }),
+          }
+        },
       },
       thinkTags,
     ],

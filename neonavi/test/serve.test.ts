@@ -271,6 +271,32 @@ test("a link's options fill in what the app left out, and what it asked for wins
   s.close()
 })
 
+// SRV-10, MOD-27
+test("a link's token cap holds whatever the app asks", async () => {
+  const s = await serving([ok], [{ tokenCap: 400 }])
+  for (const asked of [{}, { max_tokens: 9000 }, { max_completion_tokens: 9000 }, { max_tokens: 100 }, { max_tokens: null }])
+    await post(s.base, { model: 'x', messages: [], ...asked })
+  assert.deepEqual(s.sent.map((x) => x.body), [
+    { model: 'model0', messages: [], max_tokens: 400 },
+    { model: 'model0', messages: [], max_tokens: 400 },
+    { model: 'model0', messages: [], max_completion_tokens: 400, max_tokens: 400 },
+    { model: 'model0', messages: [], max_tokens: 100 },
+    { model: 'model0', messages: [], max_tokens: 400 },
+  ])
+  s.close()
+  // A server that will not take both is asked again with the app's own field alone.
+  const strict = await serving([
+    (body) => (body.max_tokens ? new Response('{"error":{"message":"max_tokens is not supported with this model"}}', { status: 400 }) : ok(body)),
+  ], [{ tokenCap: 400 }])
+  const r = await post(strict.base, { model: 'x', messages: [], max_completion_tokens: 9000 })
+  assert.equal(r.status, 200)
+  assert.deepEqual(strict.sent.map((x) => x.body), [
+    { model: 'model0', messages: [], max_completion_tokens: 400, max_tokens: 400 },
+    { model: 'model0', messages: [], max_completion_tokens: 400 },
+  ])
+  strict.close()
+})
+
 test('options that cannot be read leave the request as the app sent it', async () => {
   const s = await serving([ok], [new Error('config unreadable')])
   const r = await post(s.base, { model: 'x', messages: [] })

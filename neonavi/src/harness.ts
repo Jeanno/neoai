@@ -121,7 +121,7 @@ export interface HarnessOptions {
 }
 
 /** What a front end says of an answer cut at the token cap (HAR-11). */
-export const CUT_NOTE = 'cut short: the answer reached the model’s token cap (maxTokens in "modelOptions", or the server’s own); ask it to go on'
+export const CUT_NOTE = 'cut short: the answer reached the model’s token cap (maxTokens or tokenCap in "modelOptions", or the server’s own); ask it to go on'
 
 export type HarnessEvent =
   /** The history outgrew the window and its older part was summarised (SES-11). */

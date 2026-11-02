@@ -299,6 +299,12 @@ sends itself wins (`spec/models.md`, MOD-24; SRV-9):
 
     "modelOptions": { "local": { "maxTokens": 4096, "temperature": 0.2 } }
 
+`tokenCap` is a hard ceiling instead: no caller, navi or an app, gets an
+answer longer than that from the link, whatever it asks (MOD-27, SRV-10).
+Use it for a server that slows to a crawl, or bills, past a size:
+
+    "modelOptions": { "Darkbloom:qwen3.6": { "tokenCap": 8192 } }
+
 An answer that stops at the cap, or the server's own, says it was cut short
 (in the terminal, a job's log and Raycast); ask navi to go on (HAR-11). On
 the phone, a cut job has a Go on button that does that for you (JOB-35).

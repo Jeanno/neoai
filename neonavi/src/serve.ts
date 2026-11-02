@@ -7,7 +7,7 @@ import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import type { ReadableStream as WebStream } from 'node:stream/web'
 import { diagnose, PROVIDERS, readConfig, reset, route, type Route } from 'neorouter'
-import { linkOptions, optionsFor, type Entry, type LinkOptions } from './spec.ts'
+import { capTokens, linkOptions, optionsFor, type Entry, type LinkOptions } from './spec.ts'
 import { timingSafeEqual } from 'node:crypto'
 import { stat as statPath } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
@@ -25,9 +25,9 @@ import { homedir } from 'node:os'
 
 /** What the server needs from the world; the real ones by default, fakes in tests. */
 export interface ServeDeps {
-  /** `think` from the link's options (SRV-12) overrides navi's ask not to (MOD-11). */
+  /** `think` from the link's options (SRV-9) overrides navi's ask not to (MOD-11). */
   route: (entry: Entry, think?: boolean) => Promise<Route | null>
-  /** The link's options in `"modelOptions"`, read afresh each request (SRV-12); none when left out. */
+  /** The link's options in `"modelOptions"`, read afresh each request (SRV-9); none when left out. */
   options?: (entry: Entry) => Promise<LinkOptions>
   /** Why a link resolved to nothing (MOD-21). */
   why: (entry: Entry) => Promise<string>
@@ -311,9 +311,9 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
  * where every request needs the token.
  */
 export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptions; remote?: boolean } = {}) {
-  /** Posts to one link; a 400 over the reasoning hint navi added is asked once more without it, as navi does. */
+  /** Posts to one link; a 400 over what navi added (the reasoning hint, a second cap) is asked once more without it, as navi does. */
   async function send(r: Route, body: Record<string, unknown>, signal: AbortSignal, o: LinkOptions = {}): Promise<Response> {
-    // SRV-12: the link's cap and temperature where the app asked for none; what it asked for wins.
+    // SRV-9: the link's cap and temperature where the app asked for none; what it asked for wins.
     const capped = 'max_tokens' in body || 'max_completion_tokens' in body
     const sent: Record<string, unknown> = {
       ...r.extra,
@@ -322,13 +322,24 @@ export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptio
       ...body,
       model: r.model,
     }
-    const answer = await d.fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(sent), signal })
-    if (answer.status !== 400 || !r.extra.reasoning_effort || 'reasoning_effort' in body) return answer
-    const text = await answer.text()
-    if (/reasoning/i.test(text)) {
-      const { reasoning_effort: _, ...rest } = sent
-      return d.fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(rest), signal })
+    // What navi added that a server may refuse, and the word its refusal would use.
+    const added: [string, RegExp][] = r.extra.reasoning_effort && !('reasoning_effort' in body) ? [['reasoning_effort', /reasoning/i]] : []
+    // SRV-10: but never past the link's hard cap, however the app asks.
+    if (o.tokenCap !== undefined) {
+      for (const k of ['max_tokens', 'max_completion_tokens'])
+        if (k in sent) sent[k] = typeof sent[k] === 'number' ? capTokens(sent[k], o) : o.tokenCap
+      // Not every server reads max_completion_tokens, so the cap goes as max_tokens too.
+      if (!('max_tokens' in sent)) {
+        sent.max_tokens = sent.max_completion_tokens ?? o.tokenCap
+        if ('max_completion_tokens' in sent) added.push(['max_tokens', /max_tokens/i])
+      }
     }
+    const post = (b: Record<string, unknown>) => d.fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(b), signal })
+    const answer = await post(sent)
+    if (answer.status !== 400 || !added.length) return answer
+    const text = await answer.text()
+    const refused = added.filter(([, said]) => said.test(text))
+    if (refused.length) return post(Object.fromEntries(Object.entries(sent).filter(([k]) => !refused.some(([key]) => key === k))))
     return new Response(text, { status: answer.status, headers: answer.headers })
   }
 

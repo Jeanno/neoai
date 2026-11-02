@@ -93,12 +93,12 @@ test('a link takes its options from a key naming the same model, valid values on
   const given = {
     'Darkbloom:qwen': { maxTokens: 2048, temperature: 0.2, think: true },
     // "local" and "fast" are one link.
-    local: { maxTokens: 512 },
-    'Darkbloom:other': { maxTokens: -1, temperature: 3, think: 'yes', reasoning: 'high' },
+    local: { maxTokens: 512, tokenCap: 1024 },
+    'Darkbloom:other': { maxTokens: -1, temperature: 3, think: 'yes', reasoning: 'high', tokenCap: 1.5 },
     'not:a model, nor one': { maxTokens: 9 },
   }
   assert.deepEqual(linkOptions(qwen, given, custom), { maxTokens: 2048, temperature: 0.2, think: true })
-  assert.deepEqual(linkOptions(fast, given, custom), { maxTokens: 512 })
+  assert.deepEqual(linkOptions(fast, given, custom), { maxTokens: 512, tokenCap: 1024 })
   assert.deepEqual(linkOptions(other, given, custom), {})
   assert.deepEqual(linkOptions(qwen, undefined, custom), {})
   assert.deepEqual(linkOptions(qwen, ['Darkbloom:qwen'], custom), {})
@@ -127,4 +127,12 @@ test('a model is asked with its link’s cap and temperature unless the caller a
   await generateText({ model: m, prompt: 'hi' })
   await generateText({ model: m, prompt: 'hi', maxOutputTokens: 50, temperature: 0.9 })
   assert.deepEqual(seen, [{ max: 300, temperature: 0.1 }, { max: 50, temperature: 0.9 }])
+  // MOD-27: a cap no caller gets past, and the answer's size when none is asked.
+  seen.length = 0
+  const capped = withOptions(base, { maxTokens: 300, tokenCap: 200 })
+  await generateText({ model: capped, prompt: 'hi' })
+  await generateText({ model: capped, prompt: 'hi', maxOutputTokens: 5000 })
+  await generateText({ model: capped, prompt: 'hi', maxOutputTokens: 50 })
+  await generateText({ model: withOptions(base, { tokenCap: 700 }), prompt: 'hi' })
+  assert.deepEqual(seen.map((x) => x.max), [200, 200, 50, 700])
 })

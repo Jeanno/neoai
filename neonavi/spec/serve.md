@@ -44,3 +44,10 @@ falls back the same way.
   has neither `max_tokens` nor `max_completion_tokens`, and `temperature`
   when it has none. `think: true` leaves out the hint not to think (MOD-11).
   Options that cannot be read leave the request as the app sent it.
+- SRV-10: A link's `tokenCap` (MOD-27) holds whatever the app sends:
+  `max_tokens` and `max_completion_tokens` above it are lowered to it, one
+  that is not a number becomes it, and a request with neither is sent
+  `max_tokens` at the cap. A smaller one the app asked for is kept. As not
+  every server reads `max_completion_tokens`, a request with only that is
+  sent `max_tokens` at the same number too; a 400 that names `max_tokens`
+  is asked once more without it.

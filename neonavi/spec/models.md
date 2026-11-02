@@ -115,7 +115,11 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
   be such a tag; a whole answer (the judge's, the summariser's) also loses
   thinking that comes before a bare `</think>`. A tag later in an answer is
   left as written. Blank lines before an answer are dropped too.
+- MOD-27: `tokenCap`, a whole number above 0, is a cap no caller gets past:
+  every answer from that link is asked for at most that many tokens,
+  whether navi, Raycast, a job or an app through `navi serve` (SRV-10)
+  asked for more, for less, or for nothing. Unlike `maxTokens` it is not a
+  default but a ceiling; with both, `maxTokens` is the size asked when the
+  caller names none, and is itself held to the cap.
 
 ## Open
-
-- Options an app may not override, such as a hard cap on tokens.
