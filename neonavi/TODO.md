@@ -56,6 +56,8 @@ add the requirement there first.
       shows the share of edits undone. (LED-9, LED-10)
 - [x] Route by the ledger: `"route": "ledger"` starts a kind of turn the
       first model does badly on the escalation model. (ESC-6, LED-11, LED-12)
+- [x] Asking the same again in other words counts against the answer;
+      `navi stats` shows the share asked again. (LED-13, LED-14)
 
 ### 3. Everywhere: navi in the apps I already use
 

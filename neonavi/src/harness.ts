@@ -14,11 +14,11 @@ import { summarize, type FileChange } from './diff.ts'
 
 export type { FileChange } from './diff.ts'
 import { compact, estimateTokens } from './compact.ts'
-import { userContent, type Attachment } from './attach.ts'
+import { splitUserContent, userContent, type Attachment } from './attach.ts'
 
 export { attach, splitUserContent, type Attachment } from './attach.ts'
 import { searchBackend } from './web.ts'
-import { CORRECTION_WINDOW, kindOf, readLedger, readsAsCorrection, record, routeAway, ROUTE_DAYS, type LedgerEntry } from './ledger.ts'
+import { CORRECTION_WINDOW, kindOf, readLedger, readsAsCorrection, readsAsRepeat, record, routeAway, ROUTE_DAYS, type LedgerEntry } from './ledger.ts'
 import type { Tab } from './browser.ts'
 export { allowable, type Answer } from './approve.ts'
 
@@ -248,6 +248,13 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
 
     async function run(prompt: string, attachments: Attachment[] | undefined, signal: AbortSignal, emit: (e: HarnessEvent) => void) {
       const started = Date.now()
+      // LED-7, LED-13: the answer before, if recent enough to be what this turn is about, and what was asked for it.
+      const recent = answered && started - answered.at < CORRECTION_WINDOW ? answered : undefined
+      // navi's own notes (UND-7, ESC-3) are not what the user asked.
+      const said = (m: ModelMessage) =>
+        m.role === 'user' ? splitUserContent(m.content as Parameters<typeof splitUserContent>[0]).prompt.replace(/^(\(navi: [\s\S]*?\)(\n\n|$))+/, '').trim() : ''
+      let before = ''
+      for (let i = history.length - 1; i >= 0 && !before; i--) before = said(history[i])
       let declined = 0
       const ask = (command: string, signal: AbortSignal, change?: FileChange, action?: { url: string }, memory?: string, project?: string) =>
         askUser(command, signal, change, action, memory, project).then((ok) => {
@@ -502,7 +509,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           outcome: stopped ? 'stopped' : text.trim() ? 'answered' : failed ? 'error' : 'empty',
           kind,
           ...(escalated && { escalated }),
-          ...(answered && Date.now() - answered.at < CORRECTION_WINDOW && readsAsCorrection(prompt) && { corrects: answered.model }),
+          ...(recent && readsAsCorrection(prompt) ? { corrects: recent.model } : recent && readsAsRepeat(prompt, before) && { repeats: recent.model }),
           ...(done.cut && { cut: true as const }),
         }
         await record(home, entry)

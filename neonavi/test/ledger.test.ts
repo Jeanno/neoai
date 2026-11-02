@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { appendFile, mkdtemp, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { kindOf, ledgerFile, readLedger, readsAsCorrection, readUndone, record, recordUndone, routeAway, stats, type LedgerEntry, type TurnKind } from '../src/ledger.ts'
+import { kindOf, ledgerFile, readLedger, readsAsCorrection, readsAsRepeat, readUndone, record, recordUndone, routeAway, stats, type LedgerEntry, type TurnKind } from '../src/ledger.ts'
 
 const entry = (o: Partial<LedgerEntry> = {}): LedgerEntry => ({
   at: new Date().toISOString(),
@@ -155,4 +155,20 @@ test('routing away needs enough turns of the kind, more than half gone badly, an
   // Only the latest ten: good turns since put it back.
   const recovered = [...four, ...Array.from({ length: 10 }, () => e('s', 'change', 'ok'))]
   assert.equal(routeAway(recovered, 's', 'change'), undefined)
+})
+
+// LED-13
+test('a prompt that asks the one before again, in other words, reads as a repeat; a new request does not', () => {
+  assert.equal(readsAsRepeat('how do I install the CLI on macOS', 'How can I install the cli on a Mac with macOS?'), true)
+  assert.equal(readsAsRepeat('Summarise the release notes for 2.3', 'summarise the 2.3 release notes'), true)
+  assert.equal(readsAsRepeat('fix the login bug', 'fix the signup bug'), false)
+  assert.equal(readsAsRepeat('now add tests for the parser', 'write the parser for dates'), false)
+  // Too few words to tell.
+  assert.equal(readsAsRepeat('do it', 'do it'), false)
+})
+
+// LED-14
+test('navi stats shows the share of answers asked for again', () => {
+  const e = (extra: Partial<LedgerEntry>): LedgerEntry => ({ at: '2026-11-01T00:00:00Z', front: 'cli', model: 'q', local: true, ms: 1000, steps: 1, tools: {}, toolErrors: 0, declined: 0, promptChars: 1, attachments: 0, outcome: 'answered', ...extra })
+  assert.match(stats([e({}), e({}), e({}), e({ repeats: 'q' })], 30), /q: 4 turns · 100% answered · 25% asked again ·/)
 })

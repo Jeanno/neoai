@@ -758,6 +758,23 @@ test('the ledger notes when a turn corrects the answer before it, by model, neve
   assert.doesNotMatch(JSON.stringify(entries), /wrong|over/)
 })
 
+// LED-13: asking the same again, in other words, counts against the answer before.
+test('the ledger notes when a turn asks the one before again, never the words; a correction is noted as one', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-led-'))
+  const model = fake(Array.from({ length: 5 }, (_, i) => [...text(`t${i}`, 'Something.'), finish('stop')]))
+  const h = await createHarness({ model, contextWindow: 100_000, cwd: home, home, config: { web_search: false }, front: 'cli', name: { model: 'small', local: true } })
+  const s = h.session()
+  await collect(s.turn('how do I install the CLI on macOS'))
+  await collect(s.turn('How can I install the cli on a Mac with macOS?'))
+  await collect(s.turn("no, install the cli on macos, I said"))
+  await collect(s.turn('write a changelog entry'))
+  // The first turn of a new conversation repeats nothing.
+  await collect(h.session().turn('write a changelog entry'))
+  const entries = await ledgerOf(home)
+  assert.deepEqual(entries.map((e) => [e.repeats, e.corrects]), [[undefined, undefined], ['small', undefined], [undefined, 'small'], [undefined, undefined], [undefined, undefined]])
+  assert.doesNotMatch(JSON.stringify(entries), /macos|changelog/i)
+})
+
 /** A stronger model for escalation (ESC-1), answering in one step. */
 const stronger = (answer = 'Done properly.') => {
   const model = fake([[...text('s', answer), finish('stop')]])

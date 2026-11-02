@@ -75,4 +75,7 @@ reaches you without the phone page open.
 
 ## Open
 
-- An image of the page with a browser action's push.
+- An image of the page with a browser action's push. Not as an attachment
+  to the push server: ntfy.sh is a third party, and a page can show what the
+  user would not send it. A link to the phone page, which can show it over
+  the token, would do.

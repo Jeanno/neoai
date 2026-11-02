@@ -53,8 +53,21 @@ what was said.
 - LED-12: `navi stats` shows turns routed past a model (ESC-6) apart from
   those that escalated away from it (`2 routed past it`).
 
+- LED-13: A turn whose prompt asks the one before it again in other words,
+  in the same conversation and within 30 minutes of that answer, records
+  `repeats`: the model that gave that answer, and nothing of either prompt.
+  It reads as one when each prompt has at least three words that matter
+  (small words such as "the", "how", "please" left out) and more than 60% of
+  them are shared, so a new request that shares a verb ("fix the login bug",
+  "fix the signup bug") is not. A turn that reads as a correction (LED-7) is
+  recorded as that instead; navi's own notes in the conversation are not
+  taken for what was asked; the first turn of a conversation repeats nothing.
+- LED-14: `navi stats` shows, for a model whose answers were asked for again,
+  their share of its answers (`25% asked again`).
+
 ## Open
 
 - Routing by more than the three kinds, such as by the tools a turn ends up
   using.
-- Asking the same thing again in other words, as a signal.
+- Counting a correction or a repeat as a turn gone badly when routing
+  (ESC-6).

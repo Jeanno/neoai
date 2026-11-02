@@ -28,6 +28,8 @@ export interface LedgerEntry {
   kind?: TurnKind
   /** The model whose answer this turn's prompt corrected (LED-7); never the prompt. */
   corrects?: string
+  /** The model whose answer this turn asked again for, in other words (LED-13); never the prompt. */
+  repeats?: string
   /** The answer ended at the token cap (HAR-11). */
   cut?: true
 }
@@ -112,6 +114,23 @@ export function routeAway(entries: LedgerEntry[], model: string, kind: TurnKind)
   return `by the ledger, ${model} went badly on ${bad} of its last ${started.length} ${KIND_WORDS[kind]}`
 }
 
+const STOP = new Set('a an and are as at be by can could do does for from how i in is it me my of on or please should so that the this to was what when where which why will with would you your'.split(' '))
+const words = (s: string) => new Set((s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter((w) => w.length > 1 && !STOP.has(w)))
+
+/**
+ * Whether a prompt asks the one before it again (LED-13): at least three words
+ * that matter in each, and more than 60% of them shared, so a new request
+ * that only shares a verb or two ("fix the login bug", "fix the signup bug")
+ * is not taken for it.
+ */
+export function readsAsRepeat(prompt: string, before: string): boolean {
+  const a = words(prompt)
+  const b = words(before)
+  if (a.size < 3 || b.size < 3) return false
+  const shared = [...a].filter((w) => b.has(w)).length
+  return shared / (a.size + b.size - shared) > 0.6
+}
+
 const MAX_BYTES = 5 * 1024 * 1024
 
 export const ledgerFile = (home: string) => join(home, '.neoai', 'ledger.jsonl')
@@ -183,6 +202,8 @@ export function stats(entries: LedgerEntry[], days: number, undone: string[] = [
     const count = (o: LedgerEntry['outcome']) => turns.filter((t) => t.outcome === o).length
     // LED-8: of its answers, how many the user then corrected.
     const corrected = entries.filter((e) => e.corrects === model).length
+    // LED-14: and how many were asked for again.
+    const repeated = entries.filter((e) => e.repeats === model).length
     // LED-10: and how many turns' changes the user undid.
     const undid = undone.filter((m) => m === model).length
     const parts = n
@@ -193,6 +214,7 @@ export function stats(entries: LedgerEntry[], days: number, undone: string[] = [
           ...(count('error') ? [`${pct(count('error'), n)} failed`] : []),
           ...(count('stopped') ? [`${pct(count('stopped'), n)} stopped`] : []),
           ...(corrected && count('answered') ? [`${pct(Math.min(corrected, count('answered')), count('answered'))} of answers corrected`] : []),
+          ...(repeated && count('answered') ? [`${pct(Math.min(repeated, count('answered')), count('answered'))} asked again`] : []),
           ...(undid ? [editing(turns) ? `${pct(Math.min(undid, editing(turns)), editing(turns))} of edits undone` : `${undid} undone`] : []),
           `${per(turns.reduce((s, t) => s + t.steps, 0), n)} steps`,
           `${per(turns.reduce((s, t) => s + t.toolErrors, 0), n)} tool errors`,
