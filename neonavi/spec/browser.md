@@ -19,6 +19,12 @@ has to look at the whole page again to see what happened.
   stop it; navi never closes it.
 - BRW-3: navi talks to it over Chrome's debugging port, on 127.0.0.1 only,
   found through the profile. A browser that has gone away is started again.
+- BRW-16: A browser on navi's profile that answers on its port but cannot be
+  attached to within 15 seconds (seen live: every tool failed until it was
+  quit) is asked to close over its port; one still answering 5 seconds later
+  is ended, but only the process its profile's lock names and only when
+  that process runs on navi's profile. A fresh one is then started, so the
+  tool that found it works; the next tools do not wait again.
 - BRW-4: It runs the browser `"browser": { "executable": "<path>" }` in
   `~/.neoai/config.json` names, else the Chromium navi installs (BRW-12), else
   Google Chrome when installed. With none, a browser tool answers that there

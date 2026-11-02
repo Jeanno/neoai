@@ -1,10 +1,10 @@
 import { after, before, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { connect, disconnect, findBrowser, makeTab, NO_BROWSER, quitBrowser, type Action } from '../src/browser.ts'
+import { connect, disconnect, findBrowser, makeTab, NO_BROWSER, profileDir, quitBrowser, type Action } from '../src/browser.ts'
 
 const SHOP = `<!doctype html><title>Shop</title><h1>Shop</h1><nav><a href="/about">About</a></nav>
 <label>Search <input type=search></label>
@@ -193,5 +193,39 @@ test('with no browser, the tools say how to get one', async () => {
     assert.match(NO_BROWSER, /navi browser --install/)
   } finally {
     await rm(empty, { recursive: true, force: true })
+  }
+})
+
+// BRW-16: seen live, a browser that answers on its port but never lets Playwright attach.
+test('a browser that answers but will not be attached to is asked to close, and a fresh one used', { skip }, async () => {
+  const own = await mkdtemp(join(tmpdir(), 'navi-browser-'))
+  const asked: string[] = []
+  const held: import('node:stream').Duplex[] = []
+  const stuck = createServer((req, res) => {
+    const { port } = stuck.address() as { port: number }
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ Browser: 'Chrome/1', webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/stuck` }))
+  })
+  stuck.on('upgrade', (_req, socket) => {
+    held.push(socket)
+    asked.push('upgrade')
+    // The first is Playwright's, left hanging; the next is navi asking it to close, which it does.
+    if (asked.length > 1) {
+      for (const s of held) s.destroy()
+      stuck.close()
+    }
+  })
+  await new Promise<void>((r) => stuck.listen(0, '127.0.0.1', r))
+  await mkdir(profileDir(own), { recursive: true })
+  await writeFile(join(profileDir(own), 'DevToolsActivePort'), `${(stuck.address() as { port: number }).port}\n/devtools/browser/stuck`)
+  try {
+    const tab = makeTab({ home: own, headless: true, attachMs: 1500 })
+    assert.match(await tab.open(`${base}/about`), /^About\n/)
+    assert.equal(asked.length, 2)
+    assert.equal(stuck.listening, false)
+  } finally {
+    await quitBrowser(own).catch(() => {})
+    stuck.close()
+    await rm(own, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
 })

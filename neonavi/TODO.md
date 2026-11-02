@@ -118,10 +118,10 @@ add the requirement there first.
 - [x] Photos sent with a job show in its thread, and picking one is
       reliable across the page's refreshes. (JOB-37)
 - [x] An approval of a browser action shows the page on the phone. (PSH-17)
-- [ ] navi's browser stuck when a Chrome left on its profile answers
-      DevTools but never lets Playwright connect: every browser tool fails
-      until it is quit. Seen live; start a fresh one after a failed connect.
-      (`spec/browser.md`)
+- [x] navi's browser stuck when a Chrome left on its profile answers
+      DevTools but never lets Playwright connect: it is now asked to close
+      (or ended, only if it runs on navi's profile) and a fresh one started.
+      (BRW-16)
 - [x] Find a job by words in its prompt or answer: a box on the phone list,
       `navi jobs find <words>`. (JOB-30, JOB-31)
 - [x] Repeat a finished job on a schedule, from the phone or

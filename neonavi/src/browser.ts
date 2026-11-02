@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process'
-import { access, mkdir, readFile, rm, stat } from 'node:fs/promises'
+import { execFile, spawn } from 'node:child_process'
+import { access, mkdir, readFile, readlink, rm, stat } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import type { Browser, Locator, Page } from 'playwright-core'
@@ -50,6 +50,8 @@ export interface BrowserOptions {
   executable?: string
   /** For tests: no window. */
   headless?: boolean
+  /** For tests: how long attaching may take before the browser is taken for stuck (BRW-16). */
+  attachMs?: number
 }
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -146,6 +148,48 @@ async function debugPort(profile: string): Promise<number | null> {
   return Number.isInteger(port) && port > 0 ? port : null
 }
 
+/** How long attaching to a running browser may take before it is taken for stuck (BRW-16). */
+const ATTACH_MS = 15_000
+
+/**
+ * Closes a browser on this profile that answers but will not be attached to
+ * (BRW-16): asked over DevTools first, then ended, only when the process the
+ * profile's lock names is one running on this profile.
+ */
+async function closeStuck(port: number, profile: string): Promise<void> {
+  try {
+    const { webSocketDebuggerUrl: url } = (await (await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(2000) })).json()) as { webSocketDebuggerUrl: string }
+    await new Promise<void>((done) => {
+      const ws = new WebSocket(url)
+      const end = () => (clearTimeout(timer), ws.close(), done())
+      const timer = setTimeout(end, 3000)
+      ws.onopen = () => ws.send(JSON.stringify({ id: 1, method: 'Browser.close' }))
+      ws.onmessage = ws.onerror = ws.onclose = end
+    })
+  } catch {
+    // Not asked; ended below if it stays.
+  }
+  const gone = async () => {
+    for (let waited = 0; waited < 5000; waited += 250) {
+      if (!(await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(500) }).then((r) => r.ok, () => false))) return true
+      await new Promise((r) => setTimeout(r, 250))
+    }
+    return false
+  }
+  if (await gone()) return
+  // The lock is a link to "<host>-<pid>".
+  const pid = Number((await readlink(join(profile, 'SingletonLock')).catch(() => '')).split('-').pop())
+  if (!Number.isInteger(pid) || pid <= 0) return
+  const command = await new Promise<string>((r) => execFile('ps', ['-o', 'command=', '-p', String(pid)], (_e, out) => r(String(out ?? ''))))
+  if (!command.includes(`--user-data-dir=${profile}`)) return
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch {
+    return
+  }
+  await gone()
+}
+
 /** The blank tab a browser this process started opened with, until a session takes it. */
 const spare = new WeakSet<Page>()
 
@@ -174,12 +218,18 @@ export async function connect(o: BrowserOptions): Promise<Browser> {
   }
   const made = (async () => {
     const chromium = await playwright()
-    const attach = (port: number) => chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 15_000 })
+    const attach = (port: number) => chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: o.attachMs ?? ATTACH_MS })
     return locked(profile, async () => {
       // Read under the lock: another navi may have just started it.
       const port = await debugPort(profile)
-      // A browser that answers is the one to use, however slow to attach.
-      if (port && (await answers(port))) return attach(port)
+      // A browser that answers is the one to use, unless it will not be attached to (BRW-16).
+      if (port && (await answers(port))) {
+        try {
+          return await attach(port)
+        } catch {
+          await closeStuck(port, profile)
+        }
+      }
       const exe = await findBrowser(o.executable ?? (await configuredBrowser(o.home)))
       if (!exe) throw new Error(NO_BROWSER)
       const b = await attach(await launch(exe, profile, o.headless ?? false))

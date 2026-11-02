@@ -203,6 +203,8 @@ typing and choosing are judged like shell commands, and anything that could
 send, buy, post, delete or change a setting asks you first (`do? … [y/N]`).
 On the phone page, that question comes with a picture of the page as it
 looks, so you see what you are saying yes to (`spec/push.md` PSH-17).
+A window of navi's that has hung (it answers but cannot be driven) is
+closed and a fresh one started, so a task does not fail on it (BRW-16).
 `"browser": false` in the config removes it (`spec/browser.md`).
 
     navi browser
