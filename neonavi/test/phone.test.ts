@@ -493,3 +493,29 @@ test('JOB-34, SCH-24: Repeat this makes a schedule of a finished job, whose runs
   await page.getByRole('button', { name: 'Delete job' }).waitFor()
   assert.match(await page.locator('.meta').first().textContent() ?? '', /notes|navi-phone/)
 })
+
+test('SCH-27: a schedule navi paused for failing says so, and Resume starts it again', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const jobs = await makeJobs({ home, start: async () => { throw new Error('no model here') }, notify: () => {} })
+  const schedules = await makeSchedules({ home, start: (p, d, o) => jobs.create(p, d, o).id, answerOf: () => undefined, busy: () => false, statusOf: (id) => jobs.get(id)?.status })
+  const s = await schedules.add('check the backups', home, { every: 60 })
+  for (let i = 0; i < 3; i++) {
+    await schedules.run(s.id)
+    await jobs.idle()
+    await schedules.tick()
+  }
+  const token = '9'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], schedules } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByText('Paused after 3 failed runs · Every hour').waitFor()
+  assert.equal(await page.locator('button.run').count(), 3)
+  await page.getByRole('button', { name: 'Resume' }).click()
+  await page.locator('.sched .status', { hasText: /^Every hour$/ }).waitFor()
+  assert.equal(schedules.get(s.id)?.stuck, undefined)
+})

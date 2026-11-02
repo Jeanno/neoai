@@ -75,6 +75,10 @@ add the requirement there first.
       (SCH-19 to SCH-21)
 - [x] A schedule's last runs at a glance, as marks that open their jobs.
       (SCH-22 to SCH-24)
+- [x] A schedule failing again and again pauses itself, with one
+      notification. (SCH-25 to SCH-27)
+- [ ] A running `navi serve` keeps the model endpoint it started with: a
+      changed `custom` base URL takes a restart (found live, round 23).
 - [x] Files with a job: photos (scaled to JPEG on the phone, HEIC
       included) or any file from the phone page, `navi job -a` from the
       terminal, read as -a reads them. (JOB-14 to JOB-16)

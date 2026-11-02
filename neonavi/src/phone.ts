@@ -406,7 +406,7 @@ ${MARKDOWN_JS}
         el('button', { class: 'plain more', onclick: () => { remembering = true; failed = ''; refresh() } }, 'What navi remembers ›'),
         schedules.length > 0 && el('h2', {}, 'Schedules'),
         schedules.map((s) => editing && editing.id === s.id ? editForm(s) : el('div', { class: 'card sched' },
-          el('div', { class: 'status' + (s.paused ? ' paused' : '') }, (s.paused ? 'Paused · ' : '') + when(s) + (s.quiet ? ' · watch' : '')),
+          el('div', { class: 'status' + (s.paused ? ' paused' : '') }, (s.stuck ? 'Paused after ' + (s.failures || 3) + ' failed runs · ' : s.paused ? 'Paused · ' : '') + when(s) + (s.quiet ? ' · watch' : '')),
           el('span', { class: 'p' }, s.prompt),
           el('span', { class: 'meta' }, (s.paused ? 'Not running' : 'Next ' + soon(s.next)) + ' · ' + short(s.directory)),
           // SCH-24: how its last runs went, oldest first; each opens its job.

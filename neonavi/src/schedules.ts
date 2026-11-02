@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { NOTHING_NEW, nothingNew, type StartOptions } from './jobs.ts'
+import { NOTHING_NEW, nothingNew, titleOf, type StartOptions, type Status } from './jobs.ts'
 import { fromWall, localOffset, wall, type Offset } from './clock.ts'
 
 /**
@@ -30,6 +30,11 @@ export interface Schedule {
   news?: string
   /** Kept, but never due (SCH-19). */
   paused?: true
+  /** Runs failed in a row (SCH-25), and the last job counted. */
+  failures?: number
+  counted?: string
+  /** Paused by navi after failing again and again (SCH-26). */
+  stuck?: true
   /** A job whose answer an edit forgot, not to be compared with (SCH-15). */
   forgot?: string
 }
@@ -44,6 +49,10 @@ export interface ScheduleDeps {
   answerOf: (job: string) => string | undefined
   /** Whether a job is still running or waiting (SCH-3). */
   busy: (job: string) => boolean
+  /** How a job ended; undefined once it is gone (SCH-25). */
+  statusOf?: (job: string) => Status | undefined
+  /** Tells the user, as a job's end does (SCH-26). */
+  notify?: (title: string, text: string, job: string) => void
 }
 
 export interface Schedules {
@@ -70,6 +79,8 @@ export interface Change {
 }
 
 export const MIN_EVERY = 5
+/** Failures in a row that pause a schedule (SCH-26). */
+export const FAILS_TO_PAUSE = 3
 const NEWS = 4000
 
 /** What a watch's run is sent (SCH-9, SCH-11): the prompt, then what to compare with. */
@@ -215,6 +226,8 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
       if (paused) s.paused = true
       else if (s.paused) {
         delete s.paused
+        delete s.stuck
+        delete s.failures
         // Counted from the resume: what it missed is not made up.
         s.last = now.toISOString()
       }
@@ -224,6 +237,13 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
     async edit(id, change, now = new Date()) {
       const s = all.find((x) => x.id === id)
       if (!s) return
+      // SCH-26: an edit may well have fixed it.
+      delete s.failures
+      if (s.stuck) {
+        delete s.stuck
+        delete s.paused
+        s.last = now.toISOString()
+      }
       const forget = () => {
         delete s.news
         if (s.job) s.forgot = s.job
@@ -260,6 +280,19 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
     async tick(now = new Date()) {
       let changed = false
       for (const s of all) {
+        // SCH-25: each run counted once, when it has ended.
+        if (s.job && s.job !== s.counted && d.statusOf && !d.busy(s.job)) {
+          const status = d.statusOf(s.job)
+          s.counted = s.job
+          changed = true
+          if (status === 'done') delete s.failures
+          else if (status === 'failed') s.failures = (s.failures ?? 0) + 1
+          if ((s.failures ?? 0) >= FAILS_TO_PAUSE && !s.paused) {
+            s.paused = true
+            s.stuck = true
+            d.notify?.('navi paused a schedule', `${titleOf(s.prompt)}: its last ${s.failures} runs failed. Resume it once it can work.`, s.job)
+          }
+        }
         if (s.paused) continue
         const due = nextRun(s, from(s))
         if (due > now) continue

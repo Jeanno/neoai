@@ -371,3 +371,66 @@ test('SCH-22, SCH-23: a schedule lists its last five runs, newest first, and sho
   assert.equal(runMarks(runs), '✓✗✓✓✗')
   assert.deepEqual(got.schedules.find((x: any) => x.id === other.id).runs, [])
 })
+
+test('SCH-25, SCH-26: three failures in a row pause a schedule once, with one notification; done resets, stopped and gone do not count', async () => {
+  const status = new Map<string, string>()
+  const told: { title: string; text: string; job: string }[] = []
+  const { schedules, started, busy } = await setup({
+    statusOf: (id) => status.get(id) as any,
+    notify: (title, text, job) => told.push({ title, text, job }),
+  })
+  const s = await schedules.add('check the backups', '/tmp', { every: 60 })
+  const end = async (how: string | undefined) => {
+    const job = (await schedules.run(s.id))!
+    // Counted only once it has ended.
+    busy.add(job)
+    status.set(job, 'failed')
+    await schedules.tick(new Date(0))
+    assert.notEqual(schedules.get(s.id)?.counted, job)
+    busy.delete(job)
+    status.delete(job)
+    if (how) status.set(job, how)
+    await schedules.tick(new Date(0))
+  }
+  await end('failed')
+  await end('failed')
+  await end('done')
+  assert.equal(schedules.get(s.id)?.failures, undefined)
+  await end('failed')
+  await end('stopped')
+  await end('interrupted')
+  await end(undefined)
+  await end('failed')
+  assert.equal(schedules.get(s.id)?.failures, 2)
+  assert.equal(schedules.get(s.id)?.paused, undefined)
+  await end('failed')
+  assert.deepEqual({ paused: schedules.get(s.id)?.paused, stuck: schedules.get(s.id)?.stuck, failures: schedules.get(s.id)?.failures }, { paused: true, stuck: true, failures: 3 })
+  assert.equal(told.length, 1)
+  assert.equal(told[0].title, 'navi paused a schedule')
+  assert.match(told[0].text, /check the backups: its last 3 runs failed/)
+  assert.equal(told[0].job, `job${started.length}`)
+  // Paused, nothing more starts, and no second notification.
+  const ran = started.length
+  await schedules.tick(new Date(Date.now() + 10 * 60 * 60_000))
+  assert.equal(started.length, ran)
+  assert.equal(told.length, 1)
+  // Resuming clears it all.
+  await schedules.pause(s.id, false)
+  assert.deepEqual({ paused: schedules.get(s.id)?.paused, stuck: schedules.get(s.id)?.stuck, failures: schedules.get(s.id)?.failures }, { paused: undefined, stuck: undefined, failures: undefined })
+})
+
+test('SCH-26: an edit resumes a schedule navi paused, but not one the user paused', async () => {
+  const status = new Map<string, string>()
+  const { schedules } = await setup({ statusOf: (id) => status.get(id) as any, notify: () => {} })
+  const s = await schedules.add('check the backups', '/tmp', { every: 60 })
+  for (let i = 0; i < 3; i++) {
+    status.set((await schedules.run(s.id))!, 'failed')
+    await schedules.tick(new Date(0))
+  }
+  assert.equal(schedules.get(s.id)?.stuck, true)
+  await schedules.edit(s.id, { prompt: 'check the backups on the other disk' })
+  assert.deepEqual({ paused: schedules.get(s.id)?.paused, stuck: schedules.get(s.id)?.stuck, failures: schedules.get(s.id)?.failures }, { paused: undefined, stuck: undefined, failures: undefined })
+  await schedules.pause(s.id, true)
+  await schedules.edit(s.id, { prompt: 'again' })
+  assert.equal(schedules.get(s.id)?.paused, true)
+})

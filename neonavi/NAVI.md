@@ -64,6 +64,9 @@ running, and `resume` starts it again from then, missed runs not made up
 Each schedule shows how its last five runs went, as marks (✓ done, – nothing
 new, ✗ failed, ■ stopped, … working): in `navi schedules`, and on the phone,
 where a mark opens its job (SCH-22 to SCH-24).
+A schedule that fails three runs in a row pauses itself and tells you once,
+instead of failing all night; Resume, or an edit, starts it again
+(SCH-25 to SCH-27).
 
     navi schedule "summarise what's new on my GitHub notifications page" --at 08:30 --days weekdays
 

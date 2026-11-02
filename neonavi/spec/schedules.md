@@ -126,6 +126,20 @@ every so often. A morning brief, a page watched every hour.
   colored as its status is in the job list and named for a screen reader
   (`done, 2 h ago`); tapping one opens its job.
 
+## Failing
+
+- SCH-25: A schedule counts its runs that fail in a row, as each one ends
+  (within SCH-6's half minute). A run that is done resets the count; one
+  stopped or interrupted (navi serve stopping under it) leaves it as it is;
+  one whose job is gone is not counted.
+- SCH-26: On the third failure in a row navi pauses the schedule itself
+  (SCH-19), marked `stuck`, and sends one notification (PSH) saying so,
+  linking the last failed job. Resuming clears the count and the mark;
+  so does editing it (SCH-15), which also resumes one navi paused, an edit
+  being the likely fix. One the user paused stays paused through an edit.
+- SCH-27: The phone page shows a schedule navi paused as `Paused after 3
+  failed runs`; `navi schedules` shows it as `paused: failing`.
+
 ## Open
 
-- Telling the user when a schedule's runs keep failing.
+- Retrying a failed run once, a few minutes later, before counting it.

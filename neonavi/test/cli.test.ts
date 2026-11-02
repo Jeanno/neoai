@@ -421,3 +421,27 @@ test('SCH-17, SCH-21, JOB-33: navi schedules <id> edit, pause and resume, and na
     await jobs.idle()
   }
 })
+
+test('SCH-27: navi schedules shows a schedule navi paused for failing', async () => {
+  const { makeJobs, serveToken } = await import('../src/jobs.ts')
+  const { makeSchedules } = await import('../src/schedules.ts')
+  const { listen } = await import('../src/serve.ts')
+  const home = await mkdtemp(join(tmpdir(), 'navi-cli-'))
+  const jobs = await makeJobs({ home, start: async () => { throw new Error('no model') }, notify: () => {} } as any)
+  const schedules = await makeSchedules({ home, start: (p, d, o) => jobs.create(p, d, o).id, answerOf: () => undefined, busy: () => false, statusOf: (id) => jobs.get(id)?.status })
+  const s = await schedules.add('check the backups', home, { every: 60 })
+  for (let i = 0; i < 3; i++) {
+    await schedules.run(s.id)
+    await jobs.idle()
+    await schedules.tick()
+  }
+  const token = await serveToken(home)
+  const deps = { route: async () => null, why: async () => 'none', fetch, forget: () => {}, log: () => {} }
+  const [server] = await listen([], deps as any, 0, { jobs: { jobs, token, directories: async () => [home], home, schedules } })
+  try {
+    const listed = await navi(['schedules', '--port', String((server.address() as AddressInfo).port)], { home })
+    assert.match(listed.stdout, /✗✗✗\s+paused: failing\s+check the backups/)
+  } finally {
+    server.close()
+  }
+})
