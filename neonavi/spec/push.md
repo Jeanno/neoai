@@ -45,6 +45,20 @@ reaches you without the phone page open.
 - PSH-10: navi serve's log shows an answer by key without the key, and the
   job's log records it as any other answer.
 
+## Quiet hours
+
+- PSH-11: `"quietHours": "22:00-07:00"` in the config holds navi serve's
+  notifications, on the Mac and pushed alike, from the first time to the
+  second, local time (SCH-14); a span may cross midnight. The config is
+  read each time, so a change needs no restart. A value that is not two
+  `HH:MM` times joined by `-` is ignored, and navi serve says so on start.
+- PSH-12: What was held is sent as one notification once the quiet hours
+  end (within half a minute): how many jobs finished, failed, wait on the
+  user, and anything else, with the first few named, opening the last of
+  them. An approval held is in it as waiting; its buttons are not.
+- PSH-13: What is held is kept in memory only: a navi serve stopped during
+  quiet hours does not send it.
+
 ## Open
 
 - Answering a file change or browser action with its diff or page shown in

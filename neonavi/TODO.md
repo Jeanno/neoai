@@ -79,6 +79,10 @@ add the requirement there first.
       notification. (SCH-25 to SCH-27)
 - [x] A failed scheduled run is tried once more five minutes later before
       it counts. (SCH-28, SCH-29)
+- [x] Quiet hours: notifications held overnight and sent as one summary.
+      (PSH-11 to PSH-13)
+- [x] navi serve's log shows this computer's time (it was an hour behind
+      since BC's permanent UTC-7).
 - [x] A running `navi serve` follows a changed config (endpoint, key,
       model) at its next job, with no restart. (`spec/models.md` MOD-23)
 - [x] Files with a job: photos (scaled to JPEG on the phone, HEIC

@@ -22,6 +22,8 @@ import { makeJobs, matches, serveToken, tailnetAddresses, titleOf, working, type
 import { push, pushConfig } from './push.ts'
 import { addFact, forgetFact, memoryFile, readMemory } from './memory.ts'
 import { listUndo, namer, redo, redoneLines, undo, undoneReport } from './undo.ts'
+import { wall } from './clock.ts'
+import { makeQuietNotify, parseQuiet } from './quiet.ts'
 import { makeSchedules, nextText, parseDays, parseEvery, runMarks, whenText } from './schedules.ts'
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -224,8 +226,11 @@ async function serve(argv: string[]) {
   for (const line of failedLines(failures)) console.error(dim(`· ${line}`))
   const home = homedir()
   const tailnetAt = tailnet.value === undefined ? [] : tailnetAddresses()
-  const say = (line: string) => console.error(dim(`${new Date().toLocaleTimeString()} ${line}`))
-  const notify = makeNotify(tailnetAt[0] && `http://${tailnetAt[0]}:${n}/`, say)
+  // This computer's time, which Node's own zones can have wrong (SCH-14).
+  const say = (line: string) => console.error(dim(`${wall(new Date()).toISOString().slice(11, 19)} ${line}`))
+  // PSH-11: held in quiet hours, read from the config each time.
+  const quiet = makeQuietNotify(makeNotify(tailnetAt[0] && `http://${tailnetAt[0]}:${n}/`, say), async () => parseQuiet((await readConfig()).quietHours), say)
+  const { notify } = quiet
   const jobs = await makeJobs({ home, start: startJob, notify, atOnce: config.jobsAtOnce })
   const schedules = await makeSchedules({
     home,
@@ -253,6 +258,13 @@ async function serve(argv: string[]) {
   // SCH-6: due schedules start within half a minute, and at once on starting (SCH-4).
   void schedules.tick()
   setInterval(() => void schedules.tick(), 30_000)
+  // PSH-12: what was held goes once quiet hours are over.
+  setInterval(() => void quiet.flush(), 30_000)
+  if (config.quietHours !== undefined) {
+    const q = parseQuiet(config.quietHours)
+    const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+    console.error(dim(q ? `Quiet hours ${hhmm(q.from)}–${hhmm(q.to)}: notifications then are held and sent as one after.` : `quietHours ${JSON.stringify(config.quietHours)} is not like "22:00-07:00", so it is ignored.`))
+  }
   // Runs until stopped: the open server keeps the process alive.
   return new Promise<number>(() => {})
 }

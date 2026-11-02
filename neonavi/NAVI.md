@@ -125,6 +125,11 @@ carries a key good for that one question only, and your phone sends the
 answer straight to navi over the tailnet. The token never leaves this
 computer (`spec/push.md`).
 
+`"quietHours": "22:00-07:00"` holds navi serve's notifications, on the Mac and
+the phone, between those times; when they end you get one that sums up what
+happened (how many jobs finished, failed or wait on you, the latest named).
+A job waiting on you at night waits until you look (PSH-11 to PSH-13).
+
 Changed your mind about what navi did to your files? `navi undo` (or
 `/undo` at the `navi>` prompt) puts back every file its last turn in this
 directory changed and removes the ones it made; run it again to go a turn
