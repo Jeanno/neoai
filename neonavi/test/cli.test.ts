@@ -367,3 +367,37 @@ test('JOB-31: navi jobs find lists the jobs that mention the words', async () =>
     server.close()
   }
 })
+
+test('SCH-17: navi schedules <id> edit changes what it is told and says what the schedule now is', async () => {
+  const { makeJobs, serveToken } = await import('../src/jobs.ts')
+  const { makeSchedules } = await import('../src/schedules.ts')
+  const { listen } = await import('../src/serve.ts')
+  const home = await mkdtemp(join(tmpdir(), 'navi-cli-'))
+  const jobs = await makeJobs({ home, start: async () => { throw new Error('no model') }, notify: () => {} } as any)
+  const schedules = await makeSchedules({ home, start: (p, d, o) => jobs.create(p, d, o).id, answerOf: () => undefined, busy: () => false })
+  const s = await schedules.add('the brief', home, { at: '08:00', days: [1, 2, 3, 4, 5] })
+  const token = await serveToken(home)
+  const deps = { route: async () => null, why: async () => 'none', fetch, forget: () => {}, log: () => {} }
+  const [server] = await listen([], deps as any, 0, { jobs: { jobs, token, directories: async () => [home], home, schedules } })
+  try {
+    const port = String((server.address() as AddressInfo).port)
+    const at = await navi(['schedules', s.id, 'edit', '--at', '07:30', '--days', 'all', '--prompt', 'the morning brief', '--port', port], { home })
+    assert.equal(at.code, 0, at.stderr)
+    assert.match(at.stdout, /at 07:30, next/)
+    assert.match(at.stdout, /the morning brief/)
+    const every = await navi(['schedules', s.id, 'edit', '--every', '2h', '--only-changes', '--port', port], { home })
+    assert.match(every.stdout, /every 2 h, only when something changed/)
+    assert.deepEqual({ every: schedules.get(s.id)?.every, quiet: schedules.get(s.id)?.quiet, prompt: schedules.get(s.id)?.prompt }, { every: 120, quiet: true, prompt: 'the morning brief' })
+    assert.equal((await navi(['schedules', s.id, 'edit', '--every-run', '--port', port], { home })).code, 0)
+    assert.equal(schedules.get(s.id)?.quiet, undefined)
+    // Nothing to change, two whens, and what serve refuses.
+    assert.equal((await navi(['schedules', s.id, 'edit', '--port', port], { home })).code, 1)
+    assert.equal((await navi(['schedules', s.id, 'edit', '--at', '08:00', '--every', '1h', '--port', port], { home })).code, 1)
+    const refused = await navi(['schedules', s.id, 'edit', '--days', 'mon', '--port', port], { home })
+    assert.equal(refused.code, 1)
+    assert.match(refused.stderr, /days go with at/)
+  } finally {
+    server.close()
+    await jobs.idle()
+  }
+})

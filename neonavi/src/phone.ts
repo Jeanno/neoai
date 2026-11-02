@@ -162,6 +162,38 @@ ${MARKDOWN_JS}
   let remembering = false, memory = { facts: [], off: false }, fact = ''
   // JOB-28: whether a job's earlier turns are shown, kept across refreshes.
   let earlierOpen = false
+  // SCH-18: the schedule being edited, as { id, prompt, repeat, time, quiet }, kept across refreshes.
+  let editing = null
+  const repeatOf = (s) => s.every === 30 ? '30' : s.every === 60 ? '60' : !s.at ? 'keep'
+    : !s.days ? 'daily' : s.days.join() === '1,2,3,4,5' ? 'weekdays' : 'keep'
+  const editTimed = (e) => e.repeat === 'daily' || e.repeat === 'weekdays' || (e.repeat === 'keep' && e.at)
+  function saveEdit(s) {
+    const e = editing
+    const body = { prompt: e.prompt, quiet: e.quiet }
+    if (e.repeat === '30' || e.repeat === '60') body.every = Number(e.repeat)
+    else if (e.repeat === 'daily') Object.assign(body, { at: e.time, days: null })
+    else if (e.repeat === 'weekdays') Object.assign(body, { at: e.time, days: [1, 2, 3, 4, 5] })
+    else if (s.at && e.time !== s.at) Object.assign(body, { at: e.time, days: s.days ?? null })
+    return act(async () => { await api('/schedules/' + s.id + '/edit', body); editing = null })
+  }
+  function editForm(s) {
+    const e = editing
+    return el('div', { class: 'card sched' },
+      el('textarea', { id: 'edit-prompt', 'aria-label': 'Prompt', oninput: (ev) => { e.prompt = ev.target.value; save.disabled = busy || !e.prompt.trim() } }, e.prompt),
+      el('div', { class: 'row' },
+        el('select', { id: 'edit-repeat', 'aria-label': 'When', onchange: (ev) => { e.repeat = ev.target.value; render() } },
+          (repeatOf(s) === 'keep' ? [['keep', 'As it is: ' + when(s)]] : []).concat(REPEATS.slice(1))
+            .map(([v, t]) => el('option', { value: v, selected: v === e.repeat }, t))),
+        editTimed({ ...e, at: s.at }) && el('input', { id: 'edit-time', type: 'time', 'aria-label': 'Time', value: e.time, oninput: (ev) => (e.time = ev.target.value) })),
+      el('label', { class: 'check' },
+        el('input', { id: 'edit-quiet', type: 'checkbox', checked: e.quiet, onchange: (ev) => (e.quiet = ev.target.checked) }),
+        'Only tell me when something changes'),
+      el('div', { class: 'row' },
+        save = el('button', { disabled: busy || !e.prompt.trim(), onclick: () => saveEdit(s) }, 'Save'),
+        el('button', { class: 'no', onclick: () => { editing = null; failed = ''; render() } }, 'Cancel')))
+  }
+  let save
+
   // JOB-30: the words the job list is narrowed to.
   let find = ''
   const holds = (j, words) => {
@@ -343,12 +375,13 @@ ${MARKDOWN_JS}
         err,
         el('button', { class: 'plain more', onclick: () => { remembering = true; failed = ''; refresh() } }, 'What navi remembers ›'),
         schedules.length > 0 && el('h2', {}, 'Schedules'),
-        schedules.map((s) => el('div', { class: 'card sched' },
+        schedules.map((s) => editing && editing.id === s.id ? editForm(s) : el('div', { class: 'card sched' },
           el('div', { class: 'status' }, when(s) + (s.quiet ? ' · watch' : '')),
           el('span', { class: 'p' }, s.prompt),
           el('span', { class: 'meta' }, 'Next ' + soon(s.next) + ' · ' + short(s.directory)),
           el('div', { class: 'row' },
             el('button', { class: 'no', disabled: busy, onclick: () => act(async () => { open = (await api('/schedules/' + s.id + '/run', {})).id }) }, 'Run now'),
+            el('button', { class: 'no', disabled: busy, onclick: () => { editing = { id: s.id, prompt: s.prompt, repeat: repeatOf(s), time: s.at || '08:00', quiet: !!s.quiet }; failed = ''; render() } }, 'Edit'),
             el('button', { class: 'no', disabled: busy, onclick: () => { if (confirm('Delete this schedule?')) act(() => api('/schedules/' + s.id + '/delete', {})) } }, 'Delete')))),
         schedules.length > 0 && el('h2', {}, 'Jobs'),
         jobs.length > 3 && el('input', { id: 'find', type: 'search', class: 'find', placeholder: 'Find a job', value: find, autocomplete: 'off',

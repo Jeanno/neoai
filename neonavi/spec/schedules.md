@@ -78,7 +78,29 @@ every so often. A morning brief, a page watched every hour.
   choice is open in it (a list, a time or a checkbox), so a choice is never
   snatched away mid-pick.
 
+## Editing
+
+- SCH-15: A schedule can be changed in place: its prompt, when, or whether
+  it is a watch. It keeps its id, directory and last job. A changed when
+  counts from the change: the next run is the first one after it, so an
+  every-30-minutes schedule runs 30 minutes after being edited, not at once.
+  A watch forgets the answer it compares with (SCH-10) when its prompt
+  changes or it stops being a watch, so what it next says is news again.
+- SCH-16: `POST /schedules/<id>/edit` with `{ prompt?, at?, days?, every?,
+  quiet? }` changes only what is given, checked as SCH-7 checks a new one,
+  and answers the schedule with its next run. `at` or `every` replaces when
+  it runs, with `days` going with `at` (`null` for every day); `days` alone
+  changes the days of an `at` schedule.
+- SCH-17: `navi schedules <id> edit` takes `--prompt "<prompt>"`, `--at
+  HH:MM`, `--days mon,tue,…` (or `all`), `--every 30m|2h`, and
+  `--only-changes` or `--every-run` to make it a watch or not, at least one
+  of them, and says what the schedule now is and when it next runs.
+- SCH-18: On the phone page, Edit on a schedule opens it as a form in its
+  card: the prompt, when it runs (the choices a new one has, and a schedule
+  on other days keeps them unless another choice is made), the time, and
+  the watch checkbox, with Save and Cancel. What is being typed survives the
+  page's refreshes.
+
 ## Open
 
-
-- Editing a schedule in place, rather than deleting it and making another.
+- Pausing a schedule without deleting it.

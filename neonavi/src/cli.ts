@@ -106,7 +106,7 @@ const USAGE = [
   '       navi job "<what you want done>" [-a <file>]… [-C <directory>]',
   '       navi jobs [<id> [y | n | stop | undo | delete | show | reply "<follow-up>" [-a <file>]…] | find <words> | clear | link]',
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
-  '       navi schedules [<id> run | rm]',
+  '       navi schedules [<id> run | rm | edit [--prompt …] [--at …] [--days …] [--every …] [--only-changes | --every-run]]',
   '       navi push test',
   '       navi memory [add "<fact>" | forget <n | words>]',
   '       navi undo [--list] [-C <directory>]',
@@ -133,7 +133,7 @@ const ABOUT = [
   'navi jobs            list jobs; <id> shows one, then y, n, stop, undo, delete, show (every turn) or reply; find lists those mentioning words; clear deletes finished ones; link is for a phone',
   'navi schedule "…"    have navi serve start a job at a time of day or every so often;',
   '                     --only-changes makes it a watch that only speaks when something changed',
-  'navi schedules       list schedules and their next run; <id> run starts one now, rm deletes it',
+  'navi schedules       list schedules and their next run; <id> run starts one now, edit changes it, rm deletes it',
   'navi push test       send a test push to your phone (set "push" in the config first)',
   'navi memory          what navi remembers about you; add a fact, or forget one by number or words',
   "navi undo            put back the files navi's last turn here changed; --list shows what can be",
@@ -500,13 +500,49 @@ async function scheduleCommand(argv: string[]) {
   return 0
 }
 
-/** `navi schedules [<id> run | rm] [--port N]` (SCH-8). */
+const SCHEDULES_USAGE =
+  'usage: navi schedules [<id> run | rm | edit [--prompt "<prompt>"] [--at HH:MM] [--days mon,tue,…|all] [--every 30m|2h] [--only-changes | --every-run]] [--port N]'
+
+/** `navi schedules <id> edit …` (SCH-17): only what is given changes. */
+async function editScheduleCommand(n: number, id: string, argv: string[]) {
+  const prompt = takeFlag(argv, '--prompt', true)
+  const at = takeFlag(prompt.rest, '--at', true)
+  const days = takeFlag(at.rest, '--days', true)
+  const every = takeFlag(days.rest, '--every', true)
+  const watch = takeFlag(every.rest, '--only-changes', false)
+  const always = takeFlag(watch.rest, '--every-run', false)
+  const given = [prompt, at, days, every, watch, always].some((f) => f.value !== undefined)
+  if (always.rest.length || !given || (at.value !== undefined && every.value !== undefined) || (watch.value !== undefined && always.value !== undefined))
+    return console.error(SCHEDULES_USAGE), 1
+  const minutes = every.value === undefined ? undefined : parseEvery(every.value)
+  if (every.value !== undefined && minutes === undefined) return console.error(`not a length of time: ${every.value} (say 30m or 2h)`), 1
+  const all = days.value !== undefined && ['all', 'daily', 'every'].includes(days.value.toLowerCase())
+  const on = days.value === undefined || all ? undefined : parseDays(days.value)
+  if (days.value !== undefined && !all && !on) return console.error(`not days: ${days.value} (say mon,wed, weekdays, weekends or all)`), 1
+  const got = await jobsApi(n, `/schedules/${id}/edit`, {
+    ...(prompt.value !== undefined && { prompt: prompt.value }),
+    ...(at.value !== undefined && { at: at.value }),
+    ...(days.value !== undefined && { days: all ? null : on }),
+    ...(minutes !== undefined && { every: minutes }),
+    ...(watch.value !== undefined && { quiet: true }),
+    ...(always.value !== undefined && { quiet: false }),
+  })
+  if (!got) return console.error(NOT_SERVING), 1
+  if (got.status !== 200) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
+  const s = got.data
+  console.log(`Schedule ${bold(s.id)}: ${whenText(s)}${s.quiet ? ', only when something changed' : ''}, next ${nextText(new Date(s.next))}.`)
+  console.log(dim(titleOf(s.prompt)))
+  return 0
+}
+
+/** `navi schedules [<id> run | rm | edit …] [--port N]` (SCH-8, SCH-17). */
 async function schedulesCommand(argv: string[]) {
   const port = takeFlag(argv, '--port', true)
   const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
   const [id, what, ...extra] = port.rest
+  if (what === 'edit' && Number.isInteger(n)) return editScheduleCommand(n, id, extra)
   if (extra.length || !Number.isInteger(n) || (id !== undefined && !['run', 'rm'].includes(what ?? ''))) {
-    console.error('usage: navi schedules [<id> run | rm] [--port N]')
+    console.error(SCHEDULES_USAGE)
     return 1
   }
   if (!id) {

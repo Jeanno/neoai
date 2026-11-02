@@ -143,7 +143,7 @@ async function memoryRoute(req: IncomingMessage, res: ServerResponse, path: stri
 async function schedulesRoute(req: IncomingMessage, res: ServerResponse, path: string, o: JobsOptions, schedules: Schedules) {
   const parts = path.split('/').slice(2)
   if (req.method === 'GET' && !parts.length) return json(res, 200, { schedules: schedules.list() })
-  if (req.method !== 'POST') return error(res, 404, `Schedules answer GET /schedules, POST /schedules and POST /schedules/<id>/run or delete, not ${req.method} ${path}.`)
+  if (req.method !== 'POST') return error(res, 404, `Schedules answer GET /schedules, POST /schedules and POST /schedules/<id>/run, edit or delete, not ${req.method} ${path}.`)
   const body = await jsonBody(req)
   if (typeof body === 'string') return error(res, 400, body)
   if (!parts.length) {
@@ -162,11 +162,28 @@ async function schedulesRoute(req: IncomingMessage, res: ServerResponse, path: s
     const job = await schedules.run(parts[0])
     return json(res, 201, job && o.jobs.get(job))
   }
+  if (parts[1] === 'edit' && parts.length === 2) {
+    // SCH-16: only what is given changes.
+    const had = schedules.get(parts[0])!
+    if (body.prompt !== undefined && (typeof body.prompt !== 'string' || !body.prompt.trim())) return error(res, 400, 'A prompt cannot be empty.')
+    if (body.quiet !== undefined && typeof body.quiet !== 'boolean') return error(res, 400, 'quiet is true or false.')
+    let when: Parameters<typeof checkWhen>[0] | undefined
+    if (body.at !== undefined || body.every !== undefined) when = { at: body.at, days: body.days ?? undefined, every: body.every } as Parameters<typeof checkWhen>[0]
+    else if (body.days !== undefined) {
+      if (had.at === undefined) return error(res, 400, 'days go with at, not every.')
+      when = { at: had.at, days: body.days ?? undefined } as Parameters<typeof checkWhen>[0]
+    }
+    const wrong = when && checkWhen(when)
+    if (wrong) return error(res, 400, wrong)
+    if (body.prompt === undefined && !when && body.quiet === undefined) return error(res, 400, 'Say what to change: prompt, at, days, every or quiet.')
+    await schedules.edit(parts[0], { ...(body.prompt !== undefined && { prompt: body.prompt.trim() }), ...(when && { when }), ...(body.quiet !== undefined && { quiet: body.quiet }) })
+    return json(res, 200, schedules.list().find((s) => s.id === parts[0]))
+  }
   if (parts[1] === 'delete' && parts.length === 2) {
     await schedules.remove(parts[0])
     return json(res, 200, { deleted: parts[0] })
   }
-  error(res, 404, `Schedules answer GET /schedules, POST /schedules and POST /schedules/<id>/run or delete, not ${req.method} ${path}.`)
+  error(res, 404, `Schedules answer GET /schedules, POST /schedules and POST /schedules/<id>/run, edit or delete, not ${req.method} ${path}.`)
 }
 
 /** A job as the API shows it: never its conversation, which can hold whole photos (JOB-15). */

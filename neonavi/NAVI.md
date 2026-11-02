@@ -55,6 +55,9 @@ deletes it. A run that comes due while the last one is still going (or waiting
 for your answer) is skipped, and runs missed while navi serve was off are made
 up once, not one by one, unless they are more than 12 hours late
 (`spec/schedules.md`).
+A schedule can be changed in place, with `navi schedules <id> edit` (`--prompt`,
+`--at`, `--days`, `--every`, `--only-changes` or `--every-run`) or Edit on the
+phone page; a new time counts from the change (SCH-15 to SCH-18).
 
     navi schedule "summarise what's new on my GitHub notifications page" --at 08:30 --days weekdays
 

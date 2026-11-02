@@ -390,3 +390,46 @@ test('JOB-30: a search box narrows a long job list as you type', { skip }, async
   await page.getByText('water the plants').waitFor()
   assert.equal(await page.locator('button.job').count(), 4)
 })
+
+test('SCH-18: the phone edits a schedule in its card, and a refresh keeps what is typed', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const jobs = await makeJobs({ home, start: async () => { throw new Error('no model here') }, notify: () => {} })
+  const schedules = await makeSchedules({ home, start: (p, d, o) => jobs.create(p, d, o).id, answerOf: () => undefined, busy: () => false })
+  const s = await schedules.add('check the status page', home, { at: '09:00', days: [1, 3] }, true)
+  const token = 'e'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], schedules } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByRole('button', { name: 'Edit' }).click()
+  // Other days are kept unless another choice is made; only the time changes.
+  assert.equal(await page.locator('#edit-repeat').inputValue(), 'keep')
+  await page.locator('#edit-time').fill('10:15')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await page.getByText('At 10:15 on Mon, Wed · watch').waitFor()
+  assert.deepEqual({ at: schedules.get(s.id)?.at, days: schedules.get(s.id)?.days }, { at: '10:15', days: [1, 3] })
+
+  await page.getByRole('button', { name: 'Edit' }).click()
+  const box = page.getByLabel('Prompt')
+  await box.fill('check the status page and the disks')
+  // Past a refresh (every 3 seconds), the form and what was typed are still there.
+  await page.waitForTimeout(3500)
+  assert.equal(await box.inputValue(), 'check the status page and the disks')
+  await page.locator('#edit-repeat').selectOption('60')
+  await page.getByLabel('Only tell me when something changes').uncheck()
+  await page.getByRole('button', { name: 'Save' }).click()
+  await page.locator('.sched .status', { hasText: 'Every hour' }).waitFor()
+  assert.deepEqual({ every: schedules.get(s.id)?.every, quiet: schedules.get(s.id)?.quiet, prompt: schedules.get(s.id)?.prompt },
+    { every: 60, quiet: undefined, prompt: 'check the status page and the disks' })
+
+  // Cancel changes nothing.
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel('Prompt').fill('something else')
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await page.getByText('check the status page and the disks').waitFor()
+  assert.equal(schedules.get(s.id)?.prompt, 'check the status page and the disks')
+})

@@ -28,6 +28,8 @@ export interface Schedule {
   quiet?: true
   /** What a watch's last run with news answered (SCH-9). */
   news?: string
+  /** A job whose answer an edit forgot, not to be compared with (SCH-15). */
+  forgot?: string
 }
 
 export type When = Pick<Schedule, 'at' | 'days' | 'every'>
@@ -48,10 +50,19 @@ export interface Schedules {
   get(id: string): Schedule | undefined
   add(prompt: string, directory: string, when: When, quiet?: boolean): Promise<Schedule>
   remove(id: string): Promise<boolean>
+  /** Changes it in place (SCH-15); undefined when there is none. */
+  edit(id: string, change: Change, now?: Date): Promise<Schedule | undefined>
   /** Starts it now (SCH-7); the job's id. */
   run(id: string): Promise<string | undefined>
   /** Starts what is due (SCH-2 to SCH-4). */
   tick(now?: Date): Promise<void>
+}
+
+/** What an edit changes (SCH-15): a when replaces the old one whole. */
+export interface Change {
+  prompt?: string
+  when?: When
+  quiet?: boolean
 }
 
 export const MIN_EVERY = 5
@@ -143,7 +154,8 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
 
   const start = (s: Schedule, now: Date) => {
     // SCH-10: the last run's answer is what the next compares with, unless it found nothing.
-    const answered = s.quiet && s.job ? d.answerOf(s.job) : undefined
+    const answered = s.quiet && s.job && s.job !== s.forgot ? d.answerOf(s.job) : undefined
+    delete s.forgot
     if (answered && !nothingNew(answered)) s.news = answered.slice(0, NEWS)
     s.job = d.start(s.prompt, s.directory, {
       schedule: s.id,
@@ -184,6 +196,35 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
       if (all.length === before) return false
       await save()
       return true
+    },
+    async edit(id, change, now = new Date()) {
+      const s = all.find((x) => x.id === id)
+      if (!s) return
+      const forget = () => {
+        delete s.news
+        if (s.job) s.forgot = s.job
+      }
+      if (change.prompt !== undefined && change.prompt !== s.prompt) {
+        s.prompt = change.prompt
+        forget()
+      }
+      if (change.when) {
+        delete s.at
+        delete s.days
+        delete s.every
+        if (change.when.at !== undefined) s.at = change.when.at
+        if (change.when.days) s.days = [...new Set(change.when.days)].sort()
+        if (change.when.every !== undefined) s.every = change.when.every
+        // Counted from the change, so it is not due at once.
+        s.last = now.toISOString()
+      }
+      if (change.quiet === true) s.quiet = true
+      if (change.quiet === false && s.quiet) {
+        delete s.quiet
+        forget()
+      }
+      await save()
+      return s
     },
     async run(id) {
       const s = all.find((x) => x.id === id)
