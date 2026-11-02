@@ -16,6 +16,8 @@ export interface Turn {
   changes: Change[]
   /** Shell commands the turn ran (UND-6). */
   commands: string[]
+  /** The job that ran it (UND-10). */
+  job?: string
 }
 
 interface Kept {
@@ -55,8 +57,8 @@ export interface Recorder {
 }
 
 /** Records one turn's changes as they are made (UND-1, UND-2); a turn that changes no file is not kept. */
-export function makeRecorder(home: string, cwd: string, prompt: string, now = () => new Date()): Recorder {
-  const turn: Turn = { at: now().toISOString(), prompt: prompt.slice(0, 200), changes: [], commands: [] }
+export function makeRecorder(home: string, cwd: string, prompt: string, now = () => new Date(), job?: string): Recorder {
+  const turn: Turn = { at: now().toISOString(), prompt: prompt.slice(0, 200), changes: [], commands: [], ...(job && { job }) }
   let writes = Promise.resolve()
   const save = () => {
     if (!turn.changes.length) return
@@ -85,7 +87,8 @@ export function makeRecorder(home: string, cwd: string, prompt: string, now = ()
 }
 
 export interface Undone {
-  turn: Turn
+  /** The turns undone, newest first. */
+  turns: Turn[]
   /** Put back as it was. */
   restored: string[]
   /** Created by the turn, so removed. */
@@ -111,14 +114,18 @@ export async function namer(cwd: string): Promise<(path: string) => string> {
   }
 }
 
-/** Undoes the latest kept turn (UND-4); nothing when there is none. Paths are relative to `cwd`. */
-export async function undo(home: string, cwd: string): Promise<Undone | undefined> {
+/**
+ * Undoes the latest kept turn (UND-4), or with `job` every kept turn of that
+ * job (UND-11); nothing when there is none. Paths are relative to `cwd`.
+ */
+export async function undo(home: string, cwd: string, job?: string): Promise<Undone | undefined> {
   const kept = await load(home, cwd)
-  const turn = kept.turns.pop()
-  if (!turn) return
-  const out: Undone = { turn, restored: [], removed: [], left: [], big: [] }
+  const turns = job ? kept.turns.filter((t) => t.job === job).reverse() : kept.turns.slice(-1)
+  if (!turns.length) return
+  kept.turns = kept.turns.filter((t) => !turns.includes(t))
+  const out: Undone = { turns, restored: [], removed: [], left: [], big: [] }
   const name = await namer(cwd)
-  for (const c of [...turn.changes].reverse()) {
+  for (const c of turns.flatMap((t) => [...t.changes].reverse())) {
     if ('big' in c) {
       out.big.push(name(c.path))
       continue
@@ -136,16 +143,40 @@ export async function undo(home: string, cwd: string): Promise<Undone | undefine
       out.restored.push(name(c.path))
     }
   }
-  // A file changed twice in the turn is put back twice: named once, as it ends up.
+  // A file changed twice is put back twice: named once, as it ends up.
   for (const k of ['restored', 'removed', 'left', 'big'] as const) out[k] = [...new Set(out[k])]
   out.restored = out.restored.filter((p) => !out.removed.includes(p))
+  out.left = out.left.filter((p) => !out.restored.includes(p) && !out.removed.includes(p))
   const back = [...out.restored, ...out.removed]
   if (back.length) {
-    const said = `(navi: the user undid your file changes from the turn that began "${turn.prompt}": ${back.join(', ')} ${back.length === 1 ? 'is' : 'are'} back as before. Read a file again before changing it.)`
+    const said = `(navi: the user undid your file changes from the turn that began "${turns.at(-1)!.prompt}"${turns.length > 1 ? ' and the ones after it' : ''}: ${back.join(', ')} ${back.length === 1 ? 'is' : 'are'} back as before. Read a file again before changing it.)`
     kept.note = kept.note ? `${kept.note}\n${said}` : said
   }
   await store(home, kept)
   return out
+}
+
+/** What an undo did, a line each (UND-5, UND-6): for the terminal, a job's log and the phone. */
+export function undoneLines(u: Pick<Undone, 'restored' | 'removed' | 'left' | 'big'> & { commands: string[] }): string[] {
+  return [
+    ...u.restored.map((p) => `put back ${p}`),
+    ...u.removed.map((p) => `removed ${p} (navi made it)`),
+    ...u.left.map((p) => `left ${p}: it changed since navi wrote it`),
+    ...u.big.map((p) => `left ${p}: too big to have been kept`),
+    ...u.commands.map((c) => `not undone, what this did: $ ${c}`),
+  ]
+}
+
+/** An undo as the jobs API answers it (UND-11): names, never the contents kept. */
+export const undoneReport = (u: Undone) => {
+  const report = { restored: u.restored, removed: u.removed, left: u.left, big: u.big, commands: u.turns.flatMap((t) => t.commands) }
+  return { ...report, lines: undoneLines(report) }
+}
+
+/** The files a job's kept turns changed (UND-10). */
+export async function jobChanges(home: string, cwd: string, job: string): Promise<string[]> {
+  const name = await namer(cwd)
+  return [...new Set((await load(home, cwd)).turns.filter((t) => t.job === job).flatMap((t) => t.changes.map((c) => name(c.path))))]
 }
 
 /** The kept turns, newest first (UND-8). */

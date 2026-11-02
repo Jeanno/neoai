@@ -33,7 +33,20 @@ Putting files back the way they were before navi's last turn changed them.
   another directory's, as jobs run there.
 - UND-9: Nothing to undo is said plainly and exits 1.
 
+## Jobs
+
+- UND-10: A job's turns are kept with the job's id, in the job's directory.
+  `GET /jobs/<id>` lists the files its kept turns changed as `changes`.
+- UND-11: `POST /jobs/<id>/undo` undoes every kept turn of that job, newest
+  first, as UND-4 to UND-6 would, and answers with what was put back,
+  removed and left, and the commands not undone. A job still running or
+  waiting is not undone (400); nor is one with nothing kept (400).
+- UND-12: What was undone is added to the job's log.
+- UND-13: The phone page shows a finished job's changed files with an
+  Undo changes button, asked to confirm, then says what happened.
+  `navi jobs <id> undo` does the same from the terminal.
+
 ## Open
 
-- Undo from Raycast and the phone page, for a job's changes.
+- Undo from Raycast.
 - Redo.

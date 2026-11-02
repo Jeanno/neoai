@@ -92,6 +92,8 @@ export interface HarnessOptions {
   config?: HarnessConfig
   /** The front end, for the ledger (HAR-10, LED-1): `cli`, `raycast`, `mcp`, `job`. */
   front?: string
+  /** The job these turns are for, kept with what they change (UND-10). */
+  job?: string
   /** The model given, as the ledger shows it (LED-1); its own id otherwise. */
   name?: { model: string; local: boolean }
   /**
@@ -242,7 +244,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       // UND-7: what the user undid since, said before what they ask now.
       const undone = await takeNote(home, o.cwd).catch(() => undefined)
       const sent: ModelMessage[] = [...packed.messages, { role: 'user', content: userContent(undone ? `${undone}\n\n${prompt}` : prompt, attachments) }]
-      const recorder = makeRecorder(home, o.cwd, prompt)
+      const recorder = makeRecorder(home, o.cwd, prompt, undefined, o.job)
 
       // A tool runs as soon as its call is parsed, which can be before the
       // call's own event is out; what is said about it waits for that event,

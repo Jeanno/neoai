@@ -191,7 +191,7 @@ test('a turn is recorded for undo, and an undo is told to the next turn', async 
   await collect(s.turn('change it'))
   const got = await undo(cwd, cwd)
   assert.deepEqual(got?.restored, ['a.txt'])
-  assert.deepEqual(got?.turn.commands, ['echo hi'])
+  assert.deepEqual(got?.turns[0].commands, ['echo hi'])
   assert.equal(await readFile(join(cwd, 'a.txt'), 'utf8'), 'hello\n')
   await collect(s.turn('now what'))
   const last = model.doStreamCalls[2].prompt.at(-1)

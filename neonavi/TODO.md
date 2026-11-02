@@ -75,8 +75,9 @@ add the requirement there first.
 - [x] Undo: `navi undo` and `/undo` put back the files navi's last turn
       changed, never over edits made since, and the model is told.
       (UND-1 to UND-9)
-- [ ] Undo a job's changes from the phone page and Raycast; redo.
-      (`spec/undo.md` Open)
+- [x] Undo a job's changes from the phone page (Undo changes) or
+      `navi jobs <id> undo`, leaving other jobs' alone. (UND-10 to UND-13)
+- [ ] Undo from Raycast; redo. (`spec/undo.md` Open)
 - [x] navi's own browser: a separate Chromium with its own logins, read as
       text with refs (never screenshots), each action answering with what
       changed; reading is free, acting is judged and asked. (BRW-1 to BRW-15)

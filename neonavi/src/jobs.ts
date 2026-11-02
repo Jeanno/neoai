@@ -64,7 +64,7 @@ export type Listed = Omit<Job, 'history' | 'log'>
 export interface JobDeps {
   home: string
   /** A session to run a job's turn in; throws when no model answers. */
-  start: (o: { directory: string; history: ModelMessage[]; approve: NonNullable<HarnessOptions['approve']> }) => Promise<{ session: Session; model: string }>
+  start: (o: { job: string; directory: string; history: ModelMessage[]; approve: NonNullable<HarnessOptions['approve']> }) => Promise<{ session: Session; model: string }>
   /** A notification (JOB-5), for the desktop and a phone (PSH-1); `urgent` when it waits on you. */
   notify: (title: string, text: string, job: string, urgent?: boolean) => void
 }
@@ -78,6 +78,8 @@ export interface Jobs {
   /** False when the job is running or waiting (JOB-3). */
   reply(id: string, prompt: string): boolean
   stop(id: string): boolean
+  /** Adds lines to a job's log (UND-12); false when there is no such job. */
+  note(id: string, lines: string[]): Promise<boolean>
   /** Settles once no job is running: for tests and shutdown. */
   idle(): Promise<void>
 }
@@ -181,7 +183,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         o.signal.addEventListener('abort', no, { once: true })
       })
     try {
-      const { session, model } = await d.start({ directory: job.directory, history: job.history, approve })
+      const { session, model } = await d.start({ job: job.id, directory: job.directory, history: job.history, approve })
       job.model = model
       const errors: string[] = []
       for await (const e of session.turn(prompt, { signal: stop.signal })) {
@@ -264,6 +266,13 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
       const stop = stops.get(id)
       if (!stop) return false
       stop.abort()
+      return true
+    },
+    async note(id, lines) {
+      const job = jobs.get(id)
+      if (!job) return false
+      job.log.push(...lines)
+      await save(job)
       return true
     },
     async idle() {

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +9,7 @@ import { findBrowser } from '../src/browser.ts'
 import { makeJobs } from '../src/jobs.ts'
 import { makeSchedules } from '../src/schedules.ts'
 import { listen, type ServeDeps } from '../src/serve.ts'
+import { makeRecorder } from '../src/undo.ts'
 
 // A real Chromium, headless; CI installs it. Elsewhere, without one, these are skipped.
 const executable = await findBrowser()
@@ -84,4 +85,31 @@ test('SCH-13: the page holds still while a choice is open', { skip }, async (t) 
   await when.evaluate((e) => e.setAttribute('data-mark', '1'))
   await page.waitForTimeout(3500)
   assert.equal(await page.locator('[data-mark]').count(), 1)
+})
+
+test('UND-13: a finished job shows what it changed, and Undo changes puts it back', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const jobs = await makeJobs({ home, start: async () => Promise.reject(new Error('no model here')), notify: () => {} })
+  const job = jobs.create('tidy the notes', home)
+  await jobs.idle()
+  await writeFile(join(home, 'notes.txt'), 'tidied')
+  const r = makeRecorder(home, home, 'tidy the notes', undefined, job.id)
+  r.wrote(join(home, 'notes.txt'), 'messy', 'tidied')
+  await r.saved()
+  const token = 'f'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  page.on('dialog', (d) => void d.accept())
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByText('tidy the notes').click()
+  await page.getByText('Changed notes.txt').waitFor()
+  await page.getByRole('button', { name: 'Undo changes' }).click()
+  await page.getByText('put back notes.txt').waitFor()
+  assert.equal(await readFile(join(home, 'notes.txt'), 'utf8'), 'messy')
+  await page.getByRole('button', { name: 'Undo changes' }).waitFor({ state: 'detached' })
 })

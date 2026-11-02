@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readdir, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +8,7 @@ import type { ModelMessage } from 'ai'
 import type { HarnessEvent, HarnessOptions, Session } from '../src/harness.ts'
 import { jobsDir, makeJobs, serveToken, tailnetAddresses, type JobDeps, type Jobs } from '../src/jobs.ts'
 import { listen, type ServeDeps } from '../src/serve.ts'
+import { makeRecorder } from '../src/undo.ts'
 
 type Approve = NonNullable<HarnessOptions['approve']>
 
@@ -218,7 +219,7 @@ const noModels: ServeDeps = { route: async () => null, why: async () => 'none', 
 async function serving() {
   const { jobs, home } = await setup()
   const token = 'a'.repeat(64)
-  const servers = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home] }, tailnet: ['::1'] })
+  const servers = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home }, tailnet: ['::1'] })
   const port = (servers[0].address() as AddressInfo).port
   const remotePort = (servers[1].address() as AddressInfo).port
   const call = (path: string, o: { body?: unknown; token?: string; origin?: string; remote?: boolean } = {}) =>
@@ -285,4 +286,55 @@ test('the phone page script parses', async () => {
   const { PHONE_PAGE } = await import('../src/phone.ts')
   const script = /<script>([\s\S]*)<\/script>/.exec(PHONE_PAGE)![1]
   assert.doesNotThrow(() => new Function(script))
+})
+
+// UND-10, UND-11, UND-12
+test("a finished job's changes are listed and undone through the API, never while it runs", async () => {
+  const { jobs, home } = await setup()
+  const dir = await mkdtemp(join(tmpdir(), 'navi-jobs-dir-'))
+  const token = 'e'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [dir], home } })
+  const call = (path: string, body?: unknown) =>
+    fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  try {
+    const running = jobs.create('hang', dir)
+    assert.equal((await call(`/jobs/${running.id}/undo`, {})).status, 400)
+    jobs.stop(running.id)
+
+    const job = jobs.create('tidy', dir)
+    await jobs.idle()
+    // What the job's turn wrote, as the harness records it, and another job's.
+    await writeFile(join(dir, 'a.txt'), 'navi wrote this')
+    const r = makeRecorder(home, dir, 'tidy', undefined, job.id)
+    r.wrote(join(dir, 'a.txt'), 'mine', 'navi wrote this')
+    r.ran('make clean')
+    await r.saved()
+    const other = makeRecorder(home, dir, 'other', () => new Date(Date.now() + 1000), 'someone-else')
+    await writeFile(join(dir, 'b.txt'), 'other')
+    other.wrote(join(dir, 'b.txt'), null, 'other')
+    await other.saved()
+
+    assert.deepEqual((await (await call(`/jobs/${job.id}`)).json()).changes, ['a.txt'])
+    const undone = await call(`/jobs/${job.id}/undo`, {})
+    assert.equal(undone.status, 200)
+    const body = await undone.json()
+    assert.deepEqual(body, {
+      restored: ['a.txt'], removed: [], left: [], big: [], commands: ['make clean'],
+      lines: ['put back a.txt', 'not undone, what this did: $ make clean'],
+    })
+    assert.equal(await readFile(join(dir, 'a.txt'), 'utf8'), 'mine')
+    // The other job's file is untouched.
+    assert.equal(await readFile(join(dir, 'b.txt'), 'utf8'), 'other')
+    const after = await (await call(`/jobs/${job.id}`)).json()
+    assert.deepEqual(after.changes, [])
+    assert.deepEqual(after.log.slice(-3), ['↶ undone:', '  put back a.txt', '  not undone, what this did: $ make clean'])
+    assert.equal((await call(`/jobs/${job.id}/undo`, {})).status, 400)
+  } finally {
+    server.close()
+    await jobs.idle()
+  }
 })

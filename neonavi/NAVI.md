@@ -86,7 +86,10 @@ directory changed and removes the ones it made; run it again to go a turn
 further back, up to ten. A file you have edited since is left alone and
 named, and what shell commands did is not undone (it lists them). The model
 is told on its next turn. `navi undo --list` shows what can be undone, and
-`-C <directory>` reaches a job's directory (`spec/undo.md`).
+`-C <directory>` reaches another directory. A job's changes are undone on
+their own: its page on the phone lists the files it changed with an Undo
+changes button, and `navi jobs <id> undo` does the same from the terminal
+(`spec/undo.md`).
 
 navi remembers a few things about you between conversations. Tell it
 something lasting ("remember I want temperatures in Celsius") and it offers

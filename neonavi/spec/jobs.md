@@ -37,7 +37,8 @@ terminal that started them closes.
   first, without its conversation or log), `POST /jobs` with `{ prompt,
   directory? }` (the new job, 201), `GET /jobs/<id>` (one job with its log
   and pending approval), `POST /jobs/<id>/answer` with `{ yes }`, `POST
-  /jobs/<id>/reply` with `{ prompt }` (JOB-3), `POST /jobs/<id>/stop`, and
+  /jobs/<id>/reply` with `{ prompt }` (JOB-3), `POST /jobs/<id>/stop`,
+  `POST /jobs/<id>/undo` (UND-11), and
   `GET /jobs/directories` (the directories with saved conversations, SES-13,
   to offer as places to work). A missing job is a 404; anything else wrong
   with a request is a 400 saying what.

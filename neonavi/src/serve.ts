@@ -14,6 +14,8 @@ import { isAbsolute } from 'node:path'
 import type { Jobs } from './jobs.ts'
 import { checkWhen, type Schedules } from './schedules.ts'
 import { PHONE_PAGE } from './phone.ts'
+import { jobChanges, undo, undoneReport } from './undo.ts'
+import { homedir } from 'node:os'
 
 /** What the server needs from the world; the real ones by default, fakes in tests. */
 export interface ServeDeps {
@@ -75,6 +77,8 @@ export interface JobsOptions {
   directories: () => Promise<string[]>
   /** Jobs started by themselves (schedules.md). */
   schedules?: Schedules
+  /** Where undo keeps jobs' changes (UND-10); the user's home when left out. */
+  home?: string
 }
 
 /** Whether a request carries the token, compared in constant time (JOB-8). */
@@ -153,7 +157,17 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
   }
   const job = parts[0] ? jobs.get(parts[0]) : undefined
   if (!job) return error(res, 404, `There is no job ${parts[0] ?? ''}.`)
-  if (req.method === 'GET' && parts.length === 1) return json(res, 200, job)
+  const home = o.home ?? homedir()
+  if (req.method === 'GET' && parts.length === 1) return json(res, 200, { ...job, changes: await jobChanges(home, job.directory, job.id) })
+  if (req.method === 'POST' && parts.length === 2 && parts[1] === 'undo') {
+    // UND-11: not while it may still be writing.
+    if (job.status === 'running' || job.status === 'waiting') return error(res, 400, 'The job is still working; stop it or wait for it first.')
+    const got = await undo(home, job.directory, job.id)
+    if (!got) return error(res, 400, 'Nothing of this job is left to undo.')
+    const report = undoneReport(got)
+    await jobs.note(job.id, ['↶ undone:', ...report.lines.map((l) => `  ${l}`)])
+    return json(res, 200, report)
+  }
   if (req.method === 'POST' && parts.length === 2) {
     const body = await jsonBody(req)
     if (typeof body === 'string') return error(res, 400, body)
@@ -167,7 +181,7 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
     }
     if (parts[1] === 'stop') return jobs.stop(job.id) ? json(res, 200, jobs.get(job.id)) : error(res, 400, 'The job is not running.')
   }
-  error(res, 404, `Jobs answer GET /jobs, POST /jobs, GET /jobs/<id> and POST /jobs/<id>/answer, reply or stop, not ${req.method} ${path}.`)
+  error(res, 404, `Jobs answer GET /jobs, POST /jobs, GET /jobs/<id> and POST /jobs/<id>/answer, reply, stop or undo, not ${req.method} ${path}.`)
 }
 
 /**

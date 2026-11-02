@@ -176,6 +176,12 @@ export const PHONE_PAGE = `<!doctype html>
         job.answer && el('div', { class: 'card answer' }, job.answer),
         job.error && el('p', { class: 'err' }, job.error),
         job.log.length > 0 && el('div', { class: 'card' }, el('div', { class: 'meta' }, 'What it did'), el('pre', {}, job.log.join('\\n'))),
+        // UND-13: what it changed can be put back once it is done; what happened goes in the log above.
+        !live && job.changes && job.changes.length > 0 && el('div', { class: 'card' },
+          el('div', { class: 'meta' }, 'Changed ' + job.changes.join(', ')),
+          el('div', { class: 'row' }, el('button', { class: 'no', disabled: busy, onclick: () => {
+            if (confirm('Put back the files this job changed? Files edited since are left alone.')) act(() => api('/jobs/' + job.id + '/undo', {}))
+          } }, 'Undo changes'))),
         live
           ? el('div', { class: 'row' }, el('button', { class: 'no', disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/stop', {})) }, 'Stop'))
           : el('div', { class: 'card' },

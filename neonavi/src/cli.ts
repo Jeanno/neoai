@@ -20,7 +20,7 @@ import { readLedger, stats } from './ledger.ts'
 import { makeJobs, serveToken, tailnetAddresses, titleOf, type JobDeps } from './jobs.ts'
 import { push, pushConfig } from './push.ts'
 import { addFact, forgetFact, memoryFile, readMemory } from './memory.ts'
-import { listUndo, namer, undo } from './undo.ts'
+import { listUndo, namer, undo, undoneReport } from './undo.ts'
 import { makeSchedules, nextText, parseDays, parseEvery, whenText } from './schedules.ts'
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -102,7 +102,7 @@ const USAGE = [
   '       navi browser [--install]',
   '       navi stats [--days N]',
   '       navi job "<what you want done>" [-C <directory>]',
-  '       navi jobs [<id> [y | n | stop] | link]',
+  '       navi jobs [<id> [y | n | stop | undo] | link]',
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
   '       navi schedules [<id> run | rm]',
   '       navi push test',
@@ -127,7 +127,7 @@ const ABOUT = [
   "navi browser         open navi's browser to sign in to sites; --install gets Chromium for it",
   'navi stats           how each model has done, from the ledger; --days N (default 30)',
   'navi job "…"         hand navi serve a job to do in the background; -C sets where',
-  'navi jobs            list jobs; <id> shows one, then y, n or stop; link is for a phone',
+  'navi jobs            list jobs; <id> shows one, then y, n, stop or undo; link is for a phone',
   'navi schedule "…"    have navi serve start a job at a time of day or every so often;',
   '                     --only-changes makes it a watch that only speaks when something changed',
   'navi schedules       list schedules and their next run; <id> run starts one now, rm deletes it',
@@ -251,7 +251,7 @@ async function serve(argv: string[]) {
 }
 
 /** A job's session (JOB-1): the chain, escalation, the browser and the ledger, as the CLI's. */
-async function startJob({ directory, history, approve }: Parameters<JobDeps['start']>[0]) {
+async function startJob({ job, directory, history, approve }: Parameters<JobDeps['start']>[0]) {
   const config = await readConfig()
   const { chosen, failures } = await walkChain(parseModelSpec(config.model, Object.keys(config.custom ?? {})))
   if (!chosen) throw new Error(`navi has no model to answer with: ${failedLines(failures).join('; ')}`)
@@ -261,6 +261,7 @@ async function startJob({ directory, history, approve }: Parameters<JobDeps['sta
     cwd: directory,
     config,
     front: 'job',
+    job,
     name: { model: modelLabel(chosen), local: chosen.local },
     escalate: escalationFor(config),
     browser: () => makeTab({ home: homedir() }),
@@ -323,6 +324,7 @@ function showJob(job: any) {
   }
   if (job.answer) console.log(`\n${job.answer}`)
   if (job.error) console.error(`error: ${job.error}`)
+  if (job.changes?.length) console.log(dim(`\nchanged ${job.changes.join(', ')}; \`navi jobs ${job.id} undo\` puts them back`))
 }
 
 /** `navi job "<prompt>" [-C <directory>] [--port N]` (JOB-13). */
@@ -347,8 +349,8 @@ async function jobsCommand(argv: string[]) {
   const port = takeFlag(argv, '--port', true)
   const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
   const [id, what, ...extra] = port.rest
-  if (extra.length || !Number.isInteger(n) || (what !== undefined && !['y', 'n', 'stop'].includes(what))) {
-    console.error('usage: navi jobs [<id> [y | n | stop] | link] [--port N]')
+  if (extra.length || !Number.isInteger(n) || (what !== undefined && !['y', 'n', 'stop', 'undo'].includes(what))) {
+    console.error('usage: navi jobs [<id> [y | n | stop | undo] | link] [--port N]')
     return 1
   }
   if (id === 'link') {
@@ -365,6 +367,14 @@ async function jobsCommand(argv: string[]) {
     const list = got.data.jobs ?? []
     if (!list.length) console.log('No jobs yet. Start one with `navi job "<what you want done>"`.')
     for (const j of list) console.log(`${bold(j.id)}  ${statusWord(j.status, j.unchanged).padEnd(10)}  ${ago(new Date(j.created)).padEnd(10)}  ${titleOf(j.prompt)}`)
+    return 0
+  }
+  if (what === 'undo') {
+    // UND-13
+    const got = await jobsApi(n, `/jobs/${id}/undo`, {})
+    if (!got) return console.error(NOT_SERVING), 1
+    if (got.status !== 200) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
+    for (const l of got.data.lines as string[]) console.log(l.startsWith('not undone') ? dim(l) : l)
     return 0
   }
   const path = what === undefined ? `/jobs/${id}` : what === 'stop' ? `/jobs/${id}/stop` : `/jobs/${id}/answer`
@@ -486,15 +496,9 @@ async function undoHere(cwd: string): Promise<boolean> {
     console.error('Nothing to undo here: navi has not changed any files in this directory.')
     return false
   }
-  console.error(dim(`undoing the turn that began "${got.turn.prompt}" (${ago(new Date(got.turn.at))})`))
-  for (const p of got.restored) console.error(`  put back ${p}`)
-  for (const p of got.removed) console.error(`  removed ${p} (navi made it)`)
-  for (const p of got.left) console.error(`  left ${p}: it changed since navi wrote it`)
-  for (const p of got.big) console.error(`  left ${p}: too big to have been kept`)
-  if (got.turn.commands.length) {
-    console.error(dim('What its shell commands did is not undone:'))
-    for (const c of got.turn.commands) console.error(dim(`  $ ${c}`))
-  }
+  const [turn] = got.turns
+  console.error(dim(`undoing the turn that began "${turn.prompt}" (${ago(new Date(turn.at))})`))
+  for (const l of undoneReport(got).lines) console.error(l.startsWith('not undone') ? dim(`  ${l}`) : `  ${l}`)
   return true
 }
 

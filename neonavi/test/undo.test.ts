@@ -47,7 +47,7 @@ test('undoing twice goes back two turns', async () => {
     await write(r, at('a.txt'), v)
     await r.saved()
   }
-  assert.equal((await undo(home, cwd))?.turn.prompt, 'make it v3')
+  assert.equal((await undo(home, cwd))?.turns[0].prompt, 'make it v3')
   assert.equal(await readFile(at('a.txt'), 'utf8'), 'v2')
   await undo(home, cwd)
   assert.equal(await readFile(at('a.txt'), 'utf8'), 'v1')
