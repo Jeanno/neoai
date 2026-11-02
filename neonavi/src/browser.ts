@@ -52,7 +52,7 @@ export interface BrowserOptions {
   executable?: string
   /** For tests: no window. */
   headless?: boolean
-  /** For tests: how long attaching may take before the browser is taken for stuck (BRW-16). */
+  /** For tests: how long attaching to a running browser may take before it is taken for stuck (BRW-16); one just started gets the usual time. */
   attachMs?: number
   /** For tests: how long a page may take to load (BRW-6). */
   loadMs?: number
@@ -231,14 +231,14 @@ export async function connect(o: BrowserOptions): Promise<Browser> {
   }
   const made = (async () => {
     const chromium = await playwright()
-    const attach = (port: number) => chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: o.attachMs ?? ATTACH_MS })
+    const attach = (port: number, ms = ATTACH_MS) => chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: ms })
     return locked(profile, async () => {
       // Read under the lock: another navi may have just started it.
       const port = await debugPort(profile)
       // A browser that answers is the one to use, unless it will not be attached to (BRW-16).
       if (port && (await answers(port))) {
         try {
-          return await attach(port)
+          return await attach(port, o.attachMs)
         } catch {
           await closeStuck(port, profile)
         }
