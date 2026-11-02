@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AddressInfo } from 'node:net'
 import { listen, type ServeDeps } from '../src/serve.ts'
-import type { Entry } from '../src/spec.ts'
+import type { Entry, LinkOptions } from '../src/spec.ts'
 
 const CHAIN: Entry[] = [
   { where: 'remote', provider: 'box', id: 'big' },
@@ -12,17 +12,27 @@ const CHAIN: Entry[] = [
 type Backend = (body: any, signal?: AbortSignal) => Response | Promise<Response>
 
 /** A server over fake links: `links[i]` answers for chain[i], or is null when it resolves to nothing. */
-async function serving(links: (Backend | null)[]) {
+async function serving(links: (Backend | null)[], options?: (LinkOptions | Error)[]) {
   const sent: { url: string; body: any; headers: any }[] = []
+  const thinks: (boolean | undefined)[] = []
   const logs: string[] = []
   let forgot = 0
   const deps: ServeDeps = {
-    route: async (entry) => {
+    route: async (entry, think) => {
       const i = CHAIN.indexOf(entry)
+      thinks.push(think)
+      // A link asked to think gets no hint not to, as neorouter's route does.
       return links[i]
-        ? { url: `http://link${i}/chat/completions`, headers: { authorization: `Bearer key${i}` }, model: `model${i}`, backend: `b${i}`, local: i === 1, extra: i === 1 ? { reasoning_effort: 'none' } : {} }
+        ? { url: `http://link${i}/chat/completions`, headers: { authorization: `Bearer key${i}` }, model: `model${i}`, backend: `b${i}`, local: i === 1, extra: i === 1 && think !== true ? { reasoning_effort: 'none' } : {} }
         : null
     },
+    ...(options && {
+      options: async (entry: Entry) => {
+        const o = options[CHAIN.indexOf(entry)]
+        if (o instanceof Error) throw o
+        return o ?? {}
+      },
+    }),
     why: async (entry) => `link ${CHAIN.indexOf(entry)} is not there`,
     fetch: (async (url: string, init: any) => {
       const body = JSON.parse(init.body)
@@ -34,7 +44,7 @@ async function serving(links: (Backend | null)[]) {
   }
   const [server] = await listen(CHAIN, deps, 0)
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-  return { base, sent, logs, forgot: () => forgot, close: () => server.close() }
+  return { base, sent, logs, thinks, forgot: () => forgot, close: () => server.close() }
 }
 
 const ok = (body: any) => Response.json({ choices: [{ message: { role: 'assistant', content: `hi from ${body.model}` } }] })
@@ -245,5 +255,26 @@ test('an app that leaves while a link fails stops the walk down the chain', asyn
   release!()
   await new Promise((r) => setTimeout(r, 30))
   assert.deepEqual(s.sent.map((x) => x.url), ['http://link0/chat/completions'])
+  s.close()
+})
+
+// SRV-9, MOD-24
+test("a link's options fill in what the app left out, and what it asked for wins", async () => {
+  const s = await serving([() => new Response('busy', { status: 503 }), ok], [{ maxTokens: 500, temperature: 0.3 }, { maxTokens: 900, think: true }])
+  await post(s.base, { model: 'x', messages: [] })
+  assert.deepEqual(s.sent[0].body, { max_tokens: 500, temperature: 0.3, model: 'model0', messages: [] })
+  // Thinking asked for: no hint not to.
+  assert.deepEqual(s.sent[1].body, { max_tokens: 900, model: 'model1', messages: [] })
+  assert.deepEqual(s.thinks, [undefined, true])
+  await post(s.base, { model: 'x', messages: [], max_completion_tokens: 50, temperature: 1 })
+  assert.deepEqual(s.sent[2].body, { model: 'model0', messages: [], max_completion_tokens: 50, temperature: 1 })
+  s.close()
+})
+
+test('options that cannot be read leave the request as the app sent it', async () => {
+  const s = await serving([ok], [new Error('config unreadable')])
+  const r = await post(s.base, { model: 'x', messages: [] })
+  assert.equal(r.status, 200)
+  assert.deepEqual(s.sent[0].body, { model: 'model0', messages: [] })
   s.close()
 })

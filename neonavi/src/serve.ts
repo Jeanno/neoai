@@ -7,7 +7,7 @@ import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import type { ReadableStream as WebStream } from 'node:stream/web'
 import { diagnose, PROVIDERS, readConfig, reset, route, type Route } from 'neorouter'
-import { optionsFor, type Entry } from './spec.ts'
+import { linkOptions, optionsFor, type Entry, type LinkOptions } from './spec.ts'
 import { timingSafeEqual } from 'node:crypto'
 import { stat as statPath } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
@@ -23,7 +23,10 @@ import { homedir } from 'node:os'
 
 /** What the server needs from the world; the real ones by default, fakes in tests. */
 export interface ServeDeps {
-  route: (entry: Entry) => Promise<Route | null>
+  /** `think` from the link's options (SRV-12) overrides navi's ask not to (MOD-11). */
+  route: (entry: Entry, think?: boolean) => Promise<Route | null>
+  /** The link's options in `"modelOptions"`, read afresh each request (SRV-12); none when left out. */
+  options?: (entry: Entry) => Promise<LinkOptions>
   /** Why a link resolved to nothing (MOD-21). */
   why: (entry: Entry) => Promise<string>
   fetch: typeof fetch
@@ -38,7 +41,11 @@ const MAX_BODY = 50 * 1024 * 1024
 
 export function realServeDeps(log: (line: string) => void): ServeDeps {
   return {
-    route: (entry) => route(optionsFor(entry)),
+    route: (entry, think) => route({ ...optionsFor(entry), ...(think !== undefined && { think }) }),
+    options: async (entry) => {
+      const config = await readConfig()
+      return linkOptions(entry, config.modelOptions, Object.keys((config.custom as object | undefined) ?? {}))
+    },
     why: async (entry) => (await diagnose(optionsFor(entry))) ?? 'it did not answer',
     fetch,
     forget: reset,
@@ -289,8 +296,16 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
  */
 export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptions; remote?: boolean } = {}) {
   /** Posts to one link; a 400 over the reasoning hint navi added is asked once more without it, as navi does. */
-  async function send(r: Route, body: Record<string, unknown>, signal: AbortSignal): Promise<Response> {
-    const sent: Record<string, unknown> = { ...r.extra, ...body, model: r.model }
+  async function send(r: Route, body: Record<string, unknown>, signal: AbortSignal, o: LinkOptions = {}): Promise<Response> {
+    // SRV-12: the link's cap and temperature where the app asked for none; what it asked for wins.
+    const capped = 'max_tokens' in body || 'max_completion_tokens' in body
+    const sent: Record<string, unknown> = {
+      ...r.extra,
+      ...(o.maxTokens !== undefined && !capped && { max_tokens: o.maxTokens }),
+      ...(o.temperature !== undefined && { temperature: o.temperature }),
+      ...body,
+      model: r.model,
+    }
     const answer = await d.fetch(r.url, { method: 'POST', headers: r.headers, body: JSON.stringify(sent), signal })
     if (answer.status !== 400 || !r.extra.reasoning_effort || 'reasoning_effort' in body) return answer
     const text = await answer.text()
@@ -320,7 +335,8 @@ export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptio
       // No one is waiting: the next link is not started, let alone asked.
       if (stop.signal.aborted) return
       const name = linkName(entry, index)
-      const r = await d.route(entry)
+      const o: LinkOptions = (await d.options?.(entry).catch(() => ({}))) ?? {}
+      const r = await d.route(entry, o.think)
       if (!r) {
         failed.push(`${name}: ${await d.why(entry)}`)
         continue
@@ -328,7 +344,7 @@ export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptio
       note(`${r.backend} · ${r.model}`)
       let answer: Response
       try {
-        answer = await send(r, body, stop.signal)
+        answer = await send(r, body, stop.signal, o)
       } catch {
         if (stop.signal.aborted) return
         failed.push(`${name}: could not be reached`)

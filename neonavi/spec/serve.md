@@ -39,3 +39,8 @@ falls back the same way.
   `navi setup`; when launchd will not start it, the reason is printed and
   nothing is left installed. `navi serve --uninstall` stops and removes
   it, and says when there was nothing to remove.
+- SRV-9: Each link's options (MOD-24), read from the config on every request,
+  fill in what the app left out: `maxTokens` as `max_tokens` when the request
+  has neither `max_tokens` nor `max_completion_tokens`, and `temperature`
+  when it has none. `think: true` leaves out the hint not to think (MOD-11).
+  Options that cannot be read leave the request as the app sent it.

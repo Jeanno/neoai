@@ -61,6 +61,7 @@ add the requirement there first.
 
 - [x] `navi serve`: an OpenAI-compatible local endpoint serving navi's model
       chain, with fallback, and `--install` to keep it running. (SRV-1 to SRV-8)
+- [x] Link options (cap, temperature, think) for apps using `navi serve`. (SRV-9)
 - [x] `navi mcp`: an MCP server whose `ask_navi` tool runs a navi turn.
       (MCP-1 to MCP-5)
 - [x] Jobs in navi serve: started, followed and approved from the terminal

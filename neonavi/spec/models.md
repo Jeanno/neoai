@@ -118,5 +118,4 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
 
 ## Open
 
-- Options for navi serve's OpenAI-compatible endpoint, which passes on what
-  the app asks for.
+- Options an app may not override, such as a hard cap on tokens.
