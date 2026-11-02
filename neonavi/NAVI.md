@@ -80,6 +80,14 @@ sent, so a push says only what happened and the job's id; add
 prompt and the command. The token never leaves this computer
 (`spec/push.md`).
 
+Changed your mind about what navi did to your files? `navi undo` (or
+`/undo` at the `navi>` prompt) puts back every file its last turn in this
+directory changed and removes the ones it made; run it again to go a turn
+further back, up to ten. A file you have edited since is left alone and
+named, and what shell commands did is not undone (it lists them). The model
+is told on its next turn. `navi undo --list` shows what can be undone, and
+`-C <directory>` reaches a job's directory (`spec/undo.md`).
+
 navi remembers a few things about you between conversations. Tell it
 something lasting ("remember I want temperatures in Celsius") and it offers
 to keep it, asking `remember? …` first, always, whatever the judge would say,

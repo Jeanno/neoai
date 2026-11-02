@@ -1,0 +1,164 @@
+import { createHash } from 'node:crypto'
+import { chmod, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
+import { isAbsolute, join, relative } from 'node:path'
+
+/** Putting back the files navi's last turn changed (undo.md). */
+
+export const KEPT_TURNS = 10
+export const MAX_KEPT = 1_000_000
+
+/** A file as navi changed it: what it held (null: it did not exist) and what navi wrote; neither when too big (UND-3). */
+export type Change = { path: string; before: string | null; after: string } | { path: string; big: true }
+
+export interface Turn {
+  at: string
+  prompt: string
+  changes: Change[]
+  /** Shell commands the turn ran (UND-6). */
+  commands: string[]
+}
+
+interface Kept {
+  cwd: string
+  turns: Turn[]
+  /** What the next turn is told was undone (UND-7). */
+  note?: string
+}
+
+/** Keyed as a session is (SES-1). */
+export const undoFile = (home: string, cwd: string) =>
+  join(home, '.neoai', 'undo', `${createHash('sha256').update(cwd).digest('hex').slice(0, 16)}.json`)
+
+async function load(home: string, cwd: string): Promise<Kept> {
+  try {
+    const got = JSON.parse(await readFile(undoFile(home, cwd), 'utf8'))
+    if (Array.isArray(got?.turns)) return { cwd, turns: got.turns, ...(typeof got.note === 'string' && { note: got.note }) }
+  } catch {
+    // None yet, or cut short: nothing to undo.
+  }
+  return { cwd, turns: [] }
+}
+
+async function store(home: string, kept: Kept) {
+  const file = undoFile(home, kept.cwd)
+  await mkdir(join(home, '.neoai', 'undo'), { recursive: true, mode: 0o700 })
+  await writeFile(`${file}.tmp`, JSON.stringify(kept), { mode: 0o600 })
+  await rename(`${file}.tmp`, file)
+  await chmod(file, 0o600)
+}
+
+export interface Recorder {
+  wrote(path: string, before: string | null, after: string): void
+  ran(command: string): void
+  /** Resolves once everything recorded is on disk. */
+  saved(): Promise<void>
+}
+
+/** Records one turn's changes as they are made (UND-1, UND-2); a turn that changes no file is not kept. */
+export function makeRecorder(home: string, cwd: string, prompt: string, now = () => new Date()): Recorder {
+  const turn: Turn = { at: now().toISOString(), prompt: prompt.slice(0, 200), changes: [], commands: [] }
+  let writes = Promise.resolve()
+  const save = () => {
+    if (!turn.changes.length) return
+    writes = writes.then(async () => {
+      try {
+        const kept = await load(home, cwd)
+        kept.turns = [...kept.turns.filter((t) => t.at !== turn.at), structuredClone(turn)].slice(-KEPT_TURNS)
+        await store(home, kept)
+      } catch {
+        // Unrecorded is not worth failing the turn over.
+      }
+    })
+  }
+  return {
+    wrote(path, before, after) {
+      const big = (before?.length ?? 0) > MAX_KEPT || after.length > MAX_KEPT
+      turn.changes.push(big ? { path, big: true } : { path, before, after })
+      save()
+    },
+    ran(command) {
+      turn.commands.push(command)
+      save()
+    },
+    saved: () => writes,
+  }
+}
+
+export interface Undone {
+  turn: Turn
+  /** Put back as it was. */
+  restored: string[]
+  /** Created by the turn, so removed. */
+  removed: string[]
+  /** Changed since; left as it is (UND-5). */
+  left: string[]
+  /** Too big to have been kept (UND-3). */
+  big: string[]
+}
+
+/**
+ * How to name a recorded path for the user: relative to the working directory,
+ * which may itself be reached through a link (`/var` is `/private/var`).
+ */
+export async function namer(cwd: string): Promise<(path: string) => string> {
+  const real = await realpath(cwd).catch(() => cwd)
+  return (path) => {
+    for (const base of [real, cwd]) {
+      const rel = relative(base, path)
+      if (rel && !rel.startsWith('..') && !isAbsolute(rel)) return rel
+    }
+    return path
+  }
+}
+
+/** Undoes the latest kept turn (UND-4); nothing when there is none. Paths are relative to `cwd`. */
+export async function undo(home: string, cwd: string): Promise<Undone | undefined> {
+  const kept = await load(home, cwd)
+  const turn = kept.turns.pop()
+  if (!turn) return
+  const out: Undone = { turn, restored: [], removed: [], left: [], big: [] }
+  const name = await namer(cwd)
+  for (const c of [...turn.changes].reverse()) {
+    if ('big' in c) {
+      out.big.push(name(c.path))
+      continue
+    }
+    const now = await readFile(c.path, 'utf8').catch(() => null)
+    if (now !== c.after) {
+      out.left.push(name(c.path))
+      continue
+    }
+    if (c.before === null) {
+      await rm(c.path)
+      out.removed.push(name(c.path))
+    } else {
+      await writeFile(c.path, c.before)
+      out.restored.push(name(c.path))
+    }
+  }
+  // A file changed twice in the turn is put back twice: named once, as it ends up.
+  for (const k of ['restored', 'removed', 'left', 'big'] as const) out[k] = [...new Set(out[k])]
+  out.restored = out.restored.filter((p) => !out.removed.includes(p))
+  const back = [...out.restored, ...out.removed]
+  if (back.length) {
+    const said = `(navi: the user undid your file changes from the turn that began "${turn.prompt}": ${back.join(', ')} ${back.length === 1 ? 'is' : 'are'} back as before. Read a file again before changing it.)`
+    kept.note = kept.note ? `${kept.note}\n${said}` : said
+  }
+  await store(home, kept)
+  return out
+}
+
+/** The kept turns, newest first (UND-8). */
+export async function listUndo(home: string, cwd: string): Promise<Turn[]> {
+  return (await load(home, cwd)).turns.reverse()
+}
+
+/** What the next turn is to be told was undone, once (UND-7). */
+export async function takeNote(home: string, cwd: string): Promise<string | undefined> {
+  const kept = await load(home, cwd)
+  if (!kept.note) return
+  const { note } = kept
+  delete kept.note
+  await store(home, kept).catch(() => {})
+  return note
+}

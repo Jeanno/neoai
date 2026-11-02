@@ -87,7 +87,7 @@ export function startsFresh(o: { prompt: string | null; resume: boolean }): bool
   return o.prompt === null && !o.resume
 }
 
-export type Command = { name: 'model'; spec: string } | { name: 'attach'; path: string } | { name: 'help' }
+export type Command = { name: 'model'; spec: string } | { name: 'attach'; path: string } | { name: 'help' } | { name: 'undo' }
 
 /**
  * A path as typed or dropped into a terminal (CLI-23): quoted, or with its
@@ -105,5 +105,6 @@ export function commandFrom(line: string): Command | null {
   // Alone, it is still the command, answered with its usage rather than sent to the model.
   if (line === '/attach' || line.startsWith('/attach ')) return { name: 'attach', path: unshell(line.slice('/attach'.length)) }
   if (line === '/help') return { name: 'help' }
+  if (line === '/undo') return { name: 'undo' }
   return null
 }

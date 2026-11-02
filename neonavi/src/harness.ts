@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { systemPrompt, today } from './args.ts'
 import { collectContext } from './context.ts'
 import { memorySection, readMemory } from './memory.ts'
+import { makeRecorder, takeNote } from './undo.ts'
 import { allowCommand, gated, type Answer } from './approve.ts'
 import { judge } from './judge.ts'
 import { makeTools } from './tools.ts'
@@ -238,7 +239,10 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         })
       const packed = await compact(o.model, history, { contextWindow: o.contextWindow, extraTokens: systemTokens })
       if (packed.compacted) emit({ type: 'compacted', messages: packed.compacted })
-      const sent: ModelMessage[] = [...packed.messages, { role: 'user', content: userContent(prompt, attachments) }]
+      // UND-7: what the user undid since, said before what they ask now.
+      const undone = await takeNote(home, o.cwd).catch(() => undefined)
+      const sent: ModelMessage[] = [...packed.messages, { role: 'user', content: userContent(undone ? `${undone}\n\n${prompt}` : prompt, attachments) }]
+      const recorder = makeRecorder(home, o.cwd, prompt)
 
       // A tool runs as soon as its call is parsed, which can be before the
       // call's own event is out; what is said about it waits for that event,
@@ -253,7 +257,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
 
       const approve = async (command: string, toolSignal?: AbortSignal, id?: string) => {
         await after(id)
-        return gated({
+        const ok = await gated({
           // The judge reads the command in the light of what was asked (TL-18).
           judge: (c) => judge(o.model, c, prompt),
           mode: config.approve,
@@ -270,6 +274,9 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           onAuto: (c, how) => emit({ type: 'auto-approved', command: c, ...(how === 'allowed' && { allowed: true }) }),
           ask: (c) => ask(c, toolSignal ?? signal),
         })(command)
+        // UND-6: run, so undo can say it is not undone.
+        if (ok) recorder.ran(command)
+        return ok
       }
       // A new file in the working directory is what the judge would call safe
       // (TL-21), so it needs no model call to decide; any other change asks (TL-38).
@@ -301,6 +308,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         {
           web, fetch, write, cwd: o.cwd, ripgrep: o.ripgrep, search: searchBackend(config.search), browser,
           ...(remembering && { memory: home }),
+          wrote: recorder.wrote,
         },
       )
 
@@ -463,6 +471,8 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         }
         await record(home, entry)
       }
+      // On disk before done, so an undo straight after finds it.
+      await recorder.saved()
       emit({ type: 'done', history, text, empty: !text.trim(), stopped })
     }
 

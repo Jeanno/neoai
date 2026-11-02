@@ -7,6 +7,7 @@ import { simulateReadableStream, type ModelMessage } from 'ai'
 import { createHarness, type HarnessEvent, type HarnessOptions, type Model } from '../src/harness.ts'
 import type { Tab } from '../src/browser.ts'
 import { today } from '../src/args.ts'
+import { undo } from '../src/undo.ts'
 
 type Part = Awaited<ReturnType<Model['doStream']>>['stream'] extends ReadableStream<infer P> ? P : never
 
@@ -175,6 +176,26 @@ test('a declined fact is not remembered', async () => {
   assert.match(String(result.output), /declined.*Do not ask again/)
   const home = h.system.match(/The working directory is (\S+)/)![1]
   await assert.rejects(readFile(join(home, '.neoai', 'memory.md'), 'utf8'))
+})
+
+// UND-1, UND-6, UND-7: the harness records what a turn wrote and ran, and the next turn hears of an undo.
+test('a turn is recorded for undo, and an undo is told to the next turn', async () => {
+  const model = fake([
+    [call('c1', 'edit_file', { path: 'a.txt', old_text: 'hello', new_text: 'bye' }), call('c2', 'run_shell', { command: 'echo hi' }), finish('tool-calls')],
+    [...text('t', 'done'), finish('stop')],
+    [...text('t2', 'ok'), finish('stop')],
+  ])
+  const h = await harness(model, { approve: async () => true })
+  const cwd = h.system.match(/The working directory is (\S+)/)![1]
+  const s = h.session()
+  await collect(s.turn('change it'))
+  const got = await undo(cwd, cwd)
+  assert.deepEqual(got?.restored, ['a.txt'])
+  assert.deepEqual(got?.turn.commands, ['echo hi'])
+  assert.equal(await readFile(join(cwd, 'a.txt'), 'utf8'), 'hello\n')
+  await collect(s.turn('now what'))
+  const last = model.doStreamCalls[2].prompt.at(-1)
+  assert.match(JSON.stringify(last?.content), /undid your file changes.*a\.txt is back as before.*now what/)
 })
 
 // MEM-4, PRM-14

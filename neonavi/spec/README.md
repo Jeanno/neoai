@@ -22,6 +22,7 @@ The spec is the source of truth for what `navi` does. Code and tests follow it.
 | `schedules.md` | Jobs navi serve starts by itself, at a time or every so often |
 | `push.md` | Job notifications sent to a phone through ntfy |
 | `memory.md` | Facts about you navi keeps between conversations, added only with your yes |
+| `undo.md` | Putting back the files navi changed in its last turn |
 | `mcp.md` | navi as an MCP server |
 
 ## Requirements

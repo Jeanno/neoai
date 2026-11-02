@@ -62,11 +62,13 @@ export interface ToolOptions {
   browser?: () => Tab
   /** The home whose memory the remember tool adds to; left out, there is no remember tool (MEM-4). */
   memory?: string
+  /** Told of each file written, by where it really is, for undo (UND-1). */
+  wrote?: (path: string, before: string | null, after: string) => void
 }
 
 export function makeTools(
   gate: Gate,
-  { web = true, fetch = true, cwd = process.cwd(), ripgrep, write = true, search: backend, browser, memory }: ToolOptions = {},
+  { web = true, fetch = true, cwd = process.cwd(), ripgrep, write = true, search: backend, browser, memory, wrote }: ToolOptions = {},
 ) {
   const search = makeSearch({ cwd, ripgrep })
   const at = (path: string) => resolve(cwd, path)
@@ -115,6 +117,7 @@ export function makeTools(
       if ((await landing(file)).real !== real) return `${path} now leads somewhere else; nothing was written.`
       await mkdir(dirname(file), { recursive: true })
       await writeFile(file, after, { flag: before === null ? 'wx' : 'w' })
+      wrote?.(real, before, after)
     } catch (e: any) {
       if (e.code === 'EEXIST') return `${path} appeared since it was read; nothing was written. Read it again.`
       return `could not write ${path}: ${e.message}`
