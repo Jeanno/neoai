@@ -39,12 +39,13 @@ test('SCH-12: the phone page makes a watch, lists it, runs it now and deletes it
   page.on('dialog', (d) => void d.accept())
   await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
 
-  await page.getByPlaceholder('What should navi do?').fill('check the status page')
+  await page.getByPlaceholder('Ask navi').fill('check the status page')
   await page.getByLabel('When').selectOption('weekdays')
-  await page.getByLabel('Time').fill('07:45')
+  await page.getByLabel('Time', { exact: true }).fill('07:45')
   await page.getByLabel('Only tell me when something changes').check()
-  await page.getByRole('button', { name: 'Schedule' }).click()
+  await page.getByRole('button', { name: 'Schedule', exact: true }).click()
 
+  // Made, it shows with the other schedules.
   await page.getByText('At 07:45 on weekdays · watch').waitFor()
   const [made] = schedules.list()
   assert.deepEqual({ at: made.at, days: made.days, quiet: made.quiet, prompt: made.prompt }, {
@@ -53,18 +54,19 @@ test('SCH-12: the phone page makes a watch, lists it, runs it now and deletes it
     quiet: true,
     prompt: 'check the status page',
   })
-  // The box is back to a job now.
-  assert.equal(await page.getByLabel('When').inputValue(), 'now')
 
-  // Run now opens the job it started.
+  // Run now opens the job it started, and Back goes back to the schedules.
   await page.getByRole('button', { name: 'Run now' }).click()
-  await page.getByRole('button', { name: '‹ Jobs' }).waitFor()
+  await page.locator('.thread').waitFor()
   assert.equal(jobs.list()[0].schedule, made.id)
-  await page.getByRole('button', { name: '‹ Jobs' }).click()
+  await page.getByRole('button', { name: 'Back' }).click()
 
-  await page.getByRole('button', { name: 'Delete' }).click()
+  await page.getByRole('button', { name: 'Delete', exact: true }).click()
   await page.getByText('At 07:45 on weekdays · watch').waitFor({ state: 'detached' })
   assert.equal(schedules.list().length, 0)
+  // The box is back to a job now.
+  await page.getByRole('button', { name: 'Back' }).click()
+  assert.equal(await page.getByLabel('When').inputValue(), 'now')
   await jobs.idle()
 })
 
@@ -110,7 +112,7 @@ test('UND-13: a finished job shows what it changed, and Undo changes puts it bac
   await page.getByText('tidy the notes').click()
   await page.getByText('Changed notes.txt').waitFor()
   await page.getByRole('button', { name: 'Undo changes' }).click()
-  await page.getByText('put back notes.txt').waitFor()
+  await page.getByText('Undone: put back notes.txt', { exact: true }).waitFor()
   assert.equal(await readFile(join(home, 'notes.txt'), 'utf8'), 'messy')
   await page.getByRole('button', { name: 'Undo changes' }).waitFor({ state: 'detached' })
 })
@@ -149,9 +151,10 @@ test('JOB-16: the phone sends picked files with a job, photos as JPEG', { skip }
   await page.getByText('receipt.jpg').waitFor()
   await page.getByRole('button', { name: 'Remove notes.txt' }).click()
   await page.getByText('notes.txt').waitFor({ state: 'detached' })
-  await page.getByPlaceholder('What should navi do?').fill('what is the total?')
-  await page.getByRole('button', { name: 'Start' }).click()
-  await page.getByText('With receipt.jpg').waitFor()
+  // JOB-36: on a keyboard, Enter sends what was just typed.
+  await page.getByPlaceholder('Ask navi').fill('what is the total?')
+  await page.getByPlaceholder('Ask navi').press('Enter')
+  await page.locator('.you .chip', { hasText: 'receipt.jpg' }).waitFor()
   await jobs.idle()
   const [sent] = given as any[][]
   assert.equal(sent.length, 1)
@@ -163,12 +166,12 @@ test('JOB-16: the phone sends picked files with a job, photos as JPEG', { skip }
   await page.getByText('menu.txt').waitFor()
   await page.getByPlaceholder('Follow up…').fill('and this one?')
   await page.getByRole('button', { name: 'Send' }).click()
-  await page.getByText('With receipt.jpg, menu.txt').waitFor()
+  await page.locator('.you .chip', { hasText: 'menu.txt' }).waitFor()
   await jobs.idle()
   assert.equal(given.length, 2)
   assert.deepEqual((given[1] as any[]).map((a) => a.name), ['menu.txt'])
   assert.equal(await page.locator('.file').count(), 0)
-  await page.getByRole('button', { name: '‹ Jobs' }).click()
+  await page.getByRole('button', { name: 'Back' }).click()
   assert.equal(await page.getByText('receipt.jpg').count(), 0)
 })
 
@@ -242,10 +245,10 @@ test('JOB-23: a queued job shows as queued, and Stop takes it out', { skip }, as
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
   await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
   await page.getByText('second, which waits its turn').click()
-  await page.locator('.s-queued').waitFor()
-  await page.getByText('queued: next, as 1 run at once').waitFor()
+  await page.locator('.bar small', { hasText: /^Queued · / }).waitFor()
+  await page.getByText('queued: next, as 1 run at once', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Stop' }).click()
-  await page.locator('.s-stopped').waitFor()
+  await page.locator('.bar small', { hasText: /^Stopped · / }).waitFor()
   assert.equal(jobs.get(queued.id)!.status, 'stopped')
 })
 
@@ -264,7 +267,7 @@ test('MEM-13: the phone shows what navi remembers, adds a fact and forgets one',
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
   page.on('dialog', (d) => d.accept())
   await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
-  await page.getByRole('button', { name: 'What navi remembers ›' }).click()
+  await page.getByRole('button', { name: 'What navi remembers' }).click()
   await page.getByText('Keeps bees').waitFor()
   await page.getByText('These go with every turn').waitFor()
   await page.getByPlaceholder('Something navi should know about you').fill('Prefers metric units')
@@ -278,8 +281,8 @@ test('MEM-13: the phone shows what navi remembers, adds a fact and forgets one',
   await page.getByPlaceholder('Something navi should know about you').fill('prefers METRIC units')
   await page.getByRole('button', { name: 'Remember' }).click()
   await page.getByText('That is already remembered.').waitFor()
-  await page.getByRole('button', { name: '‹ Jobs' }).click()
-  await page.getByText('No jobs yet.').waitFor()
+  await page.getByRole('button', { name: 'Back' }).click()
+  await page.getByText('What should navi do?').waitFor()
 })
 
 test("MEM-19: the phone shows a project's facts, adds one about the project and forgets one", { skip }, async (t) => {
@@ -299,11 +302,11 @@ test("MEM-19: the phone shows a project's facts, adds one about the project and 
   const page = await browser.newPage({ viewport: { width: 320, height: 700 } })
   page.on('dialog', (d) => d.accept())
   await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
-  await page.getByRole('button', { name: 'What navi remembers ›' }).click()
+  await page.getByRole('button', { name: 'What navi remembers' }).click()
   await page.getByRole('heading', { name: 'About …/code/app' }).waitFor()
   await page.locator('.fact', { hasText: 'Deploys with make ship' }).waitFor()
   await page.getByText('a project' + "'" + 's with every turn in it').waitFor()
-  await page.getByLabel('About').selectOption({ label: 'About …/code/app' })
+  await page.getByLabel('About', { exact: true }).selectOption({ label: 'About …/code/app' })
   const box = page.getByPlaceholder('Something navi should know about this project')
   await box.fill('Tests run with make check')
   await page.getByRole('button', { name: 'Remember' }).click()
@@ -345,11 +348,11 @@ test('JOB-26: the phone deletes a finished job, and clears the rest', { skip }, 
   assert.equal(await page.getByText('beta job').count(), 0)
   assert.equal(jobs.list().length, 2)
   await page.getByRole('button', { name: 'Clear finished jobs' }).click()
-  await page.getByText('No jobs yet.').waitFor()
+  await page.getByText('What should navi do?').waitFor()
   assert.equal(await page.getByRole('button', { name: 'Clear finished jobs' }).count(), 0)
 })
 
-test('JOB-28: a followed-up job folds its earlier turns away, and they stay open across refreshes', { skip }, async (t) => {
+test('JOB-28: a followed-up job shows each turn in its thread, the latest last', { skip }, async (t) => {
   const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
   let history: any[] = []
   const jobs = await makeJobs({
@@ -379,16 +382,10 @@ test('JOB-28: a followed-up job folds its earlier turns away, and they stay open
   })
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
   await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
-  await page.locator('.job').first().click()
-  await page.getByText('Earlier in this job (1)').waitFor()
-  await page.getByText('Then you asked').waitFor()
-  assert.equal(await page.locator('.card.answer').innerText(), 'The second answer.')
-  assert.equal(await page.locator('.earlier strong').isVisible(), false)
-  await page.getByText('Earlier in this job (1)').click()
-  assert.equal(await page.locator('.earlier strong').innerText(), 'first')
-  // Through a refresh or two, still open.
-  await page.waitForTimeout(3500)
-  assert.equal(await page.locator('.earlier strong').isVisible(), true)
+  await page.locator('.chat').first().click()
+  await page.locator('.navi .md strong', { hasText: 'first' }).waitFor()
+  assert.deepEqual(await page.locator('.you .bubble').allInnerTexts(), ['first', 'second'])
+  assert.equal(await page.locator('.navi .md').last().innerText(), 'The second answer.')
 })
 
 test('JOB-30: a search box narrows a long job list as you type', { skip }, async (t) => {
@@ -414,17 +411,17 @@ test('JOB-30: a search box narrows a long job list as you type', { skip }, async
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
   await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
   await page.getByText('read the news').waitFor()
-  const box = page.getByPlaceholder('Find a job')
+  const box = page.getByLabel('Find a job')
   await box.pressSequentially('Toner')
   await page.getByText('water the plants').waitFor({ state: 'detached' })
-  assert.equal(await page.locator('button.job').count(), 1)
-  assert.equal(await page.locator('button.job .p').textContent(), 'check the printer')
+  assert.equal(await page.locator('button.chat').count(), 1)
+  assert.equal(await page.locator('button.chat .t').textContent(), 'check the printer')
   // Typing goes on in the box the page redrew.
   await box.pressSequentially(' fern')
   await page.getByText('No job mentions Toner fern.').waitFor()
   await box.fill('')
   await page.getByText('water the plants').waitFor()
-  assert.equal(await page.locator('button.job').count(), 4)
+  assert.equal(await page.locator('button.chat').count(), 4)
 })
 
 test('SCH-18, SCH-21: the phone edits, pauses and resumes a schedule, and a refresh keeps what is typed', { skip }, async (t) => {
@@ -441,6 +438,7 @@ test('SCH-18, SCH-21: the phone edits, pauses and resumes a schedule, and a refr
   })
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
   await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByRole('button', { name: 'Schedules' }).click()
   await page.getByRole('button', { name: 'Edit' }).click()
   // Other days are kept unless another choice is made; only the time changes.
   assert.equal(await page.locator('#edit-repeat').inputValue(), 'keep')
@@ -516,18 +514,17 @@ test('JOB-34, SCH-24: Repeat this makes a schedule of a finished job, whose runs
     { prompt: 'summarise the new notes', directory: home, at: '06:45', days: [1, 2, 3, 4, 5], quiet: true })
   // A job a schedule started is not offered again.
   await page.getByRole('button', { name: 'Run now' }).click()
-  await page.getByRole('button', { name: '‹ Jobs' }).waitFor()
   await page.getByRole('button', { name: 'Delete job' }).waitFor()
   assert.equal(await page.getByRole('button', { name: 'Repeat this…' }).count(), 0)
 
-  // SCH-24: back on the list, the run shows as a mark that opens its job.
-  await page.getByRole('button', { name: '‹ Jobs' }).click()
+  // SCH-24: back on the schedules, the run shows as a mark that opens its job.
+  await page.getByRole('button', { name: 'Back' }).click()
   const mark = page.getByRole('button', { name: /^done, / })
   await mark.waitFor()
   assert.equal(await mark.textContent(), '✓')
   await mark.click()
   await page.getByRole('button', { name: 'Delete job' }).waitFor()
-  assert.match(await page.locator('.meta').first().textContent() ?? '', /notes|navi-phone/)
+  assert.match(await page.locator('.bar small').textContent() ?? '', /navi-phone/)
 })
 
 test('SCH-27: a schedule navi paused for failing says so, and Resume starts it again', { skip }, async (t) => {
@@ -549,6 +546,7 @@ test('SCH-27: a schedule navi paused for failing says so, and Resume starts it a
   })
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
   await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByRole('button', { name: 'Schedules' }).click()
   await page.getByText('Paused after 3 failed runs · Every hour').waitFor()
   assert.equal(await page.locator('button.run').count(), 3)
   await page.getByRole('button', { name: 'Resume' }).click()
@@ -575,6 +573,7 @@ test('SCH-29: a failed run to be tried again shows when, on the phone and in nav
   })
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
   await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByRole('button', { name: 'Schedules' }).click()
   await page.locator('.sched .meta', { hasText: /^Trying again / }).waitFor()
 })
 

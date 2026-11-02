@@ -286,7 +286,7 @@ test('on the tailnet every request needs the token, and / is the phone page', as
     const page = await s.call('/', { remote: true })
     assert.equal(page.status, 200)
     const html = await page.text()
-    assert.match(html, /<title>navi jobs<\/title>/)
+    assert.match(html, /<title>navi<\/title>/)
     // The page holds no secret of its own.
     assert.doesNotMatch(html, new RegExp(s.token))
   } finally {

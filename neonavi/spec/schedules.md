@@ -68,10 +68,12 @@ every so often. A morning brief, a page watched every hour.
 
 ## On the phone
 
-- SCH-12: The phone page (JOB-10) lists the schedules, soonest first, each
-  with when it runs, its next run and whether it is a watch, with Run now
-  (which opens the job it starts) and Delete (after a confirmation). Its
-  box for starting a job can instead make a schedule: every 30 minutes,
+- SCH-12: The phone page (JOB-10) lists the schedules on a Schedules
+  screen, opened from the first page, soonest first, each with when it
+  runs, its next run and whether it is a watch, with Run now (which opens
+  the job it starts; Back from it returns to Schedules) and Delete (after a
+  confirmation). Its box for starting a job can instead make a schedule,
+  after which Schedules opens: every 30 minutes,
   every hour, or every day or every weekday at a time chosen, and, for any
   of them, a watch (SCH-9).
 - SCH-13: The page does not redraw itself every few seconds while a

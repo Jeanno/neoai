@@ -13,94 +13,165 @@ export const PHONE_PAGE = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>navi jobs</title>
+<title>navi</title>
+<meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#161615" media="(prefers-color-scheme: dark)">
 <style>
   :root {
-    --bg: #f6f6f4; --card: #ffffff; --text: #1c1c1a; --muted: #6b6b66; --line: #e3e3de;
-    --accent: #3b5bdb; --accent-text: #ffffff; --wait: #b35c00; --wait-bg: #fff4e5;
-    --ok: #2b8a3e; --bad: #c92a2a; --code: #f1f1ee;
+    --bg: #f7f7f5; --card: #ffffff; --text: #1d1d1b; --muted: #74746e; --line: #e6e6e1;
+    --bubble: #ecece8; --accent: #3b5bdb; --accent-text: #ffffff; --wait: #c2410c; --wait-bg: #fff7ed;
+    --ok: #2f9e44; --bad: #d6336c; --code: #f1f1ee; --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.06);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #141413; --card: #1e1e1c; --text: #ececea; --muted: #9a9a94; --line: #30302d;
-      --accent: #7b93ff; --accent-text: #0d0d0c; --wait: #ffb35c; --wait-bg: #2e2210;
-      --ok: #69db7c; --bad: #ff8787; --code: #262624;
+      --bg: #161615; --card: #20201e; --text: #ececea; --muted: #9b9b95; --line: #2f2f2c;
+      --bubble: #2c2c29; --accent: #8ca0ff; --accent-text: #0d0d0c; --wait: #fdba74; --wait-bg: #2a1d10;
+      --ok: #69db7c; --bad: #ff8fab; --code: #262624; --shadow: 0 4px 16px rgba(0,0,0,.4);
     }
   }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  main { max-width: 640px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) 16px 48px; }
-  h1 { font-size: 22px; margin: 4px 0 16px; display: flex; justify-content: space-between; align-items: center; }
-  h1 small { font-size: 13px; color: var(--muted); font-weight: 400; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
-  textarea, select { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
-  textarea { min-height: 84px; resize: vertical; }
-  input.find { width: 100%; font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 12px; }
-  select { margin-top: 8px; }
-  .row > select, .row > input[type=time] { margin-top: 0; flex: 1; min-width: 0; }
-  input[type=time] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; }
-  .check { display: flex; gap: 8px; align-items: center; margin-top: 10px; font-size: 15px; }
-  .check input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 20px 4px 8px; }
-  .sched .p { display: block; margin: 2px 0; }
-  .sched .status { color: var(--accent); }
-  .sched .status.paused { color: var(--muted); }
-  .runs { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
-  .runs .meta { margin-right: 4px; }
-  button.run { background: none; padding: 2px 6px; min-width: 28px; font-size: 17px; line-height: 1.2; border-radius: 6px; }
-  .sched .row { flex-wrap: wrap; }
-  .sched .row button { white-space: nowrap; padding-left: 6px; padding-right: 6px; flex: 1 0 auto; }
-  .files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-  .file { display: inline-flex; align-items: center; gap: 4px; background: var(--code); border-radius: 8px; padding: 2px 2px 2px 10px; font-size: 14px; max-width: 100%; }
-  .file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .file button { padding: 4px 8px; }
-  .pick { display: inline-block; color: var(--accent); font-weight: 600; padding: 8px 4px; cursor: pointer; }
-  .pick input { display: none; }
-  button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 11px 16px; background: var(--accent); color: var(--accent-text); }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  #app { max-width: 720px; margin: 0 auto; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 11px 16px; background: var(--text); color: var(--bg); cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.no { background: var(--card); color: var(--text); border: 1px solid var(--line); }
   button.plain { background: transparent; color: var(--accent); padding: 8px 4px; }
-  button.more { display: block; margin: 0 0 4px; font-weight: 600; }
-  .fact { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
-  .fact:first-child { border-top: 0; }
-  .fact span { flex: 1; padding-top: 8px; overflow-wrap: anywhere; }
-  .fact button { padding: 8px 10px; }
-  #about { margin-bottom: 8px; }
-  textarea.one { min-height: 0; }
-  button.no { background: var(--code); color: var(--text); }
-  button:disabled { opacity: .5; }
-  .row { display: flex; gap: 8px; margin-top: 10px; }
-  .row > button { flex: 1; }
-  .job { display: block; width: 100%; text-align: left; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px; font-weight: 400; }
-  .job .p { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button.danger { color: var(--bad); }
+  textarea, select, input { font: inherit; color: var(--text); }
+
+  /* The bar along the top, as chat apps have it. */
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 2px;
+    padding: calc(env(safe-area-inset-top) + 6px) 6px 6px; background: var(--bg); border-bottom: 1px solid var(--line); }
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .bar { background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: saturate(1.6) blur(14px); -webkit-backdrop-filter: saturate(1.6) blur(14px); }
+  }
+  .bar .title { flex: 1; min-width: 0; padding: 0 6px; }
+  .bar .title.center { text-align: center; }
+  .bar h1 { font-size: 17px; line-height: 1.25; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar h1.big { font-size: 22px; padding-left: 6px; }
+  .bar small { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .icon { width: 40px; height: 40px; flex: none; border-radius: 20px; padding: 0; display: inline-grid; place-items: center; background: transparent; color: var(--text); position: relative; }
+  .icon svg { width: 22px; height: 22px; }
+  .icon:active { background: var(--bubble); }
+  .badge { position: absolute; top: 4px; right: 4px; min-width: 16px; height: 16px; border-radius: 8px; background: var(--wait); color: #fff; font-size: 10px; line-height: 16px; padding: 0 4px; }
+  .content { flex: 1; padding: 8px 16px 16px; }
+
+  /* The box to type in, kept at the bottom. */
+  .composer { position: sticky; bottom: 0; z-index: 4; padding: 24px 12px calc(env(safe-area-inset-bottom) + 10px);
+    background: linear-gradient(to bottom, transparent, var(--bg) 20px); }
+  .pill { display: flex; align-items: flex-end; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 26px; padding: 5px; box-shadow: var(--shadow); }
+  .pill textarea { flex: 1; min-width: 0; border: 0; background: transparent; resize: none; padding: 8px 6px; max-height: 168px; outline: none; font-size: 16px; line-height: 1.4; }
+  .send { width: 38px; height: 38px; flex: none; border-radius: 19px; padding: 0; display: grid; place-items: center; }
+  .send svg { width: 20px; height: 20px; }
+  .send:disabled { opacity: .2; }
+  .attach { width: 38px; height: 38px; flex: none; border-radius: 19px; display: grid; place-items: center; color: var(--muted); cursor: pointer; }
+  .attach svg { width: 22px; height: 22px; }
+  .attach input { display: none; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0 2px 8px; }
+  .chip { font-size: 13px; font-weight: 500; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; line-height: 1.3; max-width: 100%; }
+  .chip svg { width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; }
+  select.chip { -webkit-appearance: none; appearance: none; padding-right: 26px; min-width: 0; text-overflow: ellipsis;
+    background: var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' fill='none' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 10px center / 10px 6px; }
+  input.chip[type=time] { padding: 4px 10px; }
+  label.chip { display: inline-flex; gap: 6px; align-items: center; }
+  label.chip input { margin: 0; width: 16px; height: 16px; accent-color: var(--accent); }
+  .file { display: inline-flex; align-items: center; gap: 2px; padding: 4px 4px 4px 10px; }
+  .file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+  .file button { padding: 0 6px; background: none; color: var(--muted); font-size: 18px; line-height: 1; }
+
+  /* The list of chats. */
+  .find { width: 100%; background: var(--bubble); border: 0; border-radius: 12px; padding: 9px 12px; margin: 4px 0 6px; outline: none; }
+  .row-link { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin: 6px 0 10px; font-weight: 500; }
+  .row-link span { flex: 1; } .row-link .meta { flex: none; }
+  .chat { display: flex; gap: 12px; width: 100%; text-align: left; background: none; color: var(--text); border: 0; border-radius: 0; border-bottom: 1px solid var(--line); padding: 13px 2px; font-weight: 400; }
+  .chat:active { background: var(--bubble); }
+  .chat .body { flex: 1; min-width: 0; }
+  .chat .top { display: flex; gap: 8px; align-items: baseline; }
+  .chat .t { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat .when { flex: none; font-size: 12px; color: var(--muted); }
+  .chat .pv { color: var(--muted); font-size: 14px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  .chat .pv.s-waiting { color: var(--wait); font-weight: 600; } .chat .pv.s-failed, .chat .pv.s-interrupted { color: var(--bad); }
+  .dot { width: 9px; height: 9px; border-radius: 5px; margin-top: 7px; flex: none; background: var(--line); }
+  .dot.s-done { background: var(--ok); } .dot.s-failed, .dot.s-interrupted { background: var(--bad); }
+  .dot.s-waiting { background: var(--wait); animation: pulse 1.4s ease-in-out infinite; }
+  .dot.s-running, .dot.s-queued { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .hello { text-align: center; padding: 18vh 16px 24px; }
+  .hello b { display: block; font-size: 24px; margin-bottom: 6px; }
+  .hello span { color: var(--muted); }
+  .clear { display: block; margin: 14px auto 0; font-size: 14px; }
+
+  /* A chat, as a thread. */
+  .thread { display: flex; flex-direction: column; gap: 18px; padding-top: 10px; }
+  .you { align-self: flex-end; max-width: 86%; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .bubble { background: var(--bubble); border-radius: 20px 20px 6px 20px; padding: 9px 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .navi { overflow-wrap: anywhere; }
+  .navi .from { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .working { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 15px; }
+  .dots { display: inline-flex; gap: 4px; } .dots i { width: 6px; height: 6px; border-radius: 3px; background: var(--muted); animation: bounce 1.2s infinite ease-in-out; }
+  .dots i:nth-child(2) { animation-delay: .15s; } .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); opacity: .4; } 40% { transform: translateY(-4px); opacity: 1; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+  .approval { border-color: var(--wait); background: var(--wait-bg); }
+  .approval .head { font-weight: 700; color: var(--wait); font-size: 14px; margin-bottom: 6px; }
+  .buttons { display: flex; gap: 8px; margin-top: 12px; } .buttons > button { flex: 1; }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .actions .chip { cursor: pointer; }
+  details.steps summary { cursor: pointer; color: var(--muted); font-size: 14px; list-style: none; }
+  details.steps summary::-webkit-details-marker { display: none; }
+  details.steps summary::before { content: '›'; display: inline-block; width: 14px; transition: transform .15s; }
+  details.steps[open] summary::before { transform: rotate(90deg); }
   .meta { color: var(--muted); font-size: 13px; }
-  .status { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
-  .s-waiting { color: var(--wait); } .s-done { color: var(--ok); } .s-failed, .s-interrupted { color: var(--bad); }
-  .s-running, .s-queued, .s-stopped { color: var(--muted); }
-  .pending { background: var(--wait-bg); border-color: var(--wait); }
-  pre { background: var(--code); border-radius: 8px; padding: 10px; overflow-x: auto; font: 12.5px/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; }
-  .answer { white-space: pre-wrap; word-break: break-word; }
-  .earlier summary { color: var(--accent); font-weight: 600; cursor: pointer; }
-  .turn { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
-  .asked { white-space: pre-wrap; word-break: break-word; font-weight: 600; margin-bottom: 6px; }
+  .err { color: var(--bad); font-size: 14px; margin: 8px 0 0; }
+  .note { color: var(--muted); text-align: center; padding: 32px 8px; }
+  pre { background: var(--code); border-radius: 10px; padding: 10px 12px; overflow-x: auto; font: 12.5px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; }
+  .suggest { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+  .suggest:first-of-type { border-top: 0; }
+  .suggest > div { flex: 1; min-width: 0; }
+  .suggest button { padding: 7px 12px; font-size: 14px; }
+  .form { display: flex; flex-direction: column; gap: 10px; }
+  .form .chips { margin: 0; }
+
+  /* Formatted answers (JOB-17). */
   .md { white-space: normal; }
   .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
-  .md p, .md ul, .md ol, .md blockquote, .md .mt, .md pre { margin: 0 0 10px; }
+  .md p, .md ul, .md ol, .md blockquote, .md .mt, .md pre { margin: 0 0 12px; }
   .md p { white-space: pre-line; }
-  .md ul, .md ol { padding-left: 22px; } .md li { margin: 2px 0; white-space: pre-line; }
-  .md .mh { font-weight: 700; margin-top: 14px; } .md .mh1, .md .mh2 { font-size: 1.15em; }
-  .md code { background: var(--code); border-radius: 5px; padding: 1px 5px; font: .9em ui-monospace, Menlo, monospace; }
+  .md ul, .md ol { padding-left: 22px; } .md li { margin: 3px 0; white-space: pre-line; }
+  .md .mh { font-weight: 700; margin-top: 16px; } .md .mh1, .md .mh2 { font-size: 1.15em; }
+  .md code { background: var(--code); border-radius: 5px; padding: 1px 5px; font: .88em ui-monospace, Menlo, monospace; }
   .md pre code { background: none; padding: 0; }
   .md blockquote { border-left: 3px solid var(--line); padding-left: 10px; color: var(--muted); }
-  .md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
   .md .mt { overflow-x: auto; }
   .md table { border-collapse: collapse; font-size: 14px; }
-  .md th, .md td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+  .md th, .md td { border: 1px solid var(--line); padding: 5px 9px; text-align: left; vertical-align: top; }
   .md a { color: var(--accent); word-break: break-all; }
-  .empty, .note { color: var(--muted); text-align: center; padding: 24px 8px; }
-  .err { color: var(--bad); font-size: 14px; margin-top: 8px; }
+
+  /* Lists of facts and schedules. */
+  h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 22px 4px 8px; }
+  .group { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .fact { display: flex; align-items: center; gap: 8px; padding: 10px 6px 10px 14px; border-top: 1px solid var(--line); }
+  .fact:first-child { border-top: 0; }
+  .fact span { flex: 1; overflow-wrap: anywhere; }
+  .fact button { padding: 6px 10px; color: var(--muted); font-size: 20px; line-height: 1; }
+  .group .empty { padding: 14px; color: var(--muted); font-size: 14px; }
+  .sched { padding: 14px; border-top: 1px solid var(--line); }
+  .sched:first-child { border-top: 0; }
+  .sched .status { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
+  .sched .status.paused { color: var(--muted); }
+  .sched .p { display: block; margin: 3px 0; overflow-wrap: anywhere; }
+  .runs { display: flex; align-items: center; gap: 2px; margin-top: 6px; }
+  .runs .meta { margin-right: 4px; }
+  button.run { background: none; color: var(--text); padding: 2px 6px; min-width: 28px; font-size: 17px; line-height: 1.2; border-radius: 6px; }
+  .run.s-done { color: var(--ok); } .run.s-failed, .run.s-interrupted { color: var(--bad); } .run.s-stopped { color: var(--muted); }
+  .sched .actions .chip { flex: 1 0 auto; text-align: center; }
+  .sched textarea, .form textarea { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px; resize: vertical; min-height: 70px; }
 </style>
 </head>
 <body>
-<main id="app"><p class="note">Loading…</p></main>
+<div id="app"><p class="note">Loading…</p></div>
 <script>
 ${MARKDOWN_JS}
 (() => {
@@ -168,8 +239,8 @@ ${MARKDOWN_JS}
   let repeat = 'now', time = '08:00', quiet = false
   // MEM-13: what navi remembers, on a page of its own.
   let remembering = false, memory = { facts: [], off: false, projects: [] }, fact = '', about = ''
-  // JOB-28: whether a job's earlier turns are shown, kept across refreshes.
-  let earlierOpen = false
+  // Whether a job's steps are unfolded, kept across refreshes; which screen; the thread last scrolled to.
+  let stepsOpen = false, scheduling = false, seen = '', from = ''
   // MEM-23: what the model found worth remembering from the open job, and which were kept.
   let suggested = null
   // JOB-34: repeating the open job on a schedule, as { repeat, time, quiet }, or null.
@@ -190,19 +261,19 @@ ${MARKDOWN_JS}
   }
   function editForm(s) {
     const e = editing
-    return el('div', { class: 'card sched' },
+    return el('div', { class: 'sched form' },
       el('textarea', { id: 'edit-prompt', 'aria-label': 'Prompt', oninput: (ev) => { e.prompt = ev.target.value; save.disabled = busy || !e.prompt.trim() } }, e.prompt),
-      el('div', { class: 'row' },
-        el('select', { id: 'edit-repeat', 'aria-label': 'When', onchange: (ev) => { e.repeat = ev.target.value; render() } },
+      el('div', { class: 'chips' },
+        el('select', { id: 'edit-repeat', class: 'chip', 'aria-label': 'When', onchange: (ev) => { e.repeat = ev.target.value; render() } },
           (repeatOf(s) === 'keep' ? [['keep', 'As it is: ' + when(s)]] : []).concat(REPEATS.slice(1))
             .map(([v, t]) => el('option', { value: v, selected: v === e.repeat }, t))),
-        editTimed({ ...e, at: s.at }) && el('input', { id: 'edit-time', type: 'time', 'aria-label': 'Time', value: e.time, oninput: (ev) => (e.time = ev.target.value) })),
-      el('label', { class: 'check' },
+        editTimed({ ...e, at: s.at }) && el('input', { id: 'edit-time', class: 'chip', type: 'time', 'aria-label': 'Time', value: e.time, oninput: (ev) => (e.time = ev.target.value) })),
+      el('label', { class: 'chip', style: 'align-self:flex-start' },
         el('input', { id: 'edit-quiet', type: 'checkbox', checked: e.quiet, onchange: (ev) => (e.quiet = ev.target.checked) }),
         'Only tell me when something changes'),
-      el('div', { class: 'row' },
-        save = el('button', { disabled: busy || !e.prompt.trim(), onclick: () => saveEdit(s) }, 'Save'),
-        el('button', { class: 'no', onclick: () => { editing = null; failed = ''; render() } }, 'Cancel')))
+      el('div', { class: 'buttons', style: 'margin-top:0' },
+        el('button', { class: 'no', onclick: () => { editing = null; failed = ''; render() } }, 'Cancel'),
+        save = el('button', { disabled: busy || !e.prompt.trim(), onclick: () => saveEdit(s) }, 'Save')))
   }
   let save
 
@@ -239,18 +310,6 @@ ${MARKDOWN_JS}
     return { name: file.name, data }
   }
 
-  // The chosen files, each with a way to remove it, and a button to add more, up to 4.
-  function filePicker(list) {
-    return el('div', {},
-      list.length > 0 && el('div', { class: 'files' }, list.map((f, i) => el('span', { class: 'file' },
-        el('span', {}, f.name),
-        el('button', { class: 'plain', 'aria-label': 'Remove ' + f.name, onclick: () => { list.splice(i, 1); render() } }, '×')))),
-      list.length < 4 && el('label', { class: 'pick' }, 'Add photo or file',
-        el('input', { type: 'file', multiple: true, 'aria-label': 'Add photo or file', onchange: (e) => act(async () => {
-          for (const file of [...e.target.files].slice(0, 4 - list.length)) list.push(await readPicked(file))
-        }) })))
-  }
-
   async function refresh() {
     if (!token) return render()
     try {
@@ -275,17 +334,180 @@ ${MARKDOWN_JS}
     await refresh()
   }
 
+  // Icons, drawn as the system's own are: a stroke, no fill.
+  const ICONS = {
+    back: '<path d="M15 5l-7 7 7 7"/>',
+    send: '<path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/>',
+    stop: '<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    memory: '<path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1z"/>',
+    clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
+    folder: '<path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/>',
+  }
+  const icon = (name) => {
+    const s = document.createElement('span')
+    s.style.display = 'contents'
+    s.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>'
+    return s
+  }
+  const bar = (left, title, right) => el('header', { class: 'bar' }, left, title, right)
+  const back = () => el('button', { class: 'icon', 'aria-label': 'Back', onclick: () => {
+    // A job opened from Schedules goes back there.
+    const toSchedules = !!open && from === 'schedules'
+    open = null; job = null; reply = ''; more = []; remembering = false; scheduling = toSchedules; from = ''; failed = ''; repeating = null; suggested = null; seen = ''
+    render(); refresh(); window.scrollTo(0, 0)
+  } }, icon('back'))
+  const STATUS = { queued: 'Queued', running: 'Working', waiting: 'Needs you', done: 'Done', failed: 'Failed', stopped: 'Stopped', interrupted: 'Interrupted' }
+  const statusOf = (j) => j.unchanged ? 'Nothing new' : STATUS[j.status] || j.status
+  const firstLine = (t) => (t || '').split('\\n').find((l) => l.trim()) || ''
+  // What a chat row says under its title: what navi asks, how it ended, or its answer's first line.
+  const preview = (j) => j.status === 'waiting' && j.pending ? 'Needs you: ' + j.pending.command
+    : j.status === 'done' && j.answer && !j.unchanged ? plain(j.answer)
+    : j.error ? statusOf(j) + ': ' + firstLine(j.error) : statusOf(j)
+  // A line of an answer without its marks, for a preview.
+  const plain = (t) => firstLine(t).replace(/^\\s*(#+|[-*>]|\\d+\\.)\\s+/, '').replace(/[*_\x60]+/g, '')
+  // A textarea grows with what is typed, up to a few lines.
+  const fit = (t) => { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 168) + 'px' }
+
+  // The box at the bottom: a pill with ＋ for files, the text, and a round send button.
+  function composer(o) {
+    const list = o.files
+    const chosen = list && list.length > 0 && el('div', { class: 'chips' }, list.map((f, i) => el('span', { class: 'chip file' },
+      el('span', {}, f.name),
+      el('button', { 'aria-label': 'Remove ' + f.name, onclick: () => { list.splice(i, 1); render() } }, '×'))))
+    const attach = list && list.length < 4 && el('label', { class: 'attach', title: 'Add photo or file' }, icon('plus'),
+      el('input', { type: 'file', multiple: true, 'aria-label': 'Add photo or file', onchange: (e) => act(async () => {
+        for (const file of [...e.target.files].slice(0, 4 - list.length)) list.push(await readPicked(file))
+      }) }))
+    let go
+    const text = el('textarea', { id: o.id, rows: 1, placeholder: o.placeholder, 'aria-label': o.placeholder,
+      oninput: (e) => { o.set(e.target.value); fit(e.target); if (go) go.disabled = busy || !e.target.value.trim() },
+      // Enter sends on a keyboard with Shift for a new line; a phone's return key makes a new line.
+      onkeydown: (e) => { if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window) && e.target.value.trim() && !busy && !o.stop) { e.preventDefault(); o.send() } } }, o.value)
+    go = o.stop
+      ? el('button', { class: 'send', 'aria-label': 'Stop', title: 'Stop', disabled: busy, onclick: o.stop }, icon('stop'))
+      : el('button', { class: 'send', 'aria-label': o.label || 'Send', title: o.label || 'Send', disabled: busy || !o.value.trim(), onclick: o.send }, icon('send'))
+    return el('footer', { class: 'composer' }, o.chips, chosen, el('div', { class: 'pill' }, attach, text, go))
+  }
+
+  // The turns of a job as a thread: what was asked, and what navi answered.
+  function thread() {
+    const live = job.status === 'queued' || job.status === 'running' || job.status === 'waiting'
+    const turns = (job.turns && job.turns.length ? job.turns : [{ prompt: job.prompt, files: job.files }]).map((t) => ({ ...t }))
+    const last = turns[turns.length - 1]
+    if (!live && !last.answer && job.answer) last.answer = job.answer
+    const steps = job.log.filter((l) => /^[·✓✗↶]/.test(l)).length
+    return el('div', { class: 'thread' }, turns.map((t, i) => {
+      const isLast = i === turns.length - 1
+      return [
+        el('div', { class: 'you' },
+          t.files && el('div', { class: 'chips' }, t.files.map((f) => el('span', { class: 'chip' }, f))),
+          el('div', { class: 'bubble' }, t.prompt)),
+        isLast
+          ? el('div', { class: 'navi' },
+              // What it did, folded away as chat apps fold their tool calls.
+              job.log.length > 0 && el('details', { class: 'steps', open: stepsOpen, ontoggle: (e) => (stepsOpen = e.target.open) },
+                el('summary', {}, steps ? 'Worked through ' + steps + ' step' + (steps === 1 ? '' : 's') : 'What it did'),
+                el('pre', {}, job.log.join('\\n'))),
+              job.pending && approval(),
+              live && !job.pending && el('div', { class: 'working', style: job.log.length ? 'margin-top:8px' : false }, el('span', { class: 'dots' }, el('i'), el('i'), el('i')), latest() || (job.status === 'queued' ? 'Queued' : 'Working')),
+              // JOB-17: formatted, as elements holding the text.
+              !live && t.answer && el('div', { class: 'md', style: job.log.length ? 'margin-top:10px' : false }, renderMarkdown(t.answer, el)),
+              job.error && el('p', { class: 'err' }, job.error),
+              !live && job.status === 'stopped' && !t.answer && el('div', { class: 'meta' }, 'Stopped.'),
+              !live && after())
+          : el('div', { class: 'navi' }, t.answer ? el('div', { class: 'md' }, renderMarkdown(t.answer, el)) : el('div', { class: 'meta' }, 'No answer')),
+      ]
+    }))
+  }
+
+  // What navi did last, as a chat app says what it is doing: a line of its log.
+  const latest = () => (job.log[job.log.length - 1] || '').replace(/^[·\\s]+/, '').slice(0, 120)
+  // What an undo just did, said where it was asked for (UND-13): the log's last undo, if nothing came after it.
+  const undone = () => {
+    const at = job.log.map((l) => l.startsWith('↶')).lastIndexOf(true)
+    return at < 0 ? [] : job.log.slice(at + 1).filter((l) => /^\\s/.test(l)).map((l) => l.trim())
+  }
+
+  // An approval, in the thread where it is asked.
+  const approval = () => el('div', { class: 'card approval', style: 'margin-top:10px' },
+    el('div', { class: 'head' }, 'Allow this?'),
+    el('pre', {}, job.pending.command),
+    job.pending.url && el('div', { class: 'meta', style: 'margin-top:6px' }, 'On ' + job.pending.url),
+    job.pending.diff && el('pre', {}, job.pending.diff),
+    el('div', { class: 'buttons' },
+      el('button', { class: 'no', disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/answer', { yes: false })) }, 'No'),
+      el('button', { disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/answer', { yes: true })) }, 'Yes')))
+
+  // What can be done with a finished job, as chips under its answer.
+  function after() {
+    const chip = (label, onclick, extra = {}) => el('button', { class: 'chip', disabled: busy, onclick, ...extra }, label)
+    return [
+      // JOB-35: an answer cut at the token cap goes on with one tap.
+      job.cut && el('div', { class: 'meta', style: 'margin-top:10px' }, 'Cut short: the answer reached the model’s token cap.'),
+      // UND-13: what it changed can be put back.
+      job.changes && job.changes.length > 0 && el('div', { class: 'meta', style: 'margin-top:10px' }, 'Changed ' + job.changes.join(', ')),
+      undone().length > 0 && el('div', { class: 'meta', style: 'margin-top:10px' }, 'Undone: ' + undone().join('; ')),
+      el('div', { class: 'actions' },
+        job.cut && chip('Go on', () => act(() => api('/jobs/' + job.id + '/reply', { prompt: 'Go on from where you stopped.' }))),
+        job.changes && job.changes.length > 0 && chip('Undo changes', () => {
+          if (confirm('Put back the files this job changed? Files edited since are left alone.')) act(() => api('/jobs/' + job.id + '/undo', {}))
+        }),
+        // MEM-23: asked for, never by itself.
+        job.suggests && !(suggested && suggested.id === job.id) && chip('Anything to remember?', () => act(async () => {
+          suggested = { id: job.id, list: (await api('/jobs/' + job.id + '/suggest', {})).suggestions, kept: [] }
+        })),
+        // JOB-34: a job that went well, again on a schedule.
+        !job.schedule && !repeating && chip('Repeat this…', () => { repeating = { repeat: 'daily', time: '08:00', quiet: false }; failed = ''; render() }),
+        // JOB-26: done with, it can go.
+        chip('Delete job', () => {
+          if (confirm('Delete this job? Its answer and log go; files it changed stay as they are.')) act(async () => {
+            await api('/jobs/' + job.id + '/delete', {}); open = null; job = null; reply = ''; more = []
+          })
+        }, { style: 'color:var(--bad)' })),
+      suggested && suggested.id === job.id && el('div', { class: 'card', style: 'margin-top:12px' },
+        suggested.list.length
+          ? [el('div', { class: 'meta' }, 'Worth remembering?'), suggested.list.map((s) => el('div', { class: 'suggest' },
+              el('div', {}, el('div', {}, s.fact), el('div', { class: 'meta' }, s.project ? 'About ' + short(s.project) : 'About you')),
+              suggested.kept.includes(s.fact)
+                ? el('span', { class: 'meta' }, 'Remembered')
+                : el('button', { disabled: busy, onclick: () => act(async () => {
+                    await api('/memory', s.project ? { fact: s.fact, project: s.project } : { fact: s.fact })
+                    suggested.kept.push(s.fact)
+                  }) }, 'Remember')))]
+          : el('div', { class: 'meta' }, 'Nothing new to remember from this job.')),
+      repeating && el('div', { class: 'card form', style: 'margin-top:12px' },
+        el('div', { class: 'meta' }, 'Repeat this job'),
+        el('div', { class: 'chips' },
+          el('select', { id: 'again-repeat', class: 'chip', 'aria-label': 'Repeat', onchange: (e) => { repeating.repeat = e.target.value; render() } },
+            REPEATS.slice(1).map(([v, t]) => el('option', { value: v, selected: v === repeating.repeat }, t))),
+          (repeating.repeat === 'daily' || repeating.repeat === 'weekdays') &&
+            el('input', { id: 'again-time', class: 'chip', type: 'time', 'aria-label': 'Repeat at', value: repeating.time, oninput: (e) => (repeating.time = e.target.value) }),
+          el('label', { class: 'chip' },
+            el('input', { id: 'again-quiet', type: 'checkbox', checked: repeating.quiet, onchange: (e) => (repeating.quiet = e.target.checked) }),
+            'Only tell me when something changes')),
+        el('div', { class: 'buttons', style: 'margin-top:0' },
+          el('button', { class: 'no', onclick: () => { repeating = null; render() } }, 'Cancel'),
+          el('button', { disabled: busy, onclick: () => act(async () => {
+            const r = repeating
+            await api('/jobs/' + job.id + '/schedule', { quiet: r.quiet,
+              ...(r.repeat === 'daily' || r.repeat === 'weekdays' ? { at: r.time, ...(r.repeat === 'weekdays' && { days: [1, 2, 3, 4, 5] }) } : { every: Number(r.repeat) }) })
+            // To Schedules, where the new one is.
+            repeating = null; open = null; job = null; reply = ''; more = []; scheduling = true
+          }) }, 'Schedule'))),
+    ]
+  }
+
   function render() {
     // A half-typed prompt survives the refresh.
     const active = document.activeElement?.id
     if (!token) {
-      put(el('h1', {}, 'navi'), el('p', { class: 'note' }, 'Open the link that navi jobs link prints on your computer.'))
+      put(bar(null, el('div', { class: 'title' }, el('h1', { class: 'big' }, 'navi'))),
+        el('p', { class: 'note' }, 'Open the link that navi jobs link prints on your computer.'))
       return
     }
     const waiting = jobs.filter((j) => j.status === 'waiting').length
     const finished = jobs.filter((j) => !['queued', 'running', 'waiting'].includes(j.status)).length
-    const head = el('h1', {}, open || remembering ? el('button', { class: 'plain', onclick: () => { open = null; job = null; reply = ''; more = []; remembering = false; failed = ''; earlierOpen = false; repeating = null; suggested = null; render(); refresh() } }, '‹ Jobs') : 'navi',
-      el('small', {}, waiting ? waiting + ' waiting' : jobs.some((j) => j.status === 'running' || j.status === 'queued') ? 'working' : ''))
     const err = (failed || problem) && el('p', { class: 'err' }, failed || problem)
     if (remembering) {
       // MEM-19: a project's facts too, for the directories navi serve offers.
@@ -297,135 +519,97 @@ ${MARKDOWN_JS}
         el('button', { class: 'plain', 'aria-label': 'Forget ' + f, disabled: busy, onclick: () => {
           if (confirm('Forget this?\\n\\n' + f)) act(async () => { memory = await api('/memory/forget', project ? { fact: f, project } : { fact: f }) })
         } }, '×')))
-      put(head,
-        el('h2', {}, 'What navi remembers'),
-        el('div', { class: 'card' },
-          memory.facts.length
-            ? factList(memory.facts)
-            : el('p', { class: 'meta' }, (projects.some((p) => p.facts.length) ? 'Nothing about you yet.' : 'Nothing yet.') + ' navi asks before it remembers anything, or add a fact here.')),
-        projects.filter((p) => p.facts.length).map((p) => [
-          el('h2', { title: p.root }, 'About ' + short(p.root)),
-          el('div', { class: 'card' }, factList(p.facts, p.root))]),
-        el('div', { class: 'card' },
-          projects.length > 0 && el('select', { id: 'about', 'aria-label': 'About', onchange: (e) => { about = e.target.value; render() } },
-            [el('option', { value: '', selected: !about }, 'About you')].concat(projects.map((p) => el('option', { value: p.root, selected: p.root === about }, 'About ' + short(p.root))))),
-          el('textarea', { id: 'fact', class: 'one', rows: 2, maxlength: 300, placeholder: about ? 'Something navi should know about this project' : 'Something navi should know about you', oninput: (e) => { fact = e.target.value; addButton.disabled = busy || !fact.trim() },
-            onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); if (fact.trim() && !busy) add() } } }, fact),
-          el('div', { class: 'row' }, addButton = el('button', { disabled: busy || !fact.trim(), onclick: add }, 'Remember'))),
-        el('p', { class: 'meta' }, memory.off
-          ? 'Memory is off ("memory": false in the config), so none of this goes with your turns.'
-          : projects.some((p) => p.facts.length)
-            ? 'Yours go with every turn, and a project' + String.fromCharCode(39) + 's with every turn in it, to whichever model answers.'
-            : 'These go with every turn, to whichever model answers.'),
-        err)
+      put(bar(back(), el('div', { class: 'title center' }, el('h1', {}, 'What navi remembers')), el('span', { class: 'icon' })),
+        el('main', { class: 'content' },
+          el('h2', {}, 'About you'),
+          el('div', { class: 'group' },
+            memory.facts.length
+              ? factList(memory.facts)
+              : el('div', { class: 'empty' }, (projects.some((p) => p.facts.length) ? 'Nothing about you yet.' : 'Nothing yet.') + ' navi asks before it remembers anything, or add a fact below.')),
+          projects.filter((p) => p.facts.length).map((p) => [
+            el('h2', { title: p.root }, 'About ' + short(p.root)),
+            el('div', { class: 'group' }, factList(p.facts, p.root))]),
+          el('p', { class: 'meta', style: 'margin:14px 4px' }, memory.off
+            ? 'Memory is off ("memory": false in the config), so none of this goes with your turns.'
+            : projects.some((p) => p.facts.length)
+              ? 'Yours go with every turn, and a project' + String.fromCharCode(39) + 's with every turn in it, to whichever model answers.'
+              : 'These go with every turn, to whichever model answers.'),
+          err),
+        composer({ id: 'fact', placeholder: about ? 'Something navi should know about this project' : 'Something navi should know about you', label: 'Remember',
+          value: fact, set: (v) => (fact = v), send: add,
+          chips: projects.length > 0 && el('div', { class: 'chips' },
+            el('select', { id: 'about', class: 'chip', 'aria-label': 'About', onchange: (e) => { about = e.target.value; render() } },
+              [el('option', { value: '', selected: !about }, 'About you')].concat(projects.map((p) => el('option', { value: p.root, selected: p.root === about }, 'About ' + short(p.root)))))) }))
+    } else if (scheduling) {
+      put(bar(back(), el('div', { class: 'title center' }, el('h1', {}, 'Schedules')), el('span', { class: 'icon' })),
+        el('main', { class: 'content' },
+          schedules.length
+            ? el('div', { class: 'group', style: 'margin-top:8px' }, schedules.map((s) => editing && editing.id === s.id ? editForm(s) : el('div', { class: 'sched' },
+                el('div', { class: 'status' + (s.paused ? ' paused' : '') }, (s.stuck ? 'Paused after ' + (s.failures || 3) + ' failed runs · ' : s.paused ? 'Paused · ' : '') + when(s) + (s.quiet ? ' · watch' : '')),
+                el('span', { class: 'p' }, s.prompt),
+                el('span', { class: 'meta' }, (s.paused ? 'Not running' : s.retryAt ? 'Trying again ' + soon(s.retryAt) : 'Next ' + soon(s.next)) + ' · ' + short(s.directory)),
+                // SCH-24: how its last runs went, oldest first; each opens its job.
+                s.runs && s.runs.length > 0 && el('div', { class: 'runs' }, el('span', { class: 'meta' }, 'Last runs'),
+                  s.runs.slice().reverse().map((r) => el('button', { class: 'run s-' + (r.unchanged ? 'stopped' : r.status),
+                    'aria-label': (r.unchanged ? 'nothing new' : r.status) + ', ' + ago(r.created), title: (r.unchanged ? 'nothing new' : r.status) + ', ' + ago(r.created),
+                    onclick: () => { open = r.id; scheduling = false; from = 'schedules'; failed = ''; refresh() } }, mark(r)))),
+                el('div', { class: 'actions' },
+                  el('button', { class: 'chip', disabled: busy, onclick: () => act(async () => { open = (await api('/schedules/' + s.id + '/run', {})).id; scheduling = false; from = 'schedules' }) }, 'Run now'),
+                  // SCH-21
+                  el('button', { class: 'chip', disabled: busy, onclick: () => act(() => api('/schedules/' + s.id + (s.paused ? '/resume' : '/pause'), {})) }, s.paused ? 'Resume' : 'Pause'),
+                  el('button', { class: 'chip', disabled: busy, onclick: () => { editing = { id: s.id, prompt: s.prompt, repeat: repeatOf(s), time: s.at || '08:00', quiet: !!s.quiet }; failed = ''; render() } }, 'Edit'),
+                  el('button', { class: 'chip', style: 'color:var(--bad)', disabled: busy, onclick: () => { if (confirm('Delete this schedule?')) act(() => api('/schedules/' + s.id + '/delete', {})) } }, 'Delete')))))
+            : el('p', { class: 'note' }, 'No schedules yet. Pick Every hour or Every day in the box on the first page to make one.'),
+          err))
     } else if (open && job) {
       // JOB-23: a queued job is stopped as one running is.
       const live = job.status === 'queued' || job.status === 'running' || job.status === 'waiting'
-      const turns = job.turns || []
-      put(head,
-        el('div', { class: 'card' },
-          el('div', { class: 'status s-' + job.status }, job.unchanged ? 'nothing new' : job.status),
-          el('div', { class: 'answer' }, job.prompt),
-          el('div', { class: 'meta' }, short(job.directory) + (job.model ? ' · ' + job.model : '') + ' · ' + ago(job.created)),
-          job.files && el('div', { class: 'meta' }, 'With ' + job.files.join(', '))),
-        // JOB-28: after a follow-up, the turns before it folded away, and what was asked last.
-        turns.length > 1 && el('details', { class: 'card earlier', open: earlierOpen, ontoggle: (e) => (earlierOpen = e.target.open) },
-          el('summary', {}, 'Earlier in this job (' + (turns.length - 1) + ')'),
-          turns.slice(0, -1).map((t) => el('div', { class: 'turn' },
-            el('div', { class: 'asked' }, t.prompt),
-            t.files && el('div', { class: 'meta' }, 'With ' + t.files.join(', ')),
-            t.answer ? el('div', { class: 'md' }, renderMarkdown(t.answer, el)) : el('div', { class: 'meta' }, 'No answer')))),
-        turns.length > 1 && el('div', { class: 'card' }, el('div', { class: 'meta' }, 'Then you asked'), el('div', { class: 'answer' }, turns[turns.length - 1].prompt)),
-        job.pending && el('div', { class: 'card pending' },
-          el('div', { class: 'status s-waiting' }, 'Allow this?'),
-          el('pre', {}, job.pending.command),
-          job.pending.url && el('div', { class: 'meta' }, 'On ' + job.pending.url),
-          job.pending.diff && el('pre', {}, job.pending.diff),
-          el('div', { class: 'row' },
-            el('button', { class: 'no', disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/answer', { yes: false })) }, 'No'),
-            el('button', { disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/answer', { yes: true })) }, 'Yes'))),
-        // JOB-17: formatted, as elements holding the text.
-        job.answer && el('div', { class: 'card answer md' }, renderMarkdown(job.answer, el)),
-        // JOB-35: an answer cut at the token cap goes on with one tap.
-        !live && job.cut && el('div', { class: 'card' },
-          el('div', { class: 'meta' }, 'Cut short: the answer reached the model’s token cap.'),
-          el('div', { class: 'row' }, el('button', { disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/reply', { prompt: 'Go on from where you stopped.' })) }, 'Go on'))),
-        job.error && el('p', { class: 'err' }, job.error),
-        // MEM-23: asked for, never by itself; each kept only on its own tap.
-        !live && job.suggests && (suggested && suggested.id === job.id
-          ? el('div', { class: 'card' },
-              suggested.list.length
-                ? [el('div', { class: 'meta' }, 'Worth remembering?'), suggested.list.map((s) => el('div', { class: 'turn' },
-                    el('div', { class: 'answer' }, s.fact),
-                    el('div', { class: 'meta' }, s.project ? 'About ' + short(s.project) : 'About you'),
-                    suggested.kept.includes(s.fact)
-                      ? el('div', { class: 'meta' }, 'Remembered')
-                      : el('div', { class: 'row' }, el('button', { disabled: busy, onclick: () => act(async () => {
-                          await api('/memory', s.project ? { fact: s.fact, project: s.project } : { fact: s.fact })
-                          suggested.kept.push(s.fact)
-                        }) }, 'Remember'))))]
-                : el('div', { class: 'meta' }, 'Nothing new to remember from this job.'))
-          : el('div', { class: 'row' }, el('button', { class: 'no', disabled: busy, onclick: () => act(async () => {
-              suggested = { id: job.id, list: (await api('/jobs/' + job.id + '/suggest', {})).suggestions, kept: [] }
-            }) }, 'Anything to remember?'))),
-        job.log.length > 0 && el('div', { class: 'card' }, el('div', { class: 'meta' }, 'What it did'), el('pre', {}, job.log.join('\\n'))),
-        // UND-13: what it changed can be put back once it is done; what happened goes in the log above.
-        !live && job.changes && job.changes.length > 0 && el('div', { class: 'card' },
-          el('div', { class: 'meta' }, 'Changed ' + job.changes.join(', ')),
-          el('div', { class: 'row' }, el('button', { class: 'no', disabled: busy, onclick: () => {
-            if (confirm('Put back the files this job changed? Files edited since are left alone.')) act(() => api('/jobs/' + job.id + '/undo', {}))
-          } }, 'Undo changes'))),
-        live
-          ? el('div', { class: 'row' }, el('button', { class: 'no', disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/stop', {})) }, 'Stop'))
-          : el('div', { class: 'card' },
-              el('textarea', { id: 'reply', placeholder: 'Follow up…', oninput: (e) => (reply = e.target.value) }, reply),
-              // JOB-20: files with the follow-up, as with a new job.
-              filePicker(more),
-              el('div', { class: 'row' }, el('button', { disabled: busy || !reply.trim(), onclick: () => act(async () => {
-                await api('/jobs/' + job.id + '/reply', { prompt: reply, ...(more.length && { files: more }) })
-                reply = ''; more = []
-              }) }, 'Send'))),
-        // JOB-34: a job that went well, again on a schedule.
-        !live && !job.schedule && (repeating
-          ? el('div', { class: 'card' },
-              el('div', { class: 'meta' }, 'Repeat this job'),
-              el('div', { class: 'row' },
-                el('select', { id: 'again-repeat', 'aria-label': 'Repeat', onchange: (e) => { repeating.repeat = e.target.value; render() } },
-                  REPEATS.slice(1).map(([v, t]) => el('option', { value: v, selected: v === repeating.repeat }, t))),
-                (repeating.repeat === 'daily' || repeating.repeat === 'weekdays') &&
-                  el('input', { id: 'again-time', type: 'time', 'aria-label': 'Repeat at', value: repeating.time, oninput: (e) => (repeating.time = e.target.value) })),
-              el('label', { class: 'check' },
-                el('input', { id: 'again-quiet', type: 'checkbox', checked: repeating.quiet, onchange: (e) => (repeating.quiet = e.target.checked) }),
-                'Only tell me when something changes'),
-              el('div', { class: 'row' },
-                el('button', { disabled: busy, onclick: () => act(async () => {
-                  const r = repeating
-                  await api('/jobs/' + job.id + '/schedule', { quiet: r.quiet,
-                    ...(r.repeat === 'daily' || r.repeat === 'weekdays' ? { at: r.time, ...(r.repeat === 'weekdays' && { days: [1, 2, 3, 4, 5] }) } : { every: Number(r.repeat) }) })
-                  repeating = null; open = null; job = null; reply = ''; more = []; earlierOpen = false
-                }) }, 'Schedule'),
-                el('button', { class: 'no', onclick: () => { repeating = null; render() } }, 'Cancel')))
-          : el('button', { class: 'plain more', onclick: () => { repeating = { repeat: 'daily', time: '08:00', quiet: false }; failed = ''; render() } }, 'Repeat this…')),
-        // JOB-26: done with, it can go.
-        !live && el('button', { class: 'plain more', disabled: busy, onclick: () => {
-          if (confirm('Delete this job? Its answer and log go; files it changed stay as they are.')) act(async () => {
-            await api('/jobs/' + job.id + '/delete', {}); open = null; job = null; reply = ''; more = []
-          })
-        } }, 'Delete job'),
-        err)
+      put(bar(back(),
+          el('div', { class: 'title center' }, el('h1', {}, firstLine(job.prompt)),
+            el('small', {}, statusOf(job) + ' · ' + short(job.directory) + (job.model ? ' · ' + job.model : ''))),
+          el('span', { class: 'icon' })),
+        el('main', { class: 'content' }, thread(), err),
+        composer({ id: 'reply', placeholder: live ? 'navi is working…' : 'Follow up…', files: live ? null : more, value: reply, set: (v) => (reply = v),
+          stop: live && (() => act(() => api('/jobs/' + job.id + '/stop', {}))),
+          // JOB-20: files with the follow-up, as with a new job.
+          send: () => act(async () => {
+            await api('/jobs/' + job.id + '/reply', { prompt: reply, ...(more.length && { files: more }) })
+            reply = ''; more = []
+          }) }))
+      // A thread opens at its end, and follows it as it grows.
+      const now = job.id + '|' + (job.turns || []).length + '|' + job.status + '|' + job.log.length
+      if (now !== seen) { seen = now; requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight)) }
     } else {
-      put(head,
-        el('div', { class: 'card' },
-          el('textarea', { id: 'draft', placeholder: 'What should navi do?', oninput: (e) => { draft = e.target.value; start.disabled = busy || !draft.trim() } }, draft),
-          dirs.length > 1 && el('select', { onchange: (e) => (dir = e.target.value) }, dirs.map((d) => el('option', { value: d, selected: d === dir }, short(d)))),
-          el('div', { class: 'row' },
-            el('select', { id: 'repeat', 'aria-label': 'When', onchange: (e) => { repeat = e.target.value; render() } }, REPEATS.map(([v, t]) => el('option', { value: v, selected: v === repeat }, t))),
-            timed() && el('input', { id: 'time', type: 'time', 'aria-label': 'Time', value: time, oninput: (e) => (time = e.target.value) })),
-          repeat === 'now' && filePicker(picked),
-          repeat !== 'now' && el('label', { class: 'check' },
-            el('input', { id: 'quiet', type: 'checkbox', checked: quiet, onchange: (e) => (quiet = e.target.checked) }),
-            'Only tell me when something changes'),
-          el('div', { class: 'row' }, start = el('button', { disabled: busy || !draft.trim(), onclick: () => act(async () => {
+      const shownJobs = jobs.filter((j) => holds(j, find))
+      put(bar(null, el('div', { class: 'title' }, el('h1', { class: 'big' }, 'navi')),
+          [el('button', { class: 'icon', 'aria-label': 'Schedules', title: 'Schedules', onclick: () => { scheduling = true; failed = ''; render(); window.scrollTo(0, 0) } }, icon('clock'),
+              schedules.length > 0 && el('span', { class: 'badge', style: 'background:var(--muted)' }, String(schedules.length))),
+            el('button', { class: 'icon', 'aria-label': 'What navi remembers', title: 'What navi remembers', onclick: () => { remembering = true; failed = ''; refresh(); window.scrollTo(0, 0) } }, icon('memory'))]),
+        el('main', { class: 'content' },
+          jobs.length > 3 && el('input', { id: 'find', type: 'search', class: 'find', placeholder: 'Search', 'aria-label': 'Find a job', value: find, autocomplete: 'off',
+            oninput: (e) => { find = e.target.value; render() } }),
+          jobs.length && find.trim() && !shownJobs.length && el('p', { class: 'note' }, 'No job mentions ' + find.trim() + '.'),
+          jobs.length
+            ? shownJobs.map((j) => el('button', { class: 'chat', onclick: () => { open = j.id; failed = ''; refresh() } },
+                el('span', { class: 'dot s-' + j.status, 'aria-hidden': 'true' }),
+                el('span', { class: 'body' },
+                  el('span', { class: 'top' }, el('span', { class: 't' }, firstLine(j.prompt)), el('span', { class: 'when' }, ago(j.updated || j.created))),
+                  el('span', { class: 'pv s-' + j.status }, preview(j)))))
+            : el('div', { class: 'hello' }, el('b', {}, 'What should navi do?'), el('span', {}, 'It works on this computer while you are away, and asks before it changes anything.')),
+          finished > 0 && el('button', { class: 'plain clear', disabled: busy, onclick: () => {
+            if (confirm('Delete ' + finished + ' finished job' + (finished === 1 ? '' : 's') + '? Any still working are kept.')) act(() => api('/jobs/clear', {}))
+          } }, 'Clear finished jobs'),
+          err),
+        composer({ id: 'draft', placeholder: repeat === 'now' ? 'Ask navi' : 'What should it do each time?', label: repeat === 'now' ? 'Start' : 'Schedule',
+          files: repeat === 'now' ? picked : null, value: draft, set: (v) => (draft = v),
+          chips: el('div', { class: 'chips' },
+            dirs.length > 1 && el('select', { class: 'chip', 'aria-label': 'Folder', onchange: (e) => (dir = e.target.value) }, dirs.map((d) => el('option', { value: d, selected: d === dir }, short(d)))),
+            el('select', { id: 'repeat', class: 'chip', 'aria-label': 'When', onchange: (e) => { repeat = e.target.value; render() } }, REPEATS.map(([v, t]) => el('option', { value: v, selected: v === repeat }, t))),
+            timed() && el('input', { id: 'time', class: 'chip', type: 'time', 'aria-label': 'Time', value: time, oninput: (e) => (time = e.target.value) }),
+            repeat !== 'now' && el('label', { class: 'chip' },
+              el('input', { id: 'quiet', type: 'checkbox', checked: quiet, onchange: (e) => (quiet = e.target.checked) }),
+              'Only tell me when something changes')),
+          send: () => act(async () => {
             const where = dir ? { directory: dir } : {}
             if (repeat === 'now') {
               open = (await api('/jobs', { prompt: draft, ...where, ...(picked.length && { files: picked }) })).id
@@ -433,41 +617,13 @@ ${MARKDOWN_JS}
             } else {
               await api('/schedules', { prompt: draft, ...where, quiet,
                 ...(timed() ? { at: time, ...(repeat === 'weekdays' && { days: [1, 2, 3, 4, 5] }) } : { every: Number(repeat) }) })
-              repeat = 'now'; quiet = false
+              repeat = 'now'; quiet = false; scheduling = true
             }
             draft = ''
-          }) }, repeat === 'now' ? 'Start' : 'Schedule'))),
-        err,
-        el('button', { class: 'plain more', onclick: () => { remembering = true; failed = ''; refresh() } }, 'What navi remembers ›'),
-        schedules.length > 0 && el('h2', {}, 'Schedules'),
-        schedules.map((s) => editing && editing.id === s.id ? editForm(s) : el('div', { class: 'card sched' },
-          el('div', { class: 'status' + (s.paused ? ' paused' : '') }, (s.stuck ? 'Paused after ' + (s.failures || 3) + ' failed runs · ' : s.paused ? 'Paused · ' : '') + when(s) + (s.quiet ? ' · watch' : '')),
-          el('span', { class: 'p' }, s.prompt),
-          el('span', { class: 'meta' }, (s.paused ? 'Not running' : s.retryAt ? 'Trying again ' + soon(s.retryAt) : 'Next ' + soon(s.next)) + ' · ' + short(s.directory)),
-          // SCH-24: how its last runs went, oldest first; each opens its job.
-          s.runs && s.runs.length > 0 && el('div', { class: 'runs' }, el('span', { class: 'meta' }, 'Last runs'),
-            s.runs.slice().reverse().map((r) => el('button', { class: 'run s-' + (r.unchanged ? 'stopped' : r.status),
-              'aria-label': (r.unchanged ? 'nothing new' : r.status) + ', ' + ago(r.created), title: (r.unchanged ? 'nothing new' : r.status) + ', ' + ago(r.created),
-              onclick: () => { open = r.id; failed = ''; refresh() } }, mark(r)))),
-          el('div', { class: 'row' },
-            el('button', { class: 'no', disabled: busy, onclick: () => act(async () => { open = (await api('/schedules/' + s.id + '/run', {})).id }) }, 'Run now'),
-            // SCH-21
-            el('button', { class: 'no', disabled: busy, onclick: () => act(() => api('/schedules/' + s.id + (s.paused ? '/resume' : '/pause'), {})) }, s.paused ? 'Resume' : 'Pause'),
-            el('button', { class: 'no', disabled: busy, onclick: () => { editing = { id: s.id, prompt: s.prompt, repeat: repeatOf(s), time: s.at || '08:00', quiet: !!s.quiet }; failed = ''; render() } }, 'Edit'),
-            el('button', { class: 'no', disabled: busy, onclick: () => { if (confirm('Delete this schedule?')) act(() => api('/schedules/' + s.id + '/delete', {})) } }, 'Delete')))),
-        schedules.length > 0 && el('h2', {}, 'Jobs'),
-        jobs.length > 3 && el('input', { id: 'find', type: 'search', class: 'find', placeholder: 'Find a job', value: find, autocomplete: 'off',
-          oninput: (e) => { find = e.target.value; render() } }),
-        jobs.length && find.trim() && !jobs.some((j) => holds(j, find)) && el('p', { class: 'empty' }, 'No job mentions ' + find.trim() + '.'),
-        jobs.length ? jobs.filter((j) => holds(j, find)).map((j) => el('button', { class: 'job', onclick: () => { open = j.id; failed = ''; refresh() } },
-          el('span', { class: 'status s-' + j.status }, j.unchanged ? 'nothing new' : j.status),
-          el('span', { class: 'p' }, j.prompt),
-          el('span', { class: 'meta' }, ago(j.created) + (j.model ? ' · ' + j.model : ''))))
-          : el('p', { class: 'empty' }, 'No jobs yet.'),
-        finished > 0 && el('button', { class: 'plain more', disabled: busy, onclick: () => {
-          if (confirm('Delete ' + finished + ' finished job' + (finished === 1 ? '' : 's') + '? Any still working are kept.')) act(() => api('/jobs/clear', {}))
-        } }, 'Clear finished jobs'))
+          }) }))
+      document.title = waiting ? '(' + waiting + ') navi' : 'navi'
     }
+    for (const t of app.querySelectorAll('.pill textarea')) fit(t)
     if (active) {
       const again = document.getElementById(active)
       if (again) {
@@ -477,7 +633,6 @@ ${MARKDOWN_JS}
       }
     }
   }
-  let start, addButton
 
   refresh()
   // Every few seconds, and at once when the page comes back into view; never

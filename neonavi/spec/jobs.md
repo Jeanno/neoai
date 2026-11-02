@@ -144,11 +144,11 @@ terminal that started them closes.
   out; the conversation itself is still never sent (JOB-15). A follow-up
   still running, or one that failed before it was kept, is the last turn,
   with its prompt and no answer.
-- JOB-28: The phone page shows a job that has been followed up with its
-  earlier turns folded under Earlier in this job (N), each prompt with its
-  answer formatted (JOB-17), and the latest prompt as Then you asked above
-  its answer. Unfolded stays unfolded across refreshes, until the job is
-  left.
+- JOB-28: The phone page shows a job as a thread, oldest turn first: each
+  prompt as the user's bubble, with the files sent with it, and each answer
+  under it formatted (JOB-17). The latest turn carries the job's log folded
+  under Worked through N steps, an approval, and while it works the log's
+  latest line. It opens at its end and follows it as it grows.
 - JOB-29: `navi jobs <id> show` prints every turn as Markdown on stdout, as
   `navi sessions show` does (SES-15), and `navi jobs <id>` mentions it for a
   job with more than one turn.
@@ -189,11 +189,23 @@ terminal that started them closes.
   next runs, as `navi schedule` does (SCH-8).
 - JOB-34: The phone page has Repeat this… on a job that is not working
   (and not from a schedule already): the choices a new schedule has, the
-  time and the watch checkbox, then Schedule, which goes back to the list
-  where the new schedule is shown.
+  time and the watch checkbox, then Schedule, which opens Schedules (SCH-12)
+  where the new one is shown.
 - JOB-35: A job whose last answer was cut at the token cap (HAR-11) is
   marked so (`cut`), until it runs again. The phone page shows that under the
   answer with Go on, which follows up with "Go on from where you stopped."
+
+## Layout
+
+- JOB-36: The phone page is laid out as chat apps are: a header with Back
+  and the job's status, folder and model; the jobs as a list of
+  conversations, each with a status dot, when it last changed and a line
+  of what it asks, how it ended or its answer; and at the bottom a box
+  with ＋ for files and a round send button (Stop while the job works).
+  Schedules and What navi remembers are screens behind icons in the
+  first page's header. On a keyboard Enter sends and Shift-Enter makes a
+  new line; on a phone return makes a new line. After an undo, the job
+  says what it put back (UND-13).
 
 ## Open
 
