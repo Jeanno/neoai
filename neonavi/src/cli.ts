@@ -102,7 +102,7 @@ const USAGE = [
   '       navi browser [--install]',
   '       navi stats [--days N]',
   '       navi job "<what you want done>" [-a <file>]… [-C <directory>]',
-  '       navi jobs [<id> [y | n | stop | undo] | link]',
+  '       navi jobs [<id> [y | n | stop | undo | reply "<follow-up>" [-a <file>]…] | link]',
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
   '       navi schedules [<id> run | rm]',
   '       navi push test',
@@ -127,7 +127,7 @@ const ABOUT = [
   "navi browser         open navi's browser to sign in to sites; --install gets Chromium for it",
   'navi stats           how each model has done, from the ledger; --days N (default 30)',
   'navi job "…"         hand navi serve a job to do in the background; -a sends a file, -C sets where',
-  'navi jobs            list jobs; <id> shows one, then y, n, stop or undo; link is for a phone',
+  'navi jobs            list jobs; <id> shows one, then y, n, stop, undo or reply; link is for a phone',
   'navi schedule "…"    have navi serve start a job at a time of day or every so often;',
   '                     --only-changes makes it a watch that only speaks when something changed',
   'navi schedules       list schedules and their next run; <id> run starts one now, rm deletes it',
@@ -328,13 +328,12 @@ function showJob(job: any) {
   if (job.answer) console.log(`\n${job.answer}`)
   if (job.error) console.error(`error: ${job.error}`)
   if (job.changes?.length) console.log(dim(`\nchanged ${job.changes.join(', ')}; \`navi jobs ${job.id} undo\` puts them back`))
+  if (!['running', 'waiting'].includes(job.status)) console.log(dim(`follow up with \`navi jobs ${job.id} reply "<what next>"\` (-a <file> to add one)`))
 }
 
-/** `navi job "<prompt>" [-a <file>]… [-C <directory>] [--port N]` (JOB-13, JOB-16). */
-async function startJobCommand(argv: string[]) {
-  const port = takeFlag(argv, '--port', true)
-  const dir = takeFlag(port.rest, '-C', true)
-  let rest = dir.rest
+/** Takes every `-a <file>` (or `--attach`) out of the arguments (JOB-16, JOB-20). */
+function takeAttached(argv: string[]): { paths: string[]; rest: string[] } {
+  let rest = argv
   const paths: string[] = []
   for (;;) {
     const a = takeFlag(rest, rest.includes('-a') ? '-a' : '--attach', true)
@@ -342,20 +341,34 @@ async function startJobCommand(argv: string[]) {
     paths.push(a.value)
     rest = a.rest
   }
+  return { paths, rest }
+}
+
+/** Files read here and sent whole: navi serve reads them as -a would (JOB-14); what is wrong, or them. */
+async function readUploads(paths: string[]): Promise<{ name: string; data: string }[] | string> {
+  const files: { name: string; data: string }[] = []
+  for (const p of paths) {
+    const size = (await stat(p).catch(() => null))?.size
+    if (size === undefined) return `can't attach ${p}: no such file`
+    if (size > MAX_UPLOAD) return `can't attach ${p}: a job takes up to ${MAX_UPLOAD / 1024 / 1024} MB of files`
+    files.push({ name: basename(p), data: (await readFile(p)).toString('base64') })
+  }
+  return files
+}
+
+/** `navi job "<prompt>" [-a <file>]… [-C <directory>] [--port N]` (JOB-13, JOB-16). */
+async function startJobCommand(argv: string[]) {
+  const port = takeFlag(argv, '--port', true)
+  const dir = takeFlag(port.rest, '-C', true)
+  const { paths, rest } = takeAttached(dir.rest)
   const prompt = rest.join(' ').trim()
   const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
   if (!prompt || !Number.isInteger(n) || paths.some((p) => !p)) {
     console.error('usage: navi job "<what you want done>" [-a <file>]… [-C <directory>] [--port N]')
     return 1
   }
-  const files: { name: string; data: string }[] = []
-  for (const p of paths) {
-    // Read here and sent whole: navi serve reads it as -a would (JOB-14).
-    const size = (await stat(p).catch(() => null))?.size
-    if (size === undefined) return console.error(`can't attach ${p}: no such file`), 1
-    if (size > MAX_UPLOAD) return console.error(`can't attach ${p}: a job takes up to ${MAX_UPLOAD / 1024 / 1024} MB of files`), 1
-    files.push({ name: basename(p), data: (await readFile(p)).toString('base64') })
-  }
+  const files = await readUploads(paths)
+  if (typeof files === 'string') return console.error(files), 1
   const got = await jobsApi(n, '/jobs', { prompt, directory: resolve(dir.value ?? process.cwd()), ...(files.length && { files }) })
   if (!got) return console.error(NOT_SERVING), 1
   if (got.status !== 201) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
@@ -363,13 +376,30 @@ async function startJobCommand(argv: string[]) {
   return 0
 }
 
-/** `navi jobs [<id> [y | n | stop] | link] [--port N]` (JOB-12, JOB-13). */
+/** `navi jobs <id> reply "<follow-up>" [-a <file>]…` (JOB-3, JOB-20). */
+async function replyJobCommand(n: number, id: string, argv: string[]) {
+  const { paths, rest } = takeAttached(argv)
+  const prompt = rest.join(' ').trim()
+  if (!prompt || paths.some((p) => !p)) return console.error(JOBS_USAGE), 1
+  const files = await readUploads(paths)
+  if (typeof files === 'string') return console.error(files), 1
+  const got = await jobsApi(n, `/jobs/${id}/reply`, { prompt, ...(files.length && { files }) })
+  if (!got) return console.error(NOT_SERVING), 1
+  if (got.status !== 200) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
+  console.log(`Followed up job ${bold(id)}. Follow it with \`navi jobs ${id}\`.`)
+  return 0
+}
+
+const JOBS_USAGE = 'usage: navi jobs [<id> [y | n | stop | undo | reply "<follow-up>" [-a <file>]…] | link] [--port N]'
+
+/** `navi jobs [<id> [y | n | stop | undo | reply …] | link] [--port N]` (JOB-12, JOB-13, JOB-20). */
 async function jobsCommand(argv: string[]) {
   const port = takeFlag(argv, '--port', true)
   const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
   const [id, what, ...extra] = port.rest
+  if (what === 'reply' && Number.isInteger(n)) return replyJobCommand(n, id, extra)
   if (extra.length || !Number.isInteger(n) || (what !== undefined && !['y', 'n', 'stop', 'undo'].includes(what))) {
-    console.error('usage: navi jobs [<id> [y | n | stop | undo] | link] [--port N]')
+    console.error(JOBS_USAGE)
     return 1
   }
   if (id === 'link') {

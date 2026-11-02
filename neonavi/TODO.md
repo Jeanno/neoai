@@ -72,6 +72,9 @@ add the requirement there first.
 - [x] Files with a job: photos (scaled to JPEG on the phone, HEIC
       included) or any file from the phone page, `navi job -a` from the
       terminal, read as -a reads them. (JOB-14 to JOB-16)
+- [x] Files with a follow-up: the phone page's follow-up box takes photos
+      and files too, and `navi jobs <id> reply "…" -a <file>` follows a job
+      up from the terminal. (JOB-19, JOB-20)
 - [x] Answers on the phone page formatted from their Markdown (lists,
       tables, code, links), built as elements so nothing in an answer runs;
       only http(s) links. (JOB-17, JOB-18)

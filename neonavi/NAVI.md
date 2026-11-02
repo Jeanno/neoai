@@ -70,6 +70,8 @@ from the camera or library (sent as a JPEG at most 1600 pixels on a side) or
 any file, up to four; from the terminal, `navi job "…" -a receipt.jpg`. navi
 serve reads them as `-a` does, so a photo of a receipt or a whiteboard, a PDF
 or a text file all work (`spec/jobs.md` JOB-14 to JOB-16).
+A follow-up can bring files of its own, from the phone page's follow-up box
+or with `navi jobs <id> reply "<follow-up>" -a <file>` (JOB-19, JOB-20).
 Answers on the phone page are shown formatted (headings, lists, tables,
 code, links), and since an answer can quote a web page, none of it is ever
 read as HTML: only http(s) links work, and nothing in an answer can run

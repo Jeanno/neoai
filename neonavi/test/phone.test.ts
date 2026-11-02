@@ -157,6 +157,16 @@ test('JOB-16: the phone sends picked files with a job, photos as JPEG', { skip }
   assert.equal(sent[0].name, 'receipt.jpg')
   assert.equal(sent[0].mediaType, 'image/jpeg')
   // Picked files are gone once sent.
+  // JOB-20: a follow-up takes files of its own.
+  await page.getByLabel('Add photo or file').setInputFiles([{ name: 'menu.txt', mimeType: 'text/plain', buffer: Buffer.from('soup 4') }])
+  await page.getByText('menu.txt').waitFor()
+  await page.getByPlaceholder('Follow up…').fill('and this one?')
+  await page.getByRole('button', { name: 'Send' }).click()
+  await page.getByText('With receipt.jpg, menu.txt').waitFor()
+  await jobs.idle()
+  assert.equal(given.length, 2)
+  assert.deepEqual((given[1] as any[]).map((a) => a.name), ['menu.txt'])
+  assert.equal(await page.locator('.file').count(), 0)
   await page.getByRole('button', { name: '‹ Jobs' }).click()
   assert.equal(await page.getByText('receipt.jpg').count(), 0)
 })

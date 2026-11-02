@@ -148,8 +148,8 @@ ${MARKDOWN_JS}
 
   let jobs = [], schedules = [], dirs = [], open = linked, job = null, problem = '', draft = '', reply = '', dir = '', busy = false
   let repeat = 'now', time = '08:00', quiet = false
-  // JOB-16: files for the next job, as { name, data } with data base64.
-  let picked = []
+  // The files chosen for a new job and for a follow-up, as { name, data } with data base64 (JOB-16, JOB-20).
+  let picked = [], more = []
 
   // A photo is sent as a JPEG at most 1600 pixels on a side, which also turns
   // an iPhone's HEIC into something navi reads; anything else goes as it is.
@@ -173,6 +173,18 @@ ${MARKDOWN_JS}
       reader.readAsDataURL(file)
     })
     return { name: file.name, data }
+  }
+
+  // The chosen files, each with a way to remove it, and a button to add more, up to 4.
+  function filePicker(list) {
+    return el('div', {},
+      list.length > 0 && el('div', { class: 'files' }, list.map((f, i) => el('span', { class: 'file' },
+        el('span', {}, f.name),
+        el('button', { class: 'plain', 'aria-label': 'Remove ' + f.name, onclick: () => { list.splice(i, 1); render() } }, '×')))),
+      list.length < 4 && el('label', { class: 'pick' }, 'Add photo or file',
+        el('input', { type: 'file', multiple: true, 'aria-label': 'Add photo or file', onchange: (e) => act(async () => {
+          for (const file of [...e.target.files].slice(0, 4 - list.length)) list.push(await readPicked(file))
+        }) })))
   }
 
   async function refresh() {
@@ -204,7 +216,7 @@ ${MARKDOWN_JS}
       return
     }
     const waiting = jobs.filter((j) => j.status === 'waiting').length
-    const head = el('h1', {}, open ? el('button', { class: 'plain', onclick: () => { open = null; job = null; render(); refresh() } }, '‹ Jobs') : 'navi',
+    const head = el('h1', {}, open ? el('button', { class: 'plain', onclick: () => { open = null; job = null; reply = ''; more = []; render(); refresh() } }, '‹ Jobs') : 'navi',
       el('small', {}, waiting ? waiting + ' waiting' : jobs.some((j) => j.status === 'running') ? 'working' : ''))
     const err = problem && el('p', { class: 'err' }, problem)
     if (open && job) {
@@ -237,7 +249,12 @@ ${MARKDOWN_JS}
           ? el('div', { class: 'row' }, el('button', { class: 'no', disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/stop', {})) }, 'Stop'))
           : el('div', { class: 'card' },
               el('textarea', { id: 'reply', placeholder: 'Follow up…', oninput: (e) => (reply = e.target.value) }, reply),
-              el('div', { class: 'row' }, el('button', { disabled: busy || !reply.trim(), onclick: () => act(async () => { await api('/jobs/' + job.id + '/reply', { prompt: reply }); reply = '' }) }, 'Send'))),
+              // JOB-20: files with the follow-up, as with a new job.
+              filePicker(more),
+              el('div', { class: 'row' }, el('button', { disabled: busy || !reply.trim(), onclick: () => act(async () => {
+                await api('/jobs/' + job.id + '/reply', { prompt: reply, ...(more.length && { files: more }) })
+                reply = ''; more = []
+              }) }, 'Send'))),
         err)
     } else {
       put(head,
@@ -247,13 +264,7 @@ ${MARKDOWN_JS}
           el('div', { class: 'row' },
             el('select', { id: 'repeat', 'aria-label': 'When', onchange: (e) => { repeat = e.target.value; render() } }, REPEATS.map(([v, t]) => el('option', { value: v, selected: v === repeat }, t))),
             timed() && el('input', { id: 'time', type: 'time', 'aria-label': 'Time', value: time, oninput: (e) => (time = e.target.value) })),
-          repeat === 'now' && picked.length > 0 && el('div', { class: 'files' }, picked.map((f, i) => el('span', { class: 'file' },
-            el('span', {}, f.name),
-            el('button', { class: 'plain', 'aria-label': 'Remove ' + f.name, onclick: () => { picked.splice(i, 1); render() } }, '×')))),
-          repeat === 'now' && picked.length < 4 && el('label', { class: 'pick' }, 'Add photo or file',
-            el('input', { type: 'file', multiple: true, 'aria-label': 'Add photo or file', onchange: (e) => act(async () => {
-              for (const file of [...e.target.files].slice(0, 4 - picked.length)) picked.push(await readPicked(file))
-            }) })),
+          repeat === 'now' && filePicker(picked),
           repeat !== 'now' && el('label', { class: 'check' },
             el('input', { id: 'quiet', type: 'checkbox', checked: quiet, onchange: (e) => (quiet = e.target.checked) }),
             'Only tell me when something changes'),

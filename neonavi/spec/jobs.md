@@ -95,6 +95,16 @@ terminal that started them closes.
   with a way to remove it, and sends them with a job started now. A
   schedule takes no files. `navi job "<prompt>" -a <file>` (more than once
   for more) does the same from the terminal.
+- JOB-19: `POST /jobs/<id>/reply` may carry `files` as `POST /jobs` does
+  (JOB-14), sent with that follow-up's turn: one that cannot be attached
+  refuses the follow-up with a 400 naming it, and the job does not run
+  again. Their names are added to the job's `files` and to the follow-up's
+  line in its log.
+- JOB-20: The phone page's follow-up box has the same Add photo or file
+  button as a new job (JOB-16), and the files go with that follow-up only;
+  leaving the job for the list forgets the follow-up not sent. `navi jobs
+  <id> reply "<follow-up>" [-a <file>]…` follows a job up from the terminal,
+  and `navi jobs <id>` says so for a job that is not working.
 
 ## Answers on the phone
 
@@ -111,4 +121,3 @@ terminal that started them closes.
 ## Open
 
 - A queue, so a busy computer runs a few at a time.
-- Files with a follow-up.

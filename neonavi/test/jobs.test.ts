@@ -412,3 +412,50 @@ test('a job can be given files, which go with its first turn and are named on it
     server.close()
   }
 })
+
+// JOB-19
+test('a follow-up can carry files too, all of them or no follow-up', async () => {
+  const given: unknown[] = []
+  const { jobs, home } = await setup({
+    start: async ({ approve, history }) => {
+      const session = fakeSession(approve, history)
+      return { session: { ...session, get history() { return session.history }, turn: (p, o) => (given.push(o?.attachments), session.turn(p, o)) }, model: 'small' }
+    },
+  })
+  const token = 'i'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const call = (path: string, body?: unknown) =>
+    fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  const file = (name: string, text: string) => ({ name, data: Buffer.from(text).toString('base64') })
+  try {
+    const job = await (await call('/jobs', { prompt: 'plan the week', files: [file('a.txt', 'monday')] })).json()
+    await jobs.idle()
+    const bad = await call(`/jobs/${job.id}/reply`, { prompt: 'and this', files: [{ name: 'blob.bin', data: Buffer.from([0, 255]).toString('base64') }] })
+    assert.equal(bad.status, 400)
+    assert.match((await bad.json()).error.message, /blob\.bin/)
+    assert.equal(given.length, 1)
+    assert.equal(jobs.get(job.id)!.status, 'done')
+
+    const ok = await call(`/jobs/${job.id}/reply`, { prompt: 'add these', files: [file('b.txt', 'tuesday'), file('c.txt', 'wednesday')] })
+    assert.equal(ok.status, 200)
+    await jobs.idle()
+    assert.deepEqual(given[1], [
+      { kind: 'text', name: 'b.txt', text: 'tuesday' },
+      { kind: 'text', name: 'c.txt', text: 'wednesday' },
+    ])
+    const after = jobs.get(job.id)!
+    assert.deepEqual(after.files, ['a.txt', 'b.txt', 'c.txt'])
+    assert.ok(after.log.includes('> add these (with b.txt, c.txt)'))
+
+    // A plain follow-up still goes with none.
+    assert.equal((await call(`/jobs/${job.id}/reply`, { prompt: 'thanks' })).status, 200)
+    await jobs.idle()
+    assert.equal(given[2], undefined)
+  } finally {
+    server.close()
+  }
+})

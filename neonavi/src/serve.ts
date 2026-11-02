@@ -184,7 +184,11 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
     }
     if (parts[1] === 'reply') {
       if (typeof body.prompt !== 'string' || !body.prompt.trim()) return error(res, 400, 'Give the follow-up a prompt.')
-      return jobs.reply(job.id, body.prompt.trim()) ? json(res, 200, shownJob(jobs.get(job.id)!)) : error(res, 400, 'The job is still working; wait for it, or stop it.')
+      if (job.status === 'running' || job.status === 'waiting') return error(res, 400, 'The job is still working; wait for it, or stop it.')
+      // JOB-19: every file attached, or no follow-up.
+      const attachments = body.files === undefined ? [] : await attachUploads(body.files)
+      if (typeof attachments === 'string') return error(res, 400, attachments)
+      return jobs.reply(job.id, body.prompt.trim(), attachments) ? json(res, 200, shownJob(jobs.get(job.id)!)) : error(res, 400, 'The job is still working; wait for it, or stop it.')
     }
     if (parts[1] === 'stop') return jobs.stop(job.id) ? json(res, 200, shownJob(jobs.get(job.id)!)) : error(res, 400, 'The job is not running.')
   }

@@ -86,7 +86,7 @@ export interface Jobs {
   /** Answers with the waiting approval's key instead of the token (PSH-8); false for any other key. */
   answerByKey(id: string, key: string, yes: boolean): boolean
   /** False when the job is running or waiting (JOB-3). */
-  reply(id: string, prompt: string): boolean
+  reply(id: string, prompt: string, attachments?: Attachment[]): boolean
   stop(id: string): boolean
   /** Adds lines to a job's log (UND-12); false when there is no such job. */
   note(id: string, lines: string[]): Promise<boolean>
@@ -277,11 +277,14 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
       answers.get(id)?.(yes)
       return true
     },
-    reply(id, prompt) {
+    reply(id, prompt, attachments) {
       const job = jobs.get(id)
       if (!job || job.status === 'running' || job.status === 'waiting') return false
-      job.log.push(`> ${prompt}`)
-      begin(job, prompt)
+      // JOB-19: the follow-up's files join the job's.
+      const names = attachments?.map((x) => x.name) ?? []
+      job.log.push(`> ${prompt}${names.length ? ` (with ${names.join(', ')})` : ''}`)
+      if (names.length) job.files = [...(job.files ?? []), ...names]
+      begin(job, prompt, attachments)
       return true
     },
     stop(id) {
