@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { ModelMessage } from 'ai'
 import type { Answer, HarnessOptions, Session } from './harness.ts'
 import type { Attachment } from './attach.ts'
+import { glance, glancePage } from './diff.ts'
 
 /**
  * Work navi does in the background, inside navi serve (jobs.md): each job a
@@ -210,7 +211,9 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         pump()
         const key = randomBytes(16).toString('hex')
         keys.set(job.id, key)
-        d.notify('navi is waiting for you', `${titleOf(job.prompt)}: ${command}`, job.id, true, key)
+        // PSH-14, PSH-15: enough of what is asked to answer it from the notification.
+        const shown = o.change ? glance(o.change) : o.action ? glancePage(o.action.url) : ''
+        d.notify('navi is waiting for you', [`${titleOf(job.prompt)}: ${command}`, shown].filter(Boolean).join('\n'), job.id, true, key)
         const settle = (yes: boolean) => {
           answers.delete(job.id)
           keys.delete(job.id)

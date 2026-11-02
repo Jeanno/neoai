@@ -48,7 +48,8 @@ export function digest(held: Held[]): Held {
   for (const h of [...held].reverse()) if (!latest.some((l) => l.job === h.job)) latest.push(h)
   const named = latest.slice(0, NAMED)
   const more = latest.length - named.length
-  const lines = named.map((h) => `${h.title.replace(/^navi /, '')}: ${h.text}`)
+  // A waiting change's lines (PSH-14) are for its own notification, not the summary.
+  const lines = named.map((h) => `${h.title.replace(/^navi /, '')}: ${h.text.split('\n')[0]}`)
   return {
     title: 'navi, during quiet hours',
     text: [counts, ...lines, ...(more > 0 ? [`and ${more} more`] : [])].join('\n'),

@@ -77,3 +77,24 @@ test('PSH-11, PSH-12: notifications in quiet hours are held, then sent as one on
   await settle()
   assert.equal(sent.length, 4)
 })
+
+// PSH-14: a waiting change's lines are for its own notification, not the summary.
+test('the summary names a waiting change by its first line only', () => {
+  const d = digest([{ title: 'navi is waiting for you', text: 'fix it: edit a.ts (+1 -1)\n- old\n+ new', job: 'j1' }])
+  assert.equal(d.text, '1 waiting for you\nis waiting for you: fix it: edit a.ts (+1 -1)')
+})
+
+// PSH-14, PSH-15
+test('a glance at a change is its changed lines, a few, cut short; at an action, its page', async () => {
+  const { glance, glancePage, GLANCE_LINES } = await import('../src/diff.ts')
+  const many = ['@@ line 3 @@', '  ctx', ...Array.from({ length: 9 }, (_, i) => `+ line ${i}`), '  ctx']
+  const g = glance({ diff: many.join('\n') }).split('\n')
+  assert.equal(g.length, GLANCE_LINES + 1)
+  assert.deepEqual(g.slice(0, 2), ['+ line 0', '+ line 1'])
+  assert.equal(g.at(-1), '… 3 more lines')
+  assert.equal(glance({ diff: `- ${'x'.repeat(100)}` }), `- ${'x'.repeat(57)}…`)
+  assert.equal(glance({ diff: '(no change)' }), '')
+  assert.equal(glancePage('https://example.com/'), 'on example.com')
+  assert.equal(glancePage('https://example.com/a/b?secret=1#x'), 'on example.com/a/b')
+  assert.equal(glancePage('not a url'), '')
+})

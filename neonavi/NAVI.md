@@ -125,6 +125,11 @@ carries a key good for that one question only, and your phone sends the
 answer straight to navi over the tailnet. The token never leaves this
 computer (`spec/push.md`).
 
+A job waiting on a file change shows the changed lines in its notification
+(the first six, cut short), and one waiting on a browser action the page it
+is on, so you can answer from the lock screen; pushed, only with `detail`
+(PSH-14, PSH-15).
+
 `"quietHours": "22:00-07:00"` holds navi serve's notifications, on the Mac and
 the phone, between those times; when they end you get one that sums up what
 happened (how many jobs finished, failed or wait on you, the latest named).

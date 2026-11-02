@@ -30,6 +30,12 @@ function fakeSession(approve: Approve, start: ModelMessage[]): Session {
         const ok = await approve('rm -rf build', { signal: signal ?? new AbortController().signal })
         yield { type: 'tool-result', id: 'c1', name: 'run_shell', output: ok ? 'removed' : 'declined', error: false }
         yield end(ok ? 'Removed it.' : 'Left it.', { stopped: !!signal?.aborted })
+      } else if (prompt === 'edit' || prompt === 'click') {
+        const o = prompt === 'edit'
+          ? { change: { path: 'a.ts', created: false, diff: '@@ line 1 @@\n  keep\n- old\n+ new', added: 1, removed: 1 } }
+          : { action: { url: 'https://shop.example/cart?id=7' } }
+        const ok = await approve(prompt === 'edit' ? 'edit a.ts (+1 -1)' : 'click "Buy now"', { signal: signal ?? new AbortController().signal, ...o })
+        yield end(ok ? 'Did it.' : 'Left it.')
       } else if (prompt === 'hang') {
         if (!signal?.aborted) await new Promise((r) => signal?.addEventListener('abort', r, { once: true }))
         yield end('', { stopped: true })
@@ -591,6 +597,20 @@ test("a project's facts can be read, added to and forgotten through the API, for
   } finally {
     server.close()
   }
+})
+
+// PSH-14, PSH-15
+test("a waiting change's notification shows its changed lines, and an action's its page", async () => {
+  const { jobs, notes } = await setup()
+  const edit = jobs.create('edit', '/tmp')
+  await until(jobs, edit.id, 'waiting')
+  assert.deepEqual(notes, ['navi is waiting for you: edit: edit a.ts (+1 -1)\n- old\n+ new'])
+  jobs.answer(edit.id, true)
+  const click = jobs.create('click', '/tmp')
+  await until(jobs, click.id, 'waiting')
+  assert.equal(notes[1], 'navi is waiting for you: click: click "Buy now"\non shop.example/cart')
+  jobs.answer(click.id, false)
+  await jobs.idle()
 })
 
 // JOB-24, JOB-25

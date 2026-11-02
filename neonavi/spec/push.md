@@ -59,7 +59,20 @@ reaches you without the phone page open.
 - PSH-13: What is held is kept in memory only: a navi serve stopped during
   quiet hours does not send it.
 
+## Seeing what is asked
+
+- PSH-14: A job waiting on a file change says, after the one line naming
+  it, the change's changed lines (`-` and `+`, no lines around them): the
+  first 6, each cut at 60 characters, then how many more there are. It is
+  the same diff the phone page shows, made visible (TL-38), so nothing in
+  it can hide. On the Mac it is always shown; pushed, only with `detail`
+  (PSH-2).
+- PSH-15: A job waiting on a browser action says the page it is on: host
+  and path, cut at 60 characters, never the query or fragment, which can
+  hold what a page keeps private.
+- PSH-16: The quiet hours summary (PSH-12) names a waiting job by its first
+  line only.
+
 ## Open
 
-- Answering a file change or browser action with its diff or page shown in
-  the notification.
+- An image of the page with a browser action's push.

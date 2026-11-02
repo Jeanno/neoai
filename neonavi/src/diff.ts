@@ -71,6 +71,32 @@ export function diffLines(before: string, after: string): { diff: string; added:
   return { diff: out.map(visible).join('\n'), added: come.length, removed: gone.length }
 }
 
+export const GLANCE_LINES = 6
+export const GLANCE_WIDTH = 60
+
+/**
+ * What a notification shows of a change (PSH-14): its changed lines only, the
+ * first few, each cut short, and how many more there are. The diff is already
+ * made visible, so nothing in it can hide.
+ */
+export function glance(change: Pick<FileChange, 'diff'>): string {
+  const changed = change.diff.split('\n').filter((l) => l.startsWith('- ') || l.startsWith('+ '))
+  const cut = (l: string) => (l.length > GLANCE_WIDTH ? `${l.slice(0, GLANCE_WIDTH - 1).trimEnd()}…` : l.trimEnd())
+  const more = changed.length - GLANCE_LINES
+  return [...changed.slice(0, GLANCE_LINES).map(cut), ...(more > 0 ? [`… ${more} more line${more === 1 ? '' : 's'}`] : [])].join('\n')
+}
+
+/** Where a browser action would happen, for a notification (PSH-15): host and path, cut short. */
+export function glancePage(url: string): string {
+  try {
+    const u = new URL(url)
+    const where = `${u.host}${u.pathname === '/' ? '' : u.pathname}`
+    return visible(`on ${where.length > GLANCE_WIDTH ? `${where.slice(0, GLANCE_WIDTH - 1)}…` : where}`)
+  } catch {
+    return ''
+  }
+}
+
 /** One line for a change: `edit src/a.ts (+2 -1)`, `create notes.md (+12)`. */
 export function summarize(change: FileChange): string {
   const counts = change.created ? `+${change.added}` : `+${change.added} -${change.removed}`

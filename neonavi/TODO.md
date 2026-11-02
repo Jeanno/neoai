@@ -79,6 +79,8 @@ add the requirement there first.
       notification. (SCH-25 to SCH-27)
 - [x] A failed scheduled run is tried once more five minutes later before
       it counts. (SCH-28, SCH-29)
+- [x] A waiting change's notification shows its changed lines; a browser
+      action's, its page. (PSH-14 to PSH-16)
 - [x] Quiet hours: notifications held overnight and sent as one summary.
       (PSH-11 to PSH-13)
 - [x] navi serve's log shows this computer's time (it was an hour behind
