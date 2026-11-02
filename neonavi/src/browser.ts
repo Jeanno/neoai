@@ -161,7 +161,15 @@ async function closeStuck(port: number, profile: string): Promise<void> {
     const { webSocketDebuggerUrl: url } = (await (await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(2000) })).json()) as { webSocketDebuggerUrl: string }
     await new Promise<void>((done) => {
       const ws = new WebSocket(url)
-      const end = () => (clearTimeout(timer), ws.close(), done())
+      let ended = false
+      // Closing fires onclose, which would end again.
+      const end = () => {
+        if (ended) return
+        ended = true
+        clearTimeout(timer)
+        ws.close()
+        done()
+      }
       const timer = setTimeout(end, 3000)
       ws.onopen = () => ws.send(JSON.stringify({ id: 1, method: 'Browser.close' }))
       ws.onmessage = ws.onerror = ws.onclose = end
