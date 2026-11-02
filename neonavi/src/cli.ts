@@ -21,6 +21,7 @@ import { readLedger, readUndone, recordUndone, stats } from './ledger.ts'
 import { makeJobs, matches, serveToken, tailnetAddresses, titleOf, working, type JobDeps } from './jobs.ts'
 import { push, pushConfig } from './push.ts'
 import { addFact, forgetFact, memoryFile, projectRoot, readMemory } from './memory.ts'
+import { SUGGEST_AFTER, suggestFacts } from './suggest.ts'
 import { listUndo, namer, redo, redoneLines, undo, undoneReport } from './undo.ts'
 import { wall } from './clock.ts'
 import { makeQuietNotify, parseQuiet } from './quiet.ts'
@@ -94,7 +95,8 @@ const HELP = [
   '/redo              bring back what the last /undo put back',
   '/help              this list',
   '^C                 stop an answer; at an empty prompt, leave',
-  'exit, quit, ^D     leave',
+  'exit, quit         leave, maybe offering facts to remember',
+  '^D                 leave at once',
 ].join('\n')
 
 const USAGE = [
@@ -964,6 +966,31 @@ async function main() {
   })
   let answering = chosen
   let session = (await harnessFor(chosen)).session(stored)
+  // Answered turns in this run, for suggesting what to remember (MEM-20).
+  let answeredHere = 0
+
+  /** MEM-20 to MEM-22: on leaving with exit, facts the user stated, each asked about. */
+  const offerFacts = async () => {
+    const c = config as { memory?: unknown; suggest_memory?: unknown }
+    if (!interactive || answeredHere < SUGGEST_AFTER || c.memory === false || c.suggest_memory === false) return
+    const home = homedir()
+    const project = await projectRoot(cwd, home)
+    const known = { you: await readMemory(home), ...(project && { project: await readMemory(home, project) }) }
+    const stop = new AbortController()
+    running = stop
+    console.error(dim('· anything from this worth remembering? (^C skips)'))
+    spin.start()
+    const found = await suggestFacts(modelFor(answering, config), session.history, known, stop.signal)
+    spin.stop()
+    running = null
+    if (stop.signal.aborted) return
+    if (!found.length) return console.error(dim('· nothing new to remember'))
+    for (const s of found) {
+      if (!(await asker.approveMemory(s.fact, undefined, s.project ? basename(project!) : undefined))) continue
+      const problem = await addFact(home, s.fact, s.project ? project : undefined)
+      console.error(dim(problem ? `· not remembered: ${problem}` : `· remembered${s.project ? ` for ${basename(project!)}` : ''}`))
+    }
+  }
 
   /** CLI-20: what answers and the saved chain, or a switch that keeps the conversation. */
   const switchModel = async (spec: string) => {
@@ -1062,6 +1089,7 @@ async function main() {
     if (interactive) line.listen()
     if (first) {
       const answered = await turn(first)
+      if (answered) answeredHere++
       if (!interactive) return answered ? 0 : 1
     }
     for (;;) {
@@ -1073,7 +1101,11 @@ async function main() {
       }))?.trim()
       // Reset the bold, and a blank line between what was asked and what comes back.
       if (process.stdout.isTTY) process.stdout.write('\x1b[0m\n')
-      if (prompt === undefined || prompt === null || QUIT.has(prompt.toLowerCase())) return 0
+      if (prompt === undefined || prompt === null) return 0
+      if (QUIT.has(prompt.toLowerCase())) {
+        await offerFacts()
+        return 0
+      }
       if (!prompt) continue
       const command = commandFrom(prompt)
       if (command?.name === 'model') await switchModel(command.spec)
@@ -1091,7 +1123,7 @@ async function main() {
           console.error(`can't attach: ${(e as Error).message}`)
         }
       }
-      else await turn(prompt)
+      else if (await turn(prompt)) answeredHere++
     }
   } finally {
     line.close()

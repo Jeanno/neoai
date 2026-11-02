@@ -88,6 +88,23 @@ of facts, read into every turn, that navi can add to only with your yes.
   under its name after the user's, each with forget, and the box to add one
   has a choice of whom it is about: the user, or one of those projects.
 
+## Suggested on leaving
+
+- MEM-20: Leaving an interactive conversation with `exit` or `quit`, after
+  at least 3 answered turns in that run, navi asks the model once, without
+  tools, for facts worth remembering, saying it is looking and that ^C
+  skips. ^C and ^D leave at once, as before. `"memory": false` or
+  `"suggest_memory": false` in the config turns it off.
+- MEM-21: The model is shown only what the user typed in the conversation
+  (the latest 20 prompts, each cut at 500 characters, navi's own notes left
+  out), never answers, tool output, files or pages, so nothing navi read can
+  be put forward as the user's. It may suggest at most two: each about the
+  user, or about the project the directory is in (MEM-14), which is dropped
+  outside a project. One already kept, or failing MEM-6, is left out; a model
+  that fails or finds nothing says so in a line and asks nothing.
+- MEM-22: Each suggestion is asked about as the remember tool's are (MEM-7,
+  `remember?` or `remember for <project>?`, y/N), and kept only on a yes.
+
 ## Open
 
-- Suggest facts at the end of a conversation instead of only when asked.
+- Suggestions on the phone, when a job ends.

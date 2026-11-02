@@ -170,6 +170,11 @@ The phone's What navi remembers page shows them too, for the projects of
 the folders it offers jobs in, and can add or forget one (MEM-18, MEM-19).
 On the phone page, What navi remembers shows the same list, with a box to
 add a fact and a way to forget one (MEM-12, MEM-13).
+When you leave a conversation of three or more answers with `exit`, navi
+looks over what you typed (only that, not its answers or what it read) and
+may suggest up to two facts, each asked about as usual; ^C skips it, ^C or
+^D at the prompt leave at once, and `"suggest_memory": false` turns it off
+(MEM-20 to MEM-22).
 
 `navi mcp` is navi as an MCP server: clients such as Claude Desktop, Claude
 Code or Cursor get one tool, `ask_navi`, that hands a task (and any files) to
