@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addFact, checkFact, forgetFact, MAX_MEMORY, memoryFile, memorySection, readMemory } from '../src/memory.ts'
+import { addFact, checkFact, forgetFact, MAX_MEMORY, memoryFile, memorySection, projectRoot, readMemory } from '../src/memory.ts'
 import { makeTools } from '../src/tools.ts'
 
 const home = () => mkdtemp(join(tmpdir(), 'navi-mem-'))
@@ -75,4 +75,57 @@ test('the remember tool asks only for facts it could keep, and writes only on ye
   assert.deepEqual(await readMemory(h), ['Uses zsh'])
   // MEM-4: no memory home, no tool.
   assert.equal((makeTools({ approve: async () => false }, { cwd: h }) as any).remember, undefined)
+})
+
+// MEM-14: the repository around a directory, the directory outside one, nothing at home.
+test("a project is the repository around the directory, and its facts live in the user's home", async () => {
+  const h = await home()
+  const repo = join(h, 'code', 'app')
+  await mkdir(join(repo, '.git'), { recursive: true })
+  await mkdir(join(repo, 'src', 'deep'), { recursive: true })
+  assert.equal(await projectRoot(join(repo, 'src', 'deep'), h), repo)
+  assert.equal(await projectRoot(repo, h), repo)
+  assert.equal(await projectRoot(join(h, 'code'), h), join(h, 'code'))
+  assert.equal(await projectRoot(h, h), undefined)
+  // A .git at home is not a project.
+  await mkdir(join(h, '.git'))
+  assert.equal(await projectRoot(join(h, 'notes'), h), join(h, 'notes'))
+  assert.equal(await addFact(h, 'Tests run with npm test', repo), undefined)
+  assert.equal(await addFact(h, 'tests run with  NPM test', repo), 'That is already remembered.')
+  // Kept apart from the user's, in home, never in the repository.
+  assert.deepEqual(await readMemory(h), [])
+  assert.deepEqual(await readMemory(h, repo), ['Tests run with npm test'])
+  assert.ok(memoryFile(h, repo).startsWith(join(h, '.neoai', 'memory') + '/'))
+  assert.notEqual(memoryFile(h, repo), memoryFile(h, join(h, 'code')))
+  assert.equal((await stat(memoryFile(h, repo))).mode & 0o777, 0o600)
+  assert.deepEqual(await forgetFact(h, 'npm', repo), { removed: 'Tests run with npm test' })
+})
+
+// MEM-15
+test("the project's facts follow the user's, under a heading naming it, each cut on its own", () => {
+  const both = memorySection(['Uses zsh'], { root: '/code/app', facts: ['Tests run with npm test'] })
+  assert.match(both, /about the user[^\n]*\n- Uses zsh\n\nWhat you remember about the project at \/code\/app[^\n]*\n- Tests run with npm test$/)
+  assert.match(memorySection([], { root: '/code/app', facts: ['x'] }), /^\nWhat you remember about the project at \/code\/app/)
+  assert.equal(memorySection(['Uses zsh'], { root: '/code/app', facts: [] }), memorySection(['Uses zsh']))
+  const long = memorySection(['Uses zsh'], { root: '/a', facts: Array.from({ length: 30 }, () => 'z'.repeat(200)) })
+  assert.ok(long.endsWith('…[memory truncated]'))
+})
+
+// MEM-16
+test('the remember tool keeps a project fact for the project, asked as such, and only where there is one', async () => {
+  const h = await home()
+  const repo = join(h, 'app')
+  const asked: [string, string | undefined][] = []
+  const tools = makeTools({ approve: async () => false, remember: async (f, _s, _id, p) => (asked.push([f, p]), true) }, { cwd: repo, memory: h, project: repo }) as any
+  const run = (input: object, t = tools) => t.remember.execute(input, { toolCallId: 'x', messages: [] })
+  assert.match(tools.remember.description, /project to true/)
+  assert.equal(await run({ fact: 'Uses tabs', project: true }), 'remembered for this project: Uses tabs')
+  assert.equal(await run({ fact: 'Uses zsh' }), 'remembered: Uses zsh')
+  assert.match(await run({ fact: 'uses TABS', project: true }), /already/)
+  assert.deepEqual(asked, [['Uses tabs', repo], ['Uses zsh', undefined]])
+  assert.deepEqual(await readMemory(h, repo), ['Uses tabs'])
+  assert.deepEqual(await readMemory(h), ['Uses zsh'])
+  const nowhere = makeTools({ approve: async () => false, remember: async () => assert.fail('asked') }, { cwd: h, memory: h }) as any
+  assert.doesNotMatch(nowhere.remember.description, /project/)
+  assert.match(await run({ fact: 'Uses tabs', project: true }, nowhere), /no project here/)
 })

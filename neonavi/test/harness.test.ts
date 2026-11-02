@@ -164,6 +164,31 @@ test('remember always asks, and what is remembered is sent from the next turn', 
   assert.ok(systemOf(2).endsWith(today()))
 })
 
+// MEM-15, MEM-16: a project's fact is asked as one, and sent to turns in that project only.
+test("a project's fact is asked for by name and sent with the next turn there", async () => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-h-'))
+  const repo = join(home, 'app')
+  await mkdir(join(repo, '.git'), { recursive: true })
+  const asked: { command: string; memory?: string; project?: string }[] = []
+  const model = fake([
+    [call('c1', 'remember', { fact: 'Tests run with npm test', project: true }), finish('tool-calls')],
+    [...text('t', 'Noted.'), finish('stop')],
+    [...text('t2', 'Hi.'), finish('stop')],
+  ])
+  const h = await harness(model, { cwd: repo, home, approve: async (command, { memory, project }) => (asked.push({ command, memory, project }), true) })
+  const s = h.session()
+  await collect(s.turn('tests here run with npm test, remember that'))
+  assert.deepEqual(asked, [{ command: 'remember for app: Tests run with npm test', memory: 'Tests run with npm test', project: repo }])
+  await collect(s.turn('hi'))
+  const system = String(model.doStreamCalls[2].prompt.find((m) => m.role === 'system')?.content)
+  assert.match(system, new RegExp(`What you remember about the project at ${repo}[^\\n]*\\n- Tests run with npm test\\n`))
+  assert.doesNotMatch(system, /about the user/)
+  // Elsewhere, not known.
+  const other = fake([[...text('t', 'Hi.'), finish('stop')]])
+  await collect((await harness(other, { home })).session().turn('hi'))
+  assert.doesNotMatch(String(other.doStreamCalls[0].prompt.find((m) => m.role === 'system')?.content), /npm test/)
+})
+
 // MEM-7: declined, nothing is written and the model is told not to ask again.
 test('a declined fact is not remembered', async () => {
   const model = fake([

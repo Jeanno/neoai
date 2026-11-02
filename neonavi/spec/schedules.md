@@ -156,4 +156,3 @@ every so often. A morning brief, a page watched every hour.
 
 ## Open
 
-- Quiet hours: schedules that do not notify between times the user sets.

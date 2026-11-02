@@ -40,7 +40,8 @@ export interface Approver {
   /** A browser action by its one-line description and its page (BRW-11); never "always". */
   approveAction: (line: string, url: string, signal?: AbortSignal) => Promise<boolean>
   /** A fact to remember (MEM-7); never "always". */
-  approveMemory: (fact: string, signal?: AbortSignal) => Promise<boolean>
+  /** With `project`, a fact for that project (MEM-16). */
+  approveMemory: (fact: string, signal?: AbortSignal, project?: string) => Promise<boolean>
   close: () => void
 }
 
@@ -233,8 +234,9 @@ export function makeApprover(
       const answer = await line.ask(`\n${bold('do?')} ${visible(action)}\n${dim(visible(url))}\n${dim('[y/N]')} `, { signal })
       return (answer ?? '').trim().toLowerCase() === 'y'
     },
-    approveMemory: async (fact, signal) => {
-      const answer = await line.ask(`\n${bold('remember?')} ${visible(fact)}\n${dim('[y/N]')} `, { signal })
+    approveMemory: async (fact, signal, project) => {
+      const question = project ? `remember for ${visible(project)}?` : 'remember?'
+      const answer = await line.ask(`\n${bold(question)} ${visible(fact)}\n${dim('[y/N]')} `, { signal })
       return (answer ?? '').trim().toLowerCase() === 'y'
     },
     close: () => line.close(),

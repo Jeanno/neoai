@@ -112,8 +112,10 @@ add the requirement there first.
       exact text, never a near match). (MEM-12, MEM-13)
 - [x] The phone page keeps saying why an action failed until the next one,
       instead of the refresh after it clearing it at once.
-- [ ] Suggest facts to remember at the end of a conversation, and memory
-      per project. (`spec/memory.md` Open)
+- [x] Memory per project: facts about one repository, asked for by name
+      and sent only to turns there; kept in your home. (MEM-14 to MEM-17)
+- [ ] Suggest facts to remember at the end of a conversation; a project's
+      facts on the phone. (`spec/memory.md` Open)
 - [x] Undo: `navi undo` and `/undo` put back the files navi's last turn
       changed, never over edits made since, and the model is told.
       (UND-1 to UND-9)

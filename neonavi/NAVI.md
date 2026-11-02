@@ -153,6 +153,12 @@ hand; `navi memory` lists them, `navi memory add "…"` adds one and
 `navi memory forget <n | words>` removes one. They go wherever a turn goes,
 a remote model included; `"memory": false` in the config turns it off
 (`spec/memory.md`).
+
+A project has facts of its own too: say "remember for this project: tests
+run with make check" and navi asks `remember for <project>?`, then knows it
+in every later turn in that repository, and nowhere else. They are kept in
+`~/.neoai/memory/`, never in the repository; `navi memory` lists them after
+yours, and `navi memory add --project "…"` adds one (MEM-14 to MEM-17).
 On the phone page, What navi remembers shows the same list, with a box to
 add a fact and a way to forget one (MEM-12, MEM-13).
 

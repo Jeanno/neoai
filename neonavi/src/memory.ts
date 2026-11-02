@@ -1,5 +1,6 @@
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { createHash } from 'node:crypto'
+import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { hasUnseen } from './diff.ts'
 
 /** Facts about the user kept between conversations (memory.md). */
@@ -7,11 +8,28 @@ import { hasUnseen } from './diff.ts'
 export const MAX_MEMORY = 4000
 export const MAX_FACT = 300
 
-export const memoryFile = (home: string) => join(home, '.neoai', 'memory.md')
+/** The user's facts, or with `project` (its root) that project's (MEM-14). */
+export const memoryFile = (home: string, project?: string) =>
+  project
+    ? join(home, '.neoai', 'memory', `${createHash('sha256').update(project).digest('hex').slice(0, 16)}.md`)
+    : join(home, '.neoai', 'memory.md')
+
+/**
+ * The project a directory is in (MEM-14): the repository around it, or the
+ * directory itself outside one; none at home, whose facts are the user's.
+ */
+export async function projectRoot(cwd: string, home: string): Promise<string | undefined> {
+  for (let dir = cwd; ; dir = dirname(dir)) {
+    if (dir === home) break
+    if (await stat(join(dir, '.git')).then(() => true, () => false)) return dir
+    if (dirname(dir) === dir) break
+  }
+  return cwd === home ? undefined : cwd
+}
 
 /** The facts in the file, in order (MEM-1); none when there is no file. */
-export async function readMemory(home: string): Promise<string[]> {
-  const text = await readFile(memoryFile(home), 'utf8').catch(() => '')
+export async function readMemory(home: string, project?: string): Promise<string[]> {
+  const text = await readFile(memoryFile(home, project), 'utf8').catch(() => '')
   return text
     .split('\n')
     .map((l) => l.trim().replace(/^[-*]\s+/, ''))
@@ -19,11 +37,16 @@ export async function readMemory(home: string): Promise<string[]> {
 }
 
 /** The prompt's memory section (MEM-2, MEM-3), or nothing. */
-export function memorySection(facts: string[]): string {
-  if (!facts.length) return ''
-  let text = facts.map((f) => `- ${f}`).join('\n')
-  if (text.length > MAX_MEMORY) text = `${text.slice(0, MAX_MEMORY)}\n…[memory truncated]`
-  return ['', 'What you remember about the user (they wrote or approved each line; use it when it helps, never recite it):', text].join('\n')
+export function memorySection(facts: string[], project?: { root: string; facts: string[] }): string {
+  const cut = (fs: string[]) => {
+    const text = fs.map((f) => `- ${f}`).join('\n')
+    return text.length > MAX_MEMORY ? `${text.slice(0, MAX_MEMORY)}\n…[memory truncated]` : text
+  }
+  return [
+    ...(facts.length ? ['', 'What you remember about the user (they wrote or approved each line; use it when it helps, never recite it):', cut(facts)] : []),
+    // MEM-15: the project's after the user's, saying which project.
+    ...(project?.facts.length ? ['', `What you remember about the project at ${project.root} (the user wrote or approved each line):`, cut(project.facts)] : []),
+  ].join('\n')
 }
 
 const same = (a: string) => a.toLowerCase().replace(/\s+/g, ' ')
@@ -40,28 +63,28 @@ export function checkFact(fact: string, facts: string[]): string | undefined {
     return `Memory is full (${MAX_MEMORY} characters). The user can make room with navi memory forget.`
 }
 
-async function save(home: string, facts: string[]) {
-  const file = memoryFile(home)
-  await mkdir(join(home, '.neoai'), { recursive: true, mode: 0o700 })
+async function save(home: string, facts: string[], project?: string) {
+  const file = memoryFile(home, project)
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 })
   await writeFile(`${file}.tmp`, facts.map((f) => `- ${f}\n`).join(''), { mode: 0o600 })
   await rename(`${file}.tmp`, file)
   await chmod(file, 0o600)
 }
 
 /** Adds a fact; why not, or nothing when it was added. */
-export async function addFact(home: string, fact: string): Promise<string | undefined> {
-  const facts = await readMemory(home)
+export async function addFact(home: string, fact: string, project?: string): Promise<string | undefined> {
+  const facts = await readMemory(home, project)
   const problem = checkFact(fact, facts)
   if (problem) return problem
-  await save(home, [...facts, fact.trim()])
+  await save(home, [...facts, fact.trim()], project)
 }
 
 /**
  * Removes the fact numbered `which` (from 1), or the one fact containing
  * those words (MEM-11): the fact removed, or the matches when not exactly one.
  */
-export async function forgetFact(home: string, which: string): Promise<{ removed: string } | { matches: string[] }> {
-  const facts = await readMemory(home)
+export async function forgetFact(home: string, which: string, project?: string): Promise<{ removed: string } | { matches: string[] }> {
+  const facts = await readMemory(home, project)
   const w = which.trim()
   let at: number
   if (/^\d+$/.test(w)) at = Number(w) - 1
@@ -72,6 +95,6 @@ export async function forgetFact(home: string, which: string): Promise<{ removed
   }
   if (at < 0 || at >= facts.length) return { matches: [] }
   const [removed] = facts.splice(at, 1)
-  await save(home, facts)
+  await save(home, facts, project)
   return { removed }
 }

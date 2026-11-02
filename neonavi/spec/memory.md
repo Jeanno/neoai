@@ -57,7 +57,29 @@ of facts, read into every turn, that navi can add to only with your yes.
   they go with every turn to whichever model answers, and when memory is
   off, that it is.
 
+## A project's facts
+
+- MEM-14: A project also has facts of its own, kept in the user's home at
+  `~/.neoai/memory/<hash of the project's root>.md` as MEM-1 has them, never
+  in the project, so nothing is written to a repository and a cloned one
+  cannot bring facts with it. The project is the repository the working
+  directory is in (the nearest directory above it with `.git`, not above
+  home), or the working directory itself outside one; at home there is no
+  project, as home's facts are the user's.
+- MEM-15: Every turn in a project reads its facts afresh too, sent after the
+  user's under a heading naming the project, cut at 4000 characters of their
+  own as MEM-3. None, no section; `"memory": false` turns them off with the
+  rest (MEM-4).
+- MEM-16: `remember` takes `project: true` for a fact about the project, with
+  the checks of MEM-6 against the project's facts, asked as MEM-7 as
+  `remember for <project>: <fact>`. Outside a project it is refused without
+  asking.
+- MEM-17: `navi memory` lists the project's facts after the user's, numbered
+  on from them so one number names one fact, with the file's path;
+  `navi memory add --project <fact>` adds one to the project's; `forget`
+  takes a number or words across both.
+
 ## Open
 
 - Suggest facts at the end of a conversation instead of only when asked.
-- Per-project memory beside NAVI.md.
+- A project's facts on the phone, for a job's directory.

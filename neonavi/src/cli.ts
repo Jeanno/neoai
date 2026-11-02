@@ -20,7 +20,7 @@ import { describe, entryLabel, escalationFor, modelLabel } from './setup-core.ts
 import { readLedger, stats } from './ledger.ts'
 import { makeJobs, matches, serveToken, tailnetAddresses, titleOf, working, type JobDeps } from './jobs.ts'
 import { push, pushConfig } from './push.ts'
-import { addFact, forgetFact, memoryFile, readMemory } from './memory.ts'
+import { addFact, forgetFact, memoryFile, projectRoot, readMemory } from './memory.ts'
 import { listUndo, namer, redo, redoneLines, undo, undoneReport } from './undo.ts'
 import { wall } from './clock.ts'
 import { makeQuietNotify, parseQuiet } from './quiet.ts'
@@ -110,7 +110,7 @@ const USAGE = [
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
   '       navi schedules [<id> run | pause | resume | rm | edit [--prompt …] [--at …] [--days …] [--every …] [--only-changes | --every-run]]',
   '       navi push test',
-  '       navi memory [add "<fact>" | forget <n | words>]',
+  '       navi memory [add [--project] "<fact>" | forget <n | words>]',
   '       navi undo [--list] [-C <directory>]',
   '       navi redo [-C <directory>]',
 ].join('\n')
@@ -137,7 +137,7 @@ const ABOUT = [
   '                     --only-changes makes it a watch that only speaks when something changed',
   'navi schedules       list schedules and their next run; <id> run starts one now, pause, resume, edit changes it, rm deletes it',
   'navi push test       send a test push to your phone (set "push" in the config first)',
-  'navi memory          what navi remembers about you; add a fact, or forget one by number or words',
+  'navi memory          what navi remembers about you and this project; add a fact, or forget one',
   "navi undo            put back the files navi's last turn here changed; --list shows what can be",
   'navi redo            bring back what the last undo here put back, unless changed since',
 ].join('\n')
@@ -620,37 +620,53 @@ async function pushCommand(argv: string[]) {
   return 0
 }
 
-/** `navi memory [add "<fact>" | forget <n | words>]` (MEM-9 to MEM-11). */
+/** `navi memory [add [--project] "<fact>" | forget <n | words>]` (MEM-9 to MEM-11, MEM-17). */
 async function memoryCommand(argv: string[]) {
   const home = homedir()
+  const project = await projectRoot(process.cwd(), home)
   const [verb, ...rest] = argv
-  const words = rest.join(' ')
+  const forProject = verb === 'add' && rest[0] === '--project'
+  const words = (forProject ? rest.slice(1) : rest).join(' ')
+  if (forProject && !project) return console.error('There is no project here: run it in one, or add the fact about yourself.'), 1
   if (verb === 'add' && words) {
-    const problem = await addFact(home, words)
+    const problem = await addFact(home, words, forProject ? project : undefined)
     if (problem) return console.error(problem), 1
-    console.log(`remembered: ${words.trim()}`)
+    console.log(`remembered${forProject ? ` for ${project}` : ''}: ${words.trim()}`)
     return 0
   }
+  const mine = await readMemory(home)
+  const theirs = project ? await readMemory(home, project) : []
+  // MEM-17: numbered on from the user's, so one number names one fact.
+  const all: { fact: string; project?: string }[] = [...mine.map((fact) => ({ fact })), ...theirs.map((fact) => ({ fact, project }))]
   if (verb === 'forget' && words) {
-    const got = await forgetFact(home, words)
-    if ('removed' in got) return console.log(`forgot: ${got.removed}`), 0
-    if (!got.matches.length) console.error(`Nothing remembered matches ${words}; navi memory lists what there is.`)
+    const same = (x: string) => x.toLowerCase().replace(/\s+/g, ' ')
+    const matches = /^\d+$/.test(words.trim())
+      ? all.filter((_, i) => i + 1 === Number(words.trim()))
+      : all.filter((f) => same(f.fact).includes(same(words.trim())))
+    if (matches.length === 1) {
+      const got = await forgetFact(home, String((matches[0].project ? theirs : mine).indexOf(matches[0].fact) + 1), matches[0].project)
+      if ('removed' in got) return console.log(`forgot${matches[0].project ? ` for ${project}` : ''}: ${got.removed}`), 0
+    }
+    if (!matches.length) console.error(`Nothing remembered matches ${words}; navi memory lists what there is.`)
     else {
-      console.error(`${got.matches.length} facts match; say which by number:`)
-      const all = await readMemory(home)
-      for (const m of got.matches) console.error(`  ${all.indexOf(m) + 1}. ${m}`)
+      console.error(`${matches.length} facts match; say which by number:`)
+      for (const m of matches) console.error(`  ${all.indexOf(m) + 1}. ${m.fact}`)
     }
     return 1
   }
   if (verb !== undefined) {
-    console.error('usage: navi memory [add "<fact>" | forget <n | words>]')
+    console.error('usage: navi memory [add [--project] "<fact>" | forget <n | words>]')
     return 1
   }
-  const facts = await readMemory(home)
-  if (!facts.length) console.log('navi remembers nothing about you yet. Tell it something to remember, or: navi memory add "…"')
-  facts.forEach((f, i) => console.log(`${String(i + 1).padStart(3)}. ${f}`))
+  if (!mine.length) console.log('navi remembers nothing about you yet. Tell it something to remember, or: navi memory add "…"')
+  mine.forEach((f, i) => console.log(`${String(i + 1).padStart(3)}. ${f}`))
   const config = await readConfig()
   console.log(dim(`${memoryFile(home)}${config.memory === false ? ' · off ("memory": false in the config)' : ''}; edit it by hand if you like`))
+  if (project && theirs.length) {
+    console.log(`\nAbout ${project}:`)
+    theirs.forEach((f, i) => console.log(`${String(mine.length + i + 1).padStart(3)}. ${f}`))
+    console.log(dim(`${memoryFile(home, project)}; known only when working here`))
+  } else if (project) console.log(dim(`\nNothing remembered about ${project} yet: navi memory add --project "…"`))
   return 0
 }
 
@@ -929,7 +945,7 @@ async function main() {
     maxSteps,
     browser: () => makeTab({ home: homedir() }),
     // The question would otherwise be drawn beside a spinning frame.
-    approve: async (command, { change, action, memory, signal }) => {
+    approve: async (command, { change, action, memory, project, signal }) => {
       spin.stop()
       endLine()
       const ok = change
@@ -937,7 +953,7 @@ async function main() {
         : action
           ? await asker.approveAction(command, action.url, signal)
           : memory !== undefined
-            ? await asker.approveMemory(memory, signal)
+            ? await asker.approveMemory(memory, signal, project)
             : await asker.approve(command, signal)
       spin.start()
       return ok
