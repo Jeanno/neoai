@@ -12,7 +12,13 @@ import type { Attachment } from './attach.ts'
  * terminal or a phone.
  */
 
-export type Status = 'running' | 'waiting' | 'done' | 'failed' | 'stopped' | 'interrupted'
+export type Status = 'queued' | 'running' | 'waiting' | 'done' | 'failed' | 'stopped' | 'interrupted'
+
+/** Still working: not to be followed up, undone or run again by a schedule (JOB-3, JOB-22). */
+export const working = (s: string | undefined) => s === 'queued' || s === 'running' || s === 'waiting'
+
+/** How many jobs run at once (JOB-21). */
+export const AT_ONCE = 2
 
 /** What a job waits on (JOB-4). */
 export interface Pending {
@@ -75,6 +81,8 @@ export interface JobDeps {
    * it waits on you, with the key that answers that approval (PSH-8).
    */
   notify: (title: string, text: string, job: string, urgent?: boolean, key?: string) => void
+  /** At most this many run at once, the rest queued (JOB-21); AT_ONCE unless given. */
+  atOnce?: number
 }
 
 export interface Jobs {
@@ -116,7 +124,7 @@ export async function loadJobs(home: string): Promise<Job[]> {
     try {
       const job = JSON.parse(await readFile(join(dir, name), 'utf8')) as Job
       if (typeof job.id !== 'string' || typeof job.prompt !== 'string') continue
-      if (job.status === 'running' || job.status === 'waiting') {
+      if (working(job.status)) {
         job.status = 'interrupted'
         delete job.pending
       }
@@ -161,7 +169,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
   const prune = async () => {
     const all = [...jobs.values()].sort((a, b) => b.created.localeCompare(a.created))
     for (const old of all.slice(KEPT)) {
-      if (old.status === 'running' || old.status === 'waiting') continue
+      if (working(old.status)) continue
       jobs.delete(old.id)
       await rm(join(dir, `${old.id}.json`), { force: true }).catch(() => {})
     }
@@ -180,6 +188,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         job.pending = { command, ...(o.action && { url: o.action.url }), ...(o.change && { diff: o.change.diff }) }
         job.status = 'waiting'
         void save(job)
+        pump()
         const key = randomBytes(16).toString('hex')
         keys.set(job.id, key)
         d.notify('navi is waiting for you', `${titleOf(job.prompt)}: ${command}`, job.id, true, key)
@@ -235,10 +244,32 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
     await prune()
   }
 
-  const begin = (job: Job, prompt: string, attachments?: Attachment[]) => {
+  // JOB-21: a place each for those running; one waiting on you holds none.
+  const atOnce = Number.isInteger(d.atOnce) && d.atOnce! >= 1 ? d.atOnce! : AT_ONCE
+  const queue: { job: Job; prompt: string; attachments?: Attachment[] }[] = []
+  const busy = () => [...jobs.values()].filter((j) => j.status === 'running').length
+  const pump = () => {
+    while (queue.length && busy() < atOnce) {
+      const next = queue.shift()!
+      launch(next.job, next.prompt, next.attachments)
+    }
+  }
+  const launch = (job: Job, prompt: string, attachments?: Attachment[]) => {
+    // Running from here, so the next look at the queue counts it.
+    job.status = 'running'
     const p = run(job, prompt, attachments).catch(() => {})
     running.add(p)
-    void p.finally(() => running.delete(p))
+    void p.finally(() => {
+      running.delete(p)
+      pump()
+    })
+  }
+  const begin = (job: Job, prompt: string, attachments?: Attachment[]) => {
+    if (busy() < atOnce && !queue.length) return launch(job, prompt, attachments)
+    job.status = 'queued'
+    job.log.push(`· queued: ${queue.length ? `${queue.length} ahead of it` : 'next'}, as ${atOnce} run at once`)
+    queue.push({ job, prompt, attachments })
+    void save(job)
   }
 
   const listed = ({ history: _h, log: _l, ...rest }: Job): Listed => rest
@@ -254,7 +285,8 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         directory,
         created: now,
         updated: now,
-        status: 'running',
+        // Running once begun, unless it waits its turn (JOB-21).
+        status: 'queued',
         log: [],
         history: [],
         ...(o.schedule && { schedule: o.schedule }),
@@ -279,7 +311,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
     },
     reply(id, prompt, attachments) {
       const job = jobs.get(id)
-      if (!job || job.status === 'running' || job.status === 'waiting') return false
+      if (!job || working(job.status)) return false
       // JOB-19: the follow-up's files join the job's.
       const names = attachments?.map((x) => x.name) ?? []
       job.log.push(`> ${prompt}${names.length ? ` (with ${names.join(', ')})` : ''}`)
@@ -288,6 +320,15 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
       return true
     },
     stop(id) {
+      // JOB-22: out of the queue, never having run.
+      const at = queue.findIndex((q) => q.job.id === id)
+      if (at >= 0) {
+        const [{ job }] = queue.splice(at, 1)
+        job.status = 'stopped'
+        job.log.push('· stopped before it ran')
+        void save(job)
+        return true
+      }
       const stop = stops.get(id)
       if (!stop) return false
       stop.abort()

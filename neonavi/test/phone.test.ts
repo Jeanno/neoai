@@ -211,3 +211,39 @@ test('JOB-17, JOB-18: an answer shows formatted, and nothing in it runs', { skip
   assert.notEqual(await page.title(), 'pwned')
   assert.equal(job.answer, answer)
 })
+
+test('JOB-23: a queued job shows as queued, and Stop takes it out', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const jobs = await makeJobs({
+    home,
+    atOnce: 1,
+    start: async () => ({
+      model: 'small',
+      session: {
+        history: [],
+        async *turn(_p: string, o: any) {
+          await new Promise((r) => o.signal.addEventListener('abort', r, { once: true }))
+          yield { type: 'done', history: [], text: '', empty: true, stopped: true } as const
+        },
+      },
+    }),
+    notify: () => {},
+  })
+  jobs.create('first, which runs', home)
+  const queued = jobs.create('second, which waits its turn', home)
+  const token = '8'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByText('second, which waits its turn').click()
+  await page.locator('.s-queued').waitFor()
+  await page.getByText('queued: next, as 1 run at once').waitFor()
+  await page.getByRole('button', { name: 'Stop' }).click()
+  await page.locator('.s-stopped').waitFor()
+  assert.equal(jobs.get(queued.id)!.status, 'stopped')
+})

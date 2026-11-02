@@ -72,6 +72,9 @@ serve reads them as `-a` does, so a photo of a receipt or a whiteboard, a PDF
 or a text file all work (`spec/jobs.md` JOB-14 to JOB-16).
 A follow-up can bring files of its own, from the phone page's follow-up box
 or with `navi jobs <id> reply "<follow-up>" -a <file>` (JOB-19, JOB-20).
+Two jobs run at once (`"jobsAtOnce"` in the config changes that); the rest
+wait as `queued` and start in order, and one waiting on your yes or no
+holds no place (JOB-21 to JOB-23).
 Answers on the phone page are shown formatted (headings, lists, tables,
 code, links), and since an answer can quote a web page, none of it is ever
 read as HTML: only http(s) links work, and nothing in an answer can run

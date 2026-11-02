@@ -75,6 +75,9 @@ add the requirement there first.
 - [x] Files with a follow-up: the phone page's follow-up box takes photos
       and files too, and `navi jobs <id> reply "…" -a <file>` follows a job
       up from the terminal. (JOB-19, JOB-20)
+- [x] A queue: two jobs at once (`"jobsAtOnce"`), the rest `queued` in
+      order and stoppable; one waiting on you holds no place. (JOB-21 to
+      JOB-23)
 - [x] Answers on the phone page formatted from their Markdown (lists,
       tables, code, links), built as elements so nothing in an answer runs;
       only http(s) links. (JOB-17, JOB-18)

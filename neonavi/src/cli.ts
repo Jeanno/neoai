@@ -17,7 +17,7 @@ import { configuredBrowser, disconnect, findBrowser, installBrowser, makeTab, sh
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 import { describe, entryLabel, escalationFor, modelLabel } from './setup-core.ts'
 import { readLedger, stats } from './ledger.ts'
-import { makeJobs, serveToken, tailnetAddresses, titleOf, type JobDeps } from './jobs.ts'
+import { makeJobs, serveToken, tailnetAddresses, titleOf, working, type JobDeps } from './jobs.ts'
 import { push, pushConfig } from './push.ts'
 import { addFact, forgetFact, memoryFile, readMemory } from './memory.ts'
 import { listUndo, namer, undo, undoneReport } from './undo.ts'
@@ -221,12 +221,12 @@ async function serve(argv: string[]) {
   const home = homedir()
   const tailnetAt = tailnet.value === undefined ? [] : tailnetAddresses()
   const say = (line: string) => console.error(dim(`${new Date().toLocaleTimeString()} ${line}`))
-  const jobs = await makeJobs({ home, start: startJob, notify: makeNotify(tailnetAt[0] && `http://${tailnetAt[0]}:${n}/`, say) })
+  const jobs = await makeJobs({ home, start: startJob, notify: makeNotify(tailnetAt[0] && `http://${tailnetAt[0]}:${n}/`, say), atOnce: config.jobsAtOnce })
   const schedules = await makeSchedules({
     home,
     start: (prompt, directory, o) => jobs.create(prompt, directory, o).id,
     answerOf: (id) => (jobs.get(id)?.status === 'done' ? jobs.get(id)?.answer : undefined),
-    busy: (id) => ['running', 'waiting'].includes(jobs.get(id)?.status ?? ''),
+    busy: (id) => working(jobs.get(id)?.status),
   })
   if (tailnet.value !== undefined && !tailnetAt.length) console.error('This computer has no Tailscale address, so only it can reach navi serve.')
   const directories = async () => [...new Set([...(await listSessions(home)).flatMap((s) => (s.cwd ? [s.cwd] : [])), home])]
@@ -328,7 +328,7 @@ function showJob(job: any) {
   if (job.answer) console.log(`\n${job.answer}`)
   if (job.error) console.error(`error: ${job.error}`)
   if (job.changes?.length) console.log(dim(`\nchanged ${job.changes.join(', ')}; \`navi jobs ${job.id} undo\` puts them back`))
-  if (!['running', 'waiting'].includes(job.status)) console.log(dim(`follow up with \`navi jobs ${job.id} reply "<what next>"\` (-a <file> to add one)`))
+  if (!working(job.status)) console.log(dim(`follow up with \`navi jobs ${job.id} reply "<what next>"\` (-a <file> to add one)`))
 }
 
 /** Takes every `-a <file>` (or `--attach`) out of the arguments (JOB-16, JOB-20). */

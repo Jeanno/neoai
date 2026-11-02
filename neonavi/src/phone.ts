@@ -60,7 +60,7 @@ export const PHONE_PAGE = `<!doctype html>
   .meta { color: var(--muted); font-size: 13px; }
   .status { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
   .s-waiting { color: var(--wait); } .s-done { color: var(--ok); } .s-failed, .s-interrupted { color: var(--bad); }
-  .s-running, .s-stopped { color: var(--muted); }
+  .s-running, .s-queued, .s-stopped { color: var(--muted); }
   .pending { background: var(--wait-bg); border-color: var(--wait); }
   pre { background: var(--code); border-radius: 8px; padding: 10px; overflow-x: auto; font: 12.5px/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; }
   .answer { white-space: pre-wrap; word-break: break-word; }
@@ -217,10 +217,11 @@ ${MARKDOWN_JS}
     }
     const waiting = jobs.filter((j) => j.status === 'waiting').length
     const head = el('h1', {}, open ? el('button', { class: 'plain', onclick: () => { open = null; job = null; reply = ''; more = []; render(); refresh() } }, '‹ Jobs') : 'navi',
-      el('small', {}, waiting ? waiting + ' waiting' : jobs.some((j) => j.status === 'running') ? 'working' : ''))
+      el('small', {}, waiting ? waiting + ' waiting' : jobs.some((j) => j.status === 'running' || j.status === 'queued') ? 'working' : ''))
     const err = problem && el('p', { class: 'err' }, problem)
     if (open && job) {
-      const live = job.status === 'running' || job.status === 'waiting'
+      // JOB-23: a queued job is stopped as one running is.
+      const live = job.status === 'queued' || job.status === 'running' || job.status === 'waiting'
       put(head,
         el('div', { class: 'card' },
           el('div', { class: 'status s-' + job.status }, job.unchanged ? 'nothing new' : job.status),

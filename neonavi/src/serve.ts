@@ -11,7 +11,7 @@ import { optionsFor, type Entry } from './spec.ts'
 import { timingSafeEqual } from 'node:crypto'
 import { stat as statPath } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
-import type { Job, Jobs } from './jobs.ts'
+import { working, type Job, type Jobs } from './jobs.ts'
 import { checkWhen, type Schedules } from './schedules.ts'
 import { PHONE_PAGE } from './phone.ts'
 import { attachUploads } from './attach.ts'
@@ -168,7 +168,7 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
   if (req.method === 'GET' && parts.length === 1) return json(res, 200, { ...shownJob(job), changes: await jobChanges(home, job.directory, job.id) })
   if (req.method === 'POST' && parts.length === 2 && parts[1] === 'undo') {
     // UND-11: not while it may still be writing.
-    if (job.status === 'running' || job.status === 'waiting') return error(res, 400, 'The job is still working; stop it or wait for it first.')
+    if (working(job.status)) return error(res, 400, 'The job is still working; stop it or wait for it first.')
     const got = await undo(home, job.directory, job.id)
     if (!got) return error(res, 400, 'Nothing of this job is left to undo.')
     const report = undoneReport(got)
@@ -184,7 +184,7 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
     }
     if (parts[1] === 'reply') {
       if (typeof body.prompt !== 'string' || !body.prompt.trim()) return error(res, 400, 'Give the follow-up a prompt.')
-      if (job.status === 'running' || job.status === 'waiting') return error(res, 400, 'The job is still working; wait for it, or stop it.')
+      if (working(job.status)) return error(res, 400, 'The job is still working; wait for it, or stop it.')
       // JOB-19: every file attached, or no follow-up.
       const attachments = body.files === undefined ? [] : await attachUploads(body.files)
       if (typeof attachments === 'string') return error(res, 400, attachments)

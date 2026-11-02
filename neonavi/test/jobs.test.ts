@@ -459,3 +459,60 @@ test('a follow-up can carry files too, all of them or no follow-up', async () =>
     server.close()
   }
 })
+
+// JOB-21, JOB-22
+test('past the jobs allowed at once, the rest queue and run in order; one waiting on you holds no place', async () => {
+  const order: string[] = []
+  const { jobs, home } = await setup({
+    atOnce: 1,
+    start: async ({ approve, history }) => {
+      const session = fakeSession(approve, history)
+      return { session: { ...session, get history() { return session.history }, turn: (p, o) => (order.push(p), session.turn(p, o)) }, model: 'small' }
+    },
+  })
+  const first = jobs.create('hang', '/tmp')
+  const second = jobs.create('two', '/tmp')
+  const third = jobs.create('three', '/tmp')
+  assert.equal(first.status, 'running')
+  assert.equal(second.status, 'queued')
+  assert.equal(third.status, 'queued')
+  assert.ok(second.log.includes('· queued: next, as 1 run at once'))
+  assert.ok(third.log.includes('· queued: 1 ahead of it, as 1 run at once'))
+
+  // Queued is working: no follow-up, and stopping takes it out unrun.
+  assert.equal(jobs.reply(third.id, 'more'), false)
+  assert.ok(jobs.stop(third.id))
+  assert.equal(jobs.get(third.id)!.status, 'stopped')
+
+  jobs.stop(first.id)
+  await jobs.idle()
+  assert.equal(jobs.get(second.id)!.status, 'done')
+  assert.deepEqual(order, ['hang', 'two'])
+
+  // A job asking you frees its place; answered, it goes on beside the next.
+  const asking = jobs.create('ask', '/tmp')
+  await until(jobs, asking.id, 'waiting')
+  const next = jobs.create('after', '/tmp')
+  await until(jobs, next.id, 'done')
+  assert.ok(jobs.answer(asking.id, true))
+  await jobs.idle()
+  assert.equal(jobs.get(asking.id)!.status, 'done')
+
+  // Queued when serve stops: interrupted on the way back (JOB-6).
+  const again = await makeJobs({ home, atOnce: 1, start: async () => new Promise(() => {}), notify: () => {} })
+  again.create('stuck', '/tmp')
+  const waits = again.create('behind', '/tmp')
+  assert.equal(waits.status, 'queued')
+  await new Promise((r) => setTimeout(r, 50))
+  const back = await makeJobs({ home, start: async () => { throw new Error('unused') }, notify: () => {} })
+  assert.equal(back.get(waits.id)!.status, 'interrupted')
+})
+
+// JOB-21
+test('the jobs allowed at once is 2 unless the config gives a whole number from 1', async () => {
+  for (const [atOnce, want] of [[undefined, 2], [0, 2], [1.5, 2], [3, 3]] as const) {
+    const { jobs } = await setup({ atOnce, start: async () => new Promise(() => {}) })
+    const made = Array.from({ length: 4 }, () => jobs.create('x', '/tmp'))
+    assert.equal(made.filter((j) => j.status === 'running').length, want, `atOnce ${atOnce}`)
+  }
+})

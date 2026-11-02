@@ -10,10 +10,11 @@ terminal that started them closes.
 - JOB-1: A job is one prompt run as a harness session (HAR-2) in a directory
   (the home directory unless given), on the configured chain with
   escalation (ESC-1), the browser tools (HAR-9) and the ledger as `job`
-  (LED-1). Several jobs run at once, each on its own.
-- JOB-2: A job is `running`, `waiting` (on an approval), `done`, `failed`
-  (no model answered, or the turn ended with no answer and an error),
-  `stopped`, or `interrupted` (navi serve stopped while it ran). It keeps a
+  (LED-1). Several jobs run at once, each on its own, up to JOB-21.
+- JOB-2: A job is `queued` (JOB-21), `running`, `waiting` (on an
+  approval), `done`, `failed` (no model answered, or the turn ended with no
+  answer and an error), `stopped`, or `interrupted` (navi serve stopped
+  while it ran). It keeps a
   log of what it did, one line per tool call, auto-approval, escalation,
   compaction or error, as the CLI shows them (CLI-10), and its answer.
 - JOB-3: A job is followed up with another prompt, which continues its
@@ -118,6 +119,21 @@ terminal that started them closes.
   without a referrer. Any other link (`javascript:`, `data:`, a relative
   path) is shown as the text it was written as.
 
+## A queue
+
+- JOB-21: At most `"jobsAtOnce"` jobs run at once: 2 unless the config
+  gives another whole number, 1 at the least. A job started or followed up
+  past that is `queued`, with a line in its log saying how many are ahead
+  of it, and runs in the order queued as a place frees. A job waiting on an
+  approval holds no place, since its model is idle; once answered it goes on
+  at once.
+- JOB-22: A queued job counts as working (as running or waiting do): it
+  cannot be followed up or undone, and a schedule whose last job is queued
+  skips (SCH-3). Stopping it takes it out of the queue, `stopped` without
+  having run. When navi serve stops, a queued job comes back `interrupted`
+  (JOB-6), to be followed up.
+- JOB-23: `navi jobs` and the phone page show a queued job as `queued`; the
+  phone page offers Stop for it, as for one running.
+
 ## Open
 
-- A queue, so a busy computer runs a few at a time.
