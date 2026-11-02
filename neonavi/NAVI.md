@@ -77,8 +77,11 @@ urgent notification, and tapping it opens that job on the phone page when
 navi serve runs with `--tailnet`. Anyone who knows the topic can read what is
 sent, so a push says only what happened and the job's id; add
 `"detail": true` (`"push": { "url": …, "detail": true }`) to include the
-prompt and the command. The token never leaves this computer
-(`spec/push.md`).
+prompt and the command. With `detail` on, a push for a job waiting on you
+also has Yes and No buttons that answer it right from the notification; each
+carries a key good for that one question only, and your phone sends the
+answer straight to navi over the tailnet. The token never leaves this
+computer (`spec/push.md`).
 
 Changed your mind about what navi did to your files? `navi undo` (or
 `/undo` at the `navi>` prompt) puts back every file its last turn in this

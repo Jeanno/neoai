@@ -49,16 +49,18 @@ async function setup(o: Partial<JobDeps> = {}) {
   const home = await mkdtemp(join(tmpdir(), 'navi-jobs-'))
   const notes: string[] = []
   const pushed: { job: string; urgent?: boolean }[] = []
+  const keys: string[] = []
   const deps: JobDeps = {
     home,
     start: async ({ approve, history }) => ({ session: fakeSession(approve, history), model: 'small' }),
-    notify: (title, text, job, urgent) => {
+    notify: (title, text, job, urgent, key) => {
       notes.push(`${title}: ${text}`)
       pushed.push({ job, urgent })
+      if (key) keys.push(key)
     },
     ...o,
   }
-  return { home, notes, pushed, deps, jobs: await makeJobs(deps) }
+  return { home, notes, pushed, keys, deps, jobs: await makeJobs(deps) }
 }
 
 /** Until the job is in that state, or a second has gone. */
@@ -336,5 +338,39 @@ test("a finished job's changes are listed and undone through the API, never whil
   } finally {
     server.close()
     await jobs.idle()
+  }
+})
+
+// PSH-8, PSH-10
+test("a notification's key answers its own approval once, without the token, and is never logged", async () => {
+  const { jobs, home, keys } = await setup()
+  const token = 'g'.repeat(64)
+  const logged: string[] = []
+  const [server] = await listen([], { ...noModels, log: (l) => logged.push(l) }, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const answer = (path: string, body: string) =>
+    fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, { method: 'POST', body })
+  try {
+    const job = jobs.create('ask', '/tmp')
+    await until(jobs, job.id, 'waiting')
+    const [key] = keys
+    assert.match(key, /^[0-9a-f]{32}$/)
+    // Never in what the jobs API shows.
+    assert.doesNotMatch(JSON.stringify(jobs.get(job.id)), new RegExp(key))
+    assert.equal((await answer(`/answer/${job.id}/${'0'.repeat(32)}`, 'yes')).status, 403)
+    assert.equal((await answer(`/answer/${job.id}/${key}`, 'maybe')).status, 400)
+    assert.equal(jobs.get(job.id)!.status, 'waiting')
+    const ok = await answer(`/answer/${job.id}/${key}`, 'yes')
+    assert.equal(ok.status, 200)
+    assert.deepEqual(await ok.json(), { answered: 'yes' })
+    await jobs.idle()
+    assert.equal(jobs.get(job.id)!.answer, 'Removed it.')
+    assert.ok(jobs.get(job.id)!.log.includes('✓ rm -rf build'))
+    // Once only.
+    assert.equal((await answer(`/answer/${job.id}/${key}`, 'no')).status, 403)
+    await new Promise((r) => setTimeout(r, 50))
+    assert.ok(logged.some((l) => l.includes(`/answer/${job.id}/…`) && l.includes('answer by key')))
+    assert.ok(!logged.some((l) => l.includes(key)))
+  } finally {
+    server.close()
   }
 })

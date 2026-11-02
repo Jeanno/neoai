@@ -259,10 +259,12 @@ export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptio
     const started = Date.now()
     // The query is left out: it is the one place a client might put a key (SRV-6).
     const path = (req.url ?? '').split('?')[0].replace(/\/+$/, '')
+    // PSH-10: an answer's key is as good as a yes while it waits, so it is not logged.
+    const shown = path.startsWith('/answer/') ? path.replace(/[^/]+$/, '…') : path
     let via: string | undefined
     // Logged once the answer is through, so a stream's time is all of it (SRV-6).
     res.once('close', () =>
-      d.log(`${req.method} ${path || '/'} → ${via ? `${via} · ` : ''}${res.writableFinished ? res.statusCode : 'cut off'} · ${Date.now() - started} ms`),
+      d.log(`${req.method} ${shown || '/'} → ${via ? `${via} · ` : ''}${res.writableFinished ? res.statusCode : 'cut off'} · ${Date.now() - started} ms`),
     )
     try {
       const j = o.jobs
@@ -270,6 +272,15 @@ export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptio
       if (j && req.method === 'GET' && !path) {
         via = 'page'
         return res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(PHONE_PAGE)
+      }
+      // PSH-8: a notification's Yes or No, by the key of the approval it asks about.
+      if (j && req.method === 'POST' && path.startsWith('/answer/')) {
+        via = 'answer by key'
+        const [, , id = '', key = ''] = path.split('/')
+        const said = (await readBody(req))?.toString('utf8').trim().toLowerCase()
+        if (said !== 'yes' && said !== 'no') return error(res, 400, 'Answer with the body yes or no.')
+        if (!j.jobs.answerByKey(id, key, said === 'yes')) return error(res, 403, 'That question is no longer waiting, or the key is not its own.', 'permission_error')
+        return json(res, 200, { answered: said })
       }
       // JOB-8, JOB-11: the token, from anywhere, the page's Origin included.
       if (j && (path === '/jobs' || path.startsWith('/jobs/'))) {

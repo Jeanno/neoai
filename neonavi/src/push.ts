@@ -38,6 +38,8 @@ export interface PushMessage {
   /** The phone page, without the token (PSH-3). */
   click?: string
   urgent?: boolean
+  /** Where Yes and No post their answer (PSH-7); sent only with detail (PSH-9). */
+  answer?: string
 }
 
 /** Sends one push; why it failed, or nothing (PSH-4). */
@@ -51,6 +53,17 @@ export async function push(p: PushConfig, m: PushMessage, fetchImpl: typeof fetc
     ...(m.click && { click: m.click }),
     priority: m.urgent ? 4 : 3,
     tags: [m.urgent ? 'raised_hand' : 'robot'],
+    // PSH-7: the phone itself posts the answer, so it goes over the tailnet, not through ntfy.
+    ...(m.answer && p.detail && {
+      actions: (['no', 'yes'] as const).map((said) => ({
+        action: 'http',
+        label: said === 'yes' ? 'Yes' : 'No',
+        url: m.answer,
+        method: 'POST',
+        body: said,
+        clear: true,
+      })),
+    }),
   }
   try {
     const r = await fetchImpl(p.server, {

@@ -62,7 +62,9 @@ add the requirement there first.
       (SCH-1 to SCH-8) The prompt now carries today's date. (PRM-13)
 - [x] Push to the phone through ntfy when a job waits or ends, tapping
       through to the job; only the job id leaves unless `detail`. (PSH-1 to PSH-6)
-- [ ] Answer Yes or No from the notification itself. (`spec/push.md` Open)
+- [x] Answer Yes or No from the notification itself, with a one-time key
+      per approval instead of the token, and only when the push says what
+      it allows. (PSH-7 to PSH-10)
 - [x] Watches: `--only-changes` schedules compare with the last run that
       had news and stay silent when nothing changed. (SCH-9 to SCH-11)
 - [x] Schedules on the phone page: made, listed, run now and deleted

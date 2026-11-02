@@ -28,7 +28,24 @@ reaches you without the phone page open.
 - PSH-6: `navi push test` sends a test push and says whether it arrived
   at the server; with no `push` in the config it says how to set one up.
 
+## Answering from the notification
+
+- PSH-7: When a job waits on an approval, navi serve listens on the tailnet
+  and `detail` is true, its push has Yes and No buttons (ntfy http actions)
+  that answer the approval from the notification itself and clear it.
+- PSH-8: The buttons never carry the token: each approval gets its own key,
+  128 random bits. `POST /answer/<job>/<key>` with the body `yes` or `no`
+  answers that approval without the token, only while it waits, once; any
+  other key, or the key of an approval already answered, is refused with
+  403 and nothing changes. Keys are kept in memory only, never saved or
+  shown by the jobs API. The phone sends the answer itself, so it reaches
+  navi only from the tailnet.
+- PSH-9: Without `detail` there are no buttons: the push does not say what
+  would be allowed, so tapping it opens the page to see.
+- PSH-10: navi serve's log shows an answer by key without the key, and the
+  job's log records it as any other answer.
+
 ## Open
 
-- Answering Yes or No from the notification itself (ntfy actions), which
-  would need the token to leave this computer.
+- Answering a file change or browser action with its diff or page shown in
+  the notification.

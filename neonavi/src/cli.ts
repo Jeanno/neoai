@@ -278,7 +278,7 @@ async function startJob({ job, directory, history, approve }: Parameters<JobDeps
  * change needs no restart.
  */
 function makeNotify(page: string | undefined, log: (line: string) => void): JobDeps['notify'] {
-  return (title, text, job, urgent) =>
+  return (title, text, job, urgent, key) =>
     void readConfig().then(async (config) => {
       if (process.platform === 'darwin' && config.notify !== false) {
         const quote = (s: string) => `"${s.replace(/[\\"]/g, '\\$&')}"`
@@ -286,7 +286,10 @@ function makeNotify(page: string | undefined, log: (line: string) => void): JobD
       }
       const p = pushConfig(config)
       if (!p) return
-      const failed = await push(p, { title, job, detail: text, urgent, ...(page && { click: `${page}#job=${job}` }) })
+      const failed = await push(p, {
+        title, job, detail: text, urgent,
+        ...(page && { click: `${page}#job=${job}`, ...(key && { answer: `${page}answer/${job}/${key}` }) }),
+      })
       // PSH-4: said, never the topic.
       if (failed) log(`push for job ${job} failed: ${failed}`)
     })

@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
@@ -65,8 +65,11 @@ export interface JobDeps {
   home: string
   /** A session to run a job's turn in; throws when no model answers. */
   start: (o: { job: string; directory: string; history: ModelMessage[]; approve: NonNullable<HarnessOptions['approve']> }) => Promise<{ session: Session; model: string }>
-  /** A notification (JOB-5), for the desktop and a phone (PSH-1); `urgent` when it waits on you. */
-  notify: (title: string, text: string, job: string, urgent?: boolean) => void
+  /**
+   * A notification (JOB-5), for the desktop and a phone (PSH-1); `urgent` when
+   * it waits on you, with the key that answers that approval (PSH-8).
+   */
+  notify: (title: string, text: string, job: string, urgent?: boolean, key?: string) => void
 }
 
 export interface Jobs {
@@ -75,6 +78,8 @@ export interface Jobs {
   create(prompt: string, directory: string, o?: StartOptions): Job
   /** False when the job is not waiting. */
   answer(id: string, yes: boolean): boolean
+  /** Answers with the waiting approval's key instead of the token (PSH-8); false for any other key. */
+  answerByKey(id: string, key: string, yes: boolean): boolean
   /** False when the job is running or waiting (JOB-3). */
   reply(id: string, prompt: string): boolean
   stop(id: string): boolean
@@ -123,6 +128,8 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
   const jobs = new Map<string, Job>()
   for (const job of await loadJobs(d.home)) jobs.set(job.id, job)
   const answers = new Map<string, (yes: boolean) => void>()
+  // PSH-8: in memory only, one per waiting approval.
+  const keys = new Map<string, string>()
   const stops = new Map<string, AbortController>()
   const running = new Set<Promise<void>>()
 
@@ -168,9 +175,12 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         job.pending = { command, ...(o.action && { url: o.action.url }), ...(o.change && { diff: o.change.diff }) }
         job.status = 'waiting'
         void save(job)
-        d.notify('navi is waiting for you', `${titleOf(job.prompt)}: ${command}`, job.id, true)
+        const key = randomBytes(16).toString('hex')
+        keys.set(job.id, key)
+        d.notify('navi is waiting for you', `${titleOf(job.prompt)}: ${command}`, job.id, true, key)
         const settle = (yes: boolean) => {
           answers.delete(job.id)
+          keys.delete(job.id)
           o.signal.removeEventListener('abort', no)
           delete job.pending
           if (job.status === 'waiting') job.status = 'running'
@@ -253,6 +263,12 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
       const settle = answers.get(id)
       if (!settle) return false
       settle(yes)
+      return true
+    },
+    answerByKey(id, key, yes) {
+      const want = keys.get(id)
+      if (!want || key.length !== want.length || !timingSafeEqual(Buffer.from(key), Buffer.from(want))) return false
+      answers.get(id)?.(yes)
       return true
     },
     reply(id, prompt) {

@@ -52,6 +52,19 @@ test('PSH-3: a push opens the job without the token, and one waiting on you is u
   assert.equal(sent[1].body.click, undefined)
 })
 
+test('PSH-7, PSH-9: Yes and No post to the answer link, and only when the push says what they allow', async () => {
+  const { sent, f } = recorder()
+  const answer = 'http://100.101.2.3:8484/answer/ab12cd34/' + 'k'.repeat(32)
+  await push({ ...plain, detail: true }, { title: 'navi is waiting for you', job: 'ab12cd34', detail: 'rm -rf build', urgent: true, answer }, f)
+  assert.deepEqual(sent[0].body.actions, [
+    { action: 'http', label: 'No', url: answer, method: 'POST', body: 'no', clear: true },
+    { action: 'http', label: 'Yes', url: answer, method: 'POST', body: 'yes', clear: true },
+  ])
+  await push(plain, { title: 'navi is waiting for you', job: 'ab12cd34', detail: 'rm -rf build', urgent: true, answer }, f)
+  assert.equal(sent[1].body.actions, undefined)
+  assert.doesNotMatch(JSON.stringify(sent[1].body), /answer\//)
+})
+
 test('PSH-4: a refused, unreachable or slow push says why and never throws', async (t) => {
   assert.equal(await push(plain, { title: 'x' }, recorder(403).f), 'the push server answered 403')
   assert.equal(await push({ ...plain, server: 'http://127.0.0.1:1' }, { title: 'x' }), 'the push server could not be reached')
