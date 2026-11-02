@@ -45,8 +45,16 @@ what was said.
   its turns that changed a file which were (`50% of edits undone`), or the
   count when none of its turns on record changed one.
 
+- LED-11: Each turn records its `kind`, by its prompt's first words as LED-7
+  reads them: `attached` when files were sent with it, `change` when it
+  starts by asking for one ("fix", "add", "write", "rename", "please
+  update", "can you remove", …), and `ask` otherwise. The label is kept,
+  never the words.
+- LED-12: `navi stats` shows turns routed past a model (ESC-6) apart from
+  those that escalated away from it (`2 routed past it`).
+
 ## Open
 
-- Route by the ledger: start a kind of turn on the model that has done it
-  well, and escalate sooner from one that has not.
+- Routing by more than the three kinds, such as by the tools a turn ends up
+  using.
 - Asking the same thing again in other words, as a signal.

@@ -22,8 +22,10 @@ export interface LedgerEntry {
   promptChars: number
   attachments: number
   outcome: 'answered' | 'empty' | 'error' | 'stopped'
-  /** The model the turn started on and why it left it (LED-3). */
-  escalated?: { from: string; reason: string }
+  /** The model the turn started on and why it left it (LED-3); `routed` when it never started there (ESC-6). */
+  escalated?: { from: string; reason: string; routed?: true }
+  /** What sort of turn it was, by its prompt's first words (LED-11); never the prompt. */
+  kind?: TurnKind
   /** The model whose answer this turn's prompt corrected (LED-7); never the prompt. */
   corrects?: string
   /** The answer ended at the token cap (HAR-11). */
@@ -73,6 +75,41 @@ const KIND = /^(no\b(?![ ,]*(worries|problem|thanks|need|rush|hurry))|nope\b|wro
 export function readsAsCorrection(prompt: string): boolean {
   const start = prompt.trim().toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/^[^a-z]+/, '')
   return KIND.test(start)
+}
+
+/** A turn as the ledger sorts it (LED-11). */
+export type TurnKind = 'change' | 'attached' | 'ask'
+
+const CHANGE = /^(please |can you |could you )?(fix|add|change|edit|write|rewrite|refactor|rename|update|create|make|implement|remove|delete|move|replace|convert|set up|install|bump|upgrade|clean up|tidy)\b/
+
+/** Files sent with it, a change asked for by its first words, or else a question (LED-11). */
+export function kindOf(prompt: string, attachments: number): TurnKind {
+  if (attachments > 0) return 'attached'
+  const start = prompt.trim().toLowerCase().replace(/^[^a-z]+/, '')
+  return CHANGE.test(start) ? 'change' : 'ask'
+}
+
+const KIND_WORDS: Record<TurnKind, string> = { change: 'turns asking for a change', attached: 'turns with files', ask: 'questions' }
+
+/** How far back, how many of the latest turns, and how few are too few to judge by (ESC-6). */
+export const ROUTE_DAYS = 30
+export const ROUTE_LAST = 10
+export const ROUTE_MIN = 5
+
+/**
+ * Why a turn of this kind should not start on `model` (ESC-6): more than half
+ * of its latest such turns that started on it went badly (it escalated away,
+ * or ended with an error or nothing). Turns routed past it are not its own,
+ * so a model gets another go once its bad turns are old. Undefined when it
+ * should start there.
+ */
+export function routeAway(entries: LedgerEntry[], model: string, kind: TurnKind): string | undefined {
+  const started = entries.filter(
+    (e) => e.kind === kind && e.outcome !== 'stopped' && !e.escalated?.routed && (e.escalated ? e.escalated.from === model : e.model === model),
+  ).slice(-ROUTE_LAST)
+  const bad = started.filter((e) => e.escalated || e.outcome === 'error' || e.outcome === 'empty').length
+  if (started.length < ROUTE_MIN || bad * 2 <= started.length) return
+  return `by the ledger, ${model} went badly on ${bad} of its last ${started.length} ${KIND_WORDS[kind]}`
 }
 
 const MAX_BYTES = 5 * 1024 * 1024
@@ -131,9 +168,14 @@ export function stats(entries: LedgerEntry[], days: number, undone: string[] = [
   const by = new Map<string, LedgerEntry[]>()
   for (const e of entries) by.set(e.model, [...(by.get(e.model) ?? []), e])
   // A turn that escalated away counts against the model it started on.
+  // A turn routed past a model (ESC-6) never started there: counted apart.
   const away = new Map<string, number>()
-  for (const e of entries) if (e.escalated) away.set(e.escalated.from, (away.get(e.escalated.from) ?? 0) + 1)
-  for (const from of away.keys()) if (!by.has(from)) by.set(from, [])
+  const past = new Map<string, number>()
+  for (const e of entries) {
+    const into = e.escalated?.routed ? past : away
+    if (e.escalated) into.set(e.escalated.from, (into.get(e.escalated.from) ?? 0) + 1)
+  }
+  for (const from of [...away.keys(), ...past.keys()]) if (!by.has(from)) by.set(from, [])
   const rows = [...by].sort((a, b) => b[1].length + (away.get(b[0]) ?? 0) - (a[1].length + (away.get(a[0]) ?? 0)))
   const lines = [`Last ${days} day${days === 1 ? '' : 's'}, ${entries.length} turn${entries.length === 1 ? '' : 's'}:`]
   for (const [model, turns] of rows) {
@@ -159,6 +201,8 @@ export function stats(entries: LedgerEntry[], days: number, undone: string[] = [
       : ['0 turns of its own']
     const escalated = away.get(model)
     if (escalated) parts.push(`${escalated} escalated away`)
+    const routed = past.get(model)
+    if (routed) parts.push(`${routed} routed past it`)
     lines.push(`  ${model}${turns[0]?.local === false ? ' (REMOTE)' : ''}: ${parts.join(' · ')}`)
   }
   return lines.join('\n')

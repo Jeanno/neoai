@@ -53,8 +53,8 @@ add the requirement there first.
       `navi stats` shows the share corrected. (LED-7, LED-8)
 - [x] An undo counts against the model whose turn it undid; `navi stats`
       shows the share of edits undone. (LED-9, LED-10)
-- [ ] Route by the ledger: start a kind of turn where it has gone well.
-      (`spec/ledger.md` Open)
+- [x] Route by the ledger: `"route": "ledger"` starts a kind of turn the
+      first model does badly on the escalation model. (ESC-6, LED-11, LED-12)
 
 ### 3. Everywhere: navi in the apps I already use
 

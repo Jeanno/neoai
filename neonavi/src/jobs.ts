@@ -249,7 +249,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         else if (e.type === 'compacted') job.log.push(`· compacted ${e.messages} messages`)
         else if (e.type === 'escalated') {
           job.model = e.to
-          job.log.push(`· escalated to ${e.to}${e.local ? '' : ' (REMOTE)'}: ${e.reason}`)
+          job.log.push(`· ${e.routed ? 'started on' : 'escalated to'} ${e.to}${e.local ? '' : ' (REMOTE)'}: ${e.reason}`)
         } else if (e.type === 'error') {
           errors.push(message(e.error))
           job.log.push(`error: ${message(e.error)}`)

@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { simulateReadableStream, type ModelMessage } from 'ai'
-import { createHarness, type HarnessEvent, type HarnessOptions, type Model } from '../src/harness.ts'
+import { createHarness, type HarnessConfig, type HarnessEvent, type HarnessOptions, type Model } from '../src/harness.ts'
 import type { Tab } from '../src/browser.ts'
 import { today } from '../src/args.ts'
 import { undo } from '../src/undo.ts'
@@ -821,6 +821,48 @@ test('only the struggling turn escalates', async () => {
   const second = await collect(s.turn('two'))
   assert.equal(done(second).text, 'Small again.')
   assert.equal(up.model.doStreamCalls.length, 1)
+})
+
+// ESC-6, LED-11
+test("with route set to the ledger, a kind of turn the first model does badly starts on the escalation model", async () => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-route-'))
+  const past = (model: string, kind: string, bad: boolean, extra = {}) =>
+    JSON.stringify({ at: new Date().toISOString(), front: 'cli', model: bad ? 'big on Cloud' : model, local: true, ms: 1, steps: 1, tools: {}, toolErrors: 0, declined: 0,
+      promptChars: 9, attachments: 0, outcome: 'answered', kind, ...(bad && { escalated: { from: model, reason: 'it gave no answer' } }), ...extra })
+  await mkdir(join(home, '.neoai'), { recursive: true })
+  // Changes: 3 of 5 went badly. Questions: 1 of 5. Routed turns are not small's own.
+  const lines = [
+    ...[true, true, false, true, false].map((b) => past('small', 'change', b)),
+    ...[false, false, true, false, false].map((b) => past('small', 'ask', b)),
+    ...Array.from({ length: 5 }, () => past('small', 'ask', true, { escalated: { from: 'small', reason: 'x', routed: true } })),
+  ]
+  await writeFile(join(home, '.neoai', 'ledger.jsonl'), `${lines.join('\n')}\n`)
+  const run = async (prompt: string, config: HarnessConfig) => {
+    const first = fake([[...text('t', 'Small did it.'), finish('stop')]])
+    const up = stronger()
+    const h = await createHarness({ model: first, contextWindow: 100_000, cwd: home, home, config: { web_search: false, ...config }, front: 'cli', name: { model: 'small', local: true }, escalate: up.escalate })
+    return { events: await collect(h.session().turn(prompt)), first, up }
+  }
+  const changed = await run('Fix the failing test', { route: 'ledger' })
+  assert.deepEqual(changed.events.find((e) => e.type === 'escalated'), {
+    type: 'escalated', from: 'small', to: 'big on Cloud', local: false, routed: true,
+    reason: 'by the ledger, small went badly on 3 of its last 5 turns asking for a change',
+  })
+  assert.equal(changed.first.doStreamCalls.length, 0)
+  assert.equal(done(changed.events).text, 'Done properly.')
+  // No note of struggle: the stronger model just has the turn.
+  assert.doesNotMatch(JSON.stringify(changed.up.model.doStreamCalls[0].prompt), /struggled/)
+  // A question starts where it always did; so does a change without the setting.
+  const asked = await run('what does this do', { route: 'ledger' })
+  assert.equal(done(asked.events).text, 'Small did it.')
+  const unset = await run('fix it again', {})
+  assert.equal(done(unset.events).text, 'Small did it.')
+  const entries = (await ledgerOf(home)).slice(lines.length)
+  assert.deepEqual(entries.map((e) => [e.kind, e.model, e.escalated?.routed]), [
+    ['change', 'big on Cloud', true],
+    ['ask', 'small', undefined],
+    ['change', 'small', undefined],
+  ])
 })
 
 // LED-1, LED-2, LED-3, LED-5, HAR-10

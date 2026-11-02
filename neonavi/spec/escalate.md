@@ -23,7 +23,21 @@ struggles, without losing what was done.
 - ESC-5: The CLI says it on stderr: `· escalated to <model>: <reason>`, with
   REMOTE called out when the new model's prompts leave the machine (CLI-15).
 
+- ESC-6: With `"route": "ledger"` in the config (and the ledger on), a turn
+  starts on the escalation model when, in the last 30 days, the session's
+  model has gone badly on more than half of its latest turns of the turn's
+  kind (LED-11): of the last 10 that started on it and were not stopped,
+  at least 5, where a turn went badly when it escalated away or ended with
+  an error or no answer. The front end gets an `escalated` event with
+  `routed` before anything else, which it shows as `started on <model>`
+  with the reason (`by the ledger, <model> went badly on 3 of its last 5
+  turns asking for a change`). The routed turn does not escalate again and
+  gets no note of struggle; the ledger keeps it as escalated with `routed`,
+  and such turns are not counted for or against the model they skipped, so
+  it is tried again once its bad turns are older than 30 days. Unset, or with
+  no escalation model that resolves, every turn starts on the chain.
+
 ## Open
 
-- Escalate sooner, or skip the first model, for kinds of turns the ledger
-  (LED-1) says it does badly.
+- Escalate sooner within a turn, not only start elsewhere, for a model the
+  ledger says struggles.

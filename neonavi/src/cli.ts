@@ -1027,7 +1027,7 @@ async function main() {
             )
           else if (e.type === 'error') note(`error: ${e.error instanceof Error ? e.error.message : String(e.error)}`)
           // ESC-5: said where the user sees model announcements, REMOTE called out (CLI-15).
-          else if (e.type === 'escalated') note(`· escalated to ${e.to}${e.local ? '' : ' (REMOTE: prompts leave this computer)'}: ${e.reason}`)
+          else if (e.type === 'escalated') note(`· ${e.routed ? 'started on' : 'escalated to'} ${e.to}${e.local ? '' : ' (REMOTE: prompts leave this computer)'}: ${e.reason}`)
           // The model or a tool is busy again.
           endLine()
           spin.start()

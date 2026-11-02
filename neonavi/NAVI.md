@@ -213,6 +213,16 @@ shows the share of its edits you undid (LED-9, LED-10).
 
     navi stats
 
+Add `"route": "ledger"` and navi learns from that record. Each turn is sorted
+by its first words: asking for a change ("fix …", "add …"), sent with files,
+or a question. When your first model has gone badly on more than half of
+its last turns of that sort (at least 5 in the last 30 days: it escalated
+away, failed or said nothing), the turn starts on the `"escalate"` model
+instead, and navi says why (`· started on …`). It is off unless you set it,
+since the escalation model may be a remote one. Turns routed past a model
+don't count for or against it, so it gets another try once its bad turns
+are a month old (ESC-6, LED-11).
+
 Each directory keeps its own conversation. `navi sessions` lists them, newest
 first; `navi sessions clear` forgets this directory's, `clear <directory>`
 another's, `clear --all` every one.

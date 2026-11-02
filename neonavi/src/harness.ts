@@ -18,7 +18,7 @@ import { userContent, type Attachment } from './attach.ts'
 
 export { attach, splitUserContent, type Attachment } from './attach.ts'
 import { searchBackend } from './web.ts'
-import { CORRECTION_WINDOW, readsAsCorrection, record, type LedgerEntry } from './ledger.ts'
+import { CORRECTION_WINDOW, kindOf, readLedger, readsAsCorrection, record, routeAway, ROUTE_DAYS, type LedgerEntry } from './ledger.ts'
 import type { Tab } from './browser.ts'
 export { allowable, type Answer } from './approve.ts'
 
@@ -54,6 +54,8 @@ export interface HarnessConfig {
   ledger?: boolean
   /** false reads no memory and removes remember (MEM-4). */
   memory?: boolean
+  /** 'ledger' starts a kind of turn on the escalation model where the first has done it badly (ESC-6). */
+  route?: string
 }
 
 /** The model a struggling turn is handed to (ESC-1). */
@@ -144,7 +146,7 @@ export type HarnessEvent =
   /** The model call failed. The turn still ends with `done`. */
   | { type: 'error'; error: unknown }
   /** The turn struggled and goes on on a stronger model (ESC-3); `local` is false when its prompts leave the machine. */
-  | { type: 'escalated'; from: string; to: string; local: boolean; reason: string }
+  | { type: 'escalated'; from: string; to: string; local: boolean; reason: string; routed?: true }
   /**
    * Always the last event. `history` is what to store and pass back (HAR-3);
    * `text` is the final step's answer, `empty` when it is blank (CLI-12), and
@@ -450,13 +452,23 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         return { messages: [...finished, ...kept], text, stopped, trouble, cut: cut && !stopped && !trouble }
       }
 
+      const kind = kindOf(prompt, attachments?.length ?? 0)
+      // ESC-6: a kind of turn the first model has done badly starts where it would end up.
+      const ledgered = config.route === 'ledger' && config.ledger !== false && !!o.escalate
+      const away = ledgered ? routeAway(await readLedger(home, Date.now() - ROUTE_DAYS * 86_400_000), named.model, kind) : undefined
+      const routed = away ? await target() : null
+      let escalated: { from: string; reason: string; routed?: true } | undefined
+      let answering = named
+      if (routed && away) {
+        escalated = { from: named.model, reason: away, routed: true }
+        answering = { model: routed.name, local: routed.local }
+        emit({ type: 'escalated', from: named.model, to: routed.name, local: routed.local, reason: away, routed: true })
+      }
       // Escalation is only tried where there is somewhere to go (ESC-3).
-      const first = await attempt(model, sent, !!o.escalate)
+      const first = routed ? await attempt(streamable(routed.model), sent, false) : await attempt(model, sent, !!o.escalate)
       let done = first
       let whole = [...sent, ...first.messages]
-      let escalated: { from: string; reason: string } | undefined
-      let answering = named
-      const to = first.trouble && !first.stopped ? await target() : null
+      const to = !routed && first.trouble && !first.stopped ? await target() : null
       if (to && first.trouble) {
         escalated = { from: named.model, reason: first.trouble }
         answering = { model: to.name, local: to.local }
@@ -488,6 +500,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           promptChars: prompt.length,
           attachments: attachments?.length ?? 0,
           outcome: stopped ? 'stopped' : text.trim() ? 'answered' : failed ? 'error' : 'empty',
+          kind,
           ...(escalated && { escalated }),
           ...(answered && Date.now() - answered.at < CORRECTION_WINDOW && readsAsCorrection(prompt) && { corrects: answered.model }),
           ...(done.cut && { cut: true as const }),

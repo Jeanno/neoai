@@ -84,7 +84,7 @@ export function applyEvent(turn: Turn, e: HarnessEvent): Turn {
       return { ...turn, items }
     // ESC-3: said in the conversation, REMOTE called out as everywhere else.
     case 'escalated':
-      items.push({ kind: 'note', line: `escalated to ${e.to}${e.local ? '' : ' (REMOTE)'}: ${e.reason}` })
+      items.push({ kind: 'note', line: `${e.routed ? 'started on' : 'escalated to'} ${e.to}${e.local ? '' : ' (REMOTE)'}: ${e.reason}` })
       return { ...turn, items }
     case 'error':
       return {

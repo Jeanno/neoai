@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { appendFile, mkdtemp, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ledgerFile, readLedger, readsAsCorrection, readUndone, record, recordUndone, stats, type LedgerEntry } from '../src/ledger.ts'
+import { kindOf, ledgerFile, readLedger, readsAsCorrection, readUndone, record, recordUndone, routeAway, stats, type LedgerEntry, type TurnKind } from '../src/ledger.ts'
 
 const entry = (o: Partial<LedgerEntry> = {}): LedgerEntry => ({
   at: new Date().toISOString(),
@@ -120,4 +120,39 @@ test('an undo is a line of its own naming whose turn it was, and stats show the 
   assert.doesNotMatch(out.split('\n')[2], /undone/)
   // Undone with no edit on record (older lines): a count.
   assert.match(stats([entry()], 7, ['qwen on Darkbloom']), /· 1 undone ·/)
+})
+
+// LED-11
+test('a turn is sorted by its first words and files, never kept as words', () => {
+  assert.equal(kindOf('Fix the failing test', 0), 'change')
+  assert.equal(kindOf('please add a README', 0), 'change')
+  assert.equal(kindOf('can you rename foo to bar', 0), 'change')
+  assert.equal(kindOf('  "update" the docs', 0), 'change')
+  assert.equal(kindOf('what does fix do', 0), 'ask')
+  assert.equal(kindOf('why is the build red', 0), 'ask')
+  assert.equal(kindOf('fix this', 2), 'attached')
+})
+
+// ESC-6
+test('routing away needs enough turns of the kind, more than half gone badly, and counts only turns started there', () => {
+  const e = (model: string, kind: TurnKind, how: 'ok' | 'escalated' | 'error' | 'stopped' | 'routed'): LedgerEntry => ({
+    at: '2026-11-01T00:00:00Z', front: 'cli', model: how === 'ok' || how === 'error' || how === 'stopped' ? model : 'big', local: true, ms: 1, steps: 1, tools: {},
+    toolErrors: 0, declined: 0, promptChars: 1, attachments: 0, kind,
+    outcome: how === 'error' ? 'error' : how === 'stopped' ? 'stopped' : 'answered',
+    ...(how === 'escalated' && { escalated: { from: model, reason: 'r' } }),
+    ...(how === 'routed' && { escalated: { from: model, reason: 'r', routed: true as const } }),
+  })
+  const four = [e('s', 'change', 'escalated'), e('s', 'change', 'error'), e('s', 'change', 'escalated'), e('s', 'change', 'ok')]
+  // Four is too few, and stopped or routed turns do not add to it.
+  assert.equal(routeAway([...four, e('s', 'change', 'stopped'), e('s', 'change', 'routed')], 's', 'change'), undefined)
+  assert.equal(routeAway([...four, e('s', 'change', 'ok')], 's', 'change'), 'by the ledger, s went badly on 3 of its last 5 turns asking for a change')
+  // Half is not more than half; another model's or another kind's turns do not count.
+  assert.equal(routeAway([...four, e('s', 'change', 'ok'), e('s', 'change', 'ok')], 's', 'change'), undefined)
+  assert.equal(routeAway([...four, e('s', 'change', 'ok')], 'other', 'change'), undefined)
+  assert.equal(routeAway([...four, e('s', 'change', 'ok')], 's', 'ask'), undefined)
+  // LED-12
+  assert.match(stats([...four, e('s', 'change', 'routed')], 30), /s: 2 turns .* 2 escalated away · 1 routed past it/)
+  // Only the latest ten: good turns since put it back.
+  const recovered = [...four, ...Array.from({ length: 10 }, () => e('s', 'change', 'ok'))]
+  assert.equal(routeAway(recovered, 's', 'change'), undefined)
 })
