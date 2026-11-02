@@ -64,3 +64,30 @@ test('a long tool input is cut short, and a message navi wrote alone is only a q
   assert.equal(got.match(/## You/g)?.length, 1)
   assert.match(got, /> navi: the model that started on this struggled\.\n\n## navi\n\nDone\.\n$/)
 })
+
+// JOB-27, JOB-29
+test('a job turns into what was asked and answered, navi notes and summaries left out', async () => {
+  const { exchanges, exchangesMarkdown } = await import('../src/transcript.ts')
+  const { watchPrompt } = await import('../src/schedules.ts')
+  const turns = exchanges([
+    { role: 'user', content: 'Summary of the earlier conversation:\nold stuff' },
+    { role: 'assistant', content: 'Understood.' },
+    { role: 'user', content: userContent('total?', [{ kind: 'text', name: 'r.txt', text: '12' }]) },
+    { role: 'assistant', content: [{ type: 'text', text: 'Let me look.' }, { type: 'tool-call', toolCallId: 'a', toolName: 'read_file', input: { path: 'r.txt' } }] },
+    { role: 'user', content: '(navi: the model that started on this struggled.)' },
+    { role: 'assistant', content: 'It is **12**.' },
+    { role: 'user', content: '(navi: the user undid your file changes: x is back as before.)\n\nand tax?' },
+    { role: 'assistant', content: [{ type: 'tool-call', toolCallId: 'b', toolName: 'run_shell', input: { command: 'calc' } }] },
+    { role: 'user', content: watchPrompt('check the build', 'it was green') },
+    { role: 'assistant', content: 'Still green.' },
+  ])
+  assert.deepEqual(turns, [
+    { prompt: 'total?', files: ['r.txt'], answer: 'It is **12**.' },
+    { prompt: 'and tax?' },
+    { prompt: 'check the build', answer: 'Still green.' },
+  ])
+  assert.equal(
+    exchangesMarkdown(turns.slice(0, 2), 'navi job 1'),
+    '# navi job 1\n\n## You\n\ntotal?\n\n_with r.txt_\n\n## navi\n\nIt is **12**.\n\n## You\n\nand tax?\n',
+  )
+})

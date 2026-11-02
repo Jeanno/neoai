@@ -312,3 +312,45 @@ test('JOB-26: the phone deletes a finished job, and clears the rest', { skip }, 
   await page.getByText('No jobs yet.').waitFor()
   assert.equal(await page.getByRole('button', { name: 'Clear finished jobs' }).count(), 0)
 })
+
+test('JOB-28: a followed-up job folds its earlier turns away, and they stay open across refreshes', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  let history: any[] = []
+  const jobs = await makeJobs({
+    home,
+    start: async () => ({
+      model: 'small',
+      session: {
+        get history() { return history },
+        async *turn(p: string) {
+          history = [...history, { role: 'user', content: p }, { role: 'assistant', content: p === 'first' ? 'The **first** answer.' : 'The second answer.' }]
+          yield { type: 'done', history, text: p === 'first' ? 'The **first** answer.' : 'The second answer.', empty: false, stopped: false } as const
+        },
+      },
+    }),
+    notify: () => {},
+  })
+  const job = jobs.create('first', home)
+  await jobs.idle()
+  jobs.reply(job.id, 'second')
+  await jobs.idle()
+  const token = '5'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.locator('.job').first().click()
+  await page.getByText('Earlier in this job (1)').waitFor()
+  await page.getByText('Then you asked').waitFor()
+  assert.equal(await page.locator('.card.answer').innerText(), 'The second answer.')
+  assert.equal(await page.locator('.earlier strong').isVisible(), false)
+  await page.getByText('Earlier in this job (1)').click()
+  assert.equal(await page.locator('.earlier strong').innerText(), 'first')
+  // Through a refresh or two, still open.
+  await page.waitForTimeout(3500)
+  assert.equal(await page.locator('.earlier strong').isVisible(), true)
+})

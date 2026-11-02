@@ -10,7 +10,7 @@ import { makeSpinner } from './spinner.ts'
 import { serveMcp, type Ask } from './mcp.ts'
 import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } from './serve.ts'
 import { ago, clearAllSessions, clearSession, listSessions, addPrompt, loadPrompts, loadSession, saveSession, sessionFile } from './session.ts'
-import { transcript } from './transcript.ts'
+import { exchangesMarkdown, transcript } from './transcript.ts'
 import { attachStdin, MAX_UPLOAD } from './attach.ts'
 import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
 import { readConfig, reset } from 'neorouter'
@@ -104,7 +104,7 @@ const USAGE = [
   '       navi browser [--install]',
   '       navi stats [--days N]',
   '       navi job "<what you want done>" [-a <file>]… [-C <directory>]',
-  '       navi jobs [<id> [y | n | stop | undo | delete | reply "<follow-up>" [-a <file>]…] | clear | link]',
+  '       navi jobs [<id> [y | n | stop | undo | delete | show | reply "<follow-up>" [-a <file>]…] | clear | link]',
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
   '       navi schedules [<id> run | rm]',
   '       navi push test',
@@ -130,7 +130,7 @@ const ABOUT = [
   "navi browser         open navi's browser to sign in to sites; --install gets Chromium for it",
   'navi stats           how each model has done, from the ledger; --days N (default 30)',
   'navi job "…"         hand navi serve a job to do in the background; -a sends a file, -C sets where',
-  'navi jobs            list jobs; <id> shows one, then y, n, stop, undo, delete or reply; clear deletes finished ones; link is for a phone',
+  'navi jobs            list jobs; <id> shows one, then y, n, stop, undo, delete, show (every turn) or reply; clear deletes finished ones; link is for a phone',
   'navi schedule "…"    have navi serve start a job at a time of day or every so often;',
   '                     --only-changes makes it a watch that only speaks when something changed',
   'navi schedules       list schedules and their next run; <id> run starts one now, rm deletes it',
@@ -332,6 +332,7 @@ function showJob(job: any) {
   if (job.answer) console.log(`\n${job.answer}`)
   if (job.error) console.error(`error: ${job.error}`)
   if (job.changes?.length) console.log(dim(`\nchanged ${job.changes.join(', ')}; \`navi jobs ${job.id} undo\` puts them back`))
+  if (job.turns?.length > 1) console.log(dim(`earlier in this job: \`navi jobs ${job.id} show\``))
   if (!working(job.status)) console.log(dim(`follow up with \`navi jobs ${job.id} reply "<what next>"\` (-a <file> to add one)`))
 }
 
@@ -394,7 +395,7 @@ async function replyJobCommand(n: number, id: string, argv: string[]) {
   return 0
 }
 
-const JOBS_USAGE = 'usage: navi jobs [<id> [y | n | stop | undo | delete | reply "<follow-up>" [-a <file>]…] | clear | link] [--port N]'
+const JOBS_USAGE = 'usage: navi jobs [<id> [y | n | stop | undo | delete | show | reply "<follow-up>" [-a <file>]…] | clear | link] [--port N]'
 
 /** `navi jobs [<id> [y | n | stop | undo | delete | reply …] | clear | link] [--port N]` (JOB-12, JOB-13, JOB-20, JOB-26). */
 async function jobsCommand(argv: string[]) {
@@ -402,7 +403,7 @@ async function jobsCommand(argv: string[]) {
   const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
   const [id, what, ...extra] = port.rest
   if (what === 'reply' && Number.isInteger(n)) return replyJobCommand(n, id, extra)
-  if (extra.length || !Number.isInteger(n) || (what !== undefined && !['y', 'n', 'stop', 'undo', 'delete'].includes(what))) {
+  if (extra.length || !Number.isInteger(n) || (what !== undefined && !['y', 'n', 'stop', 'undo', 'delete', 'show'].includes(what))) {
     console.error(JOBS_USAGE)
     return 1
   }
@@ -429,6 +430,15 @@ async function jobsCommand(argv: string[]) {
     if (got.status !== 200) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
     const k = got.data.cleared as number
     console.log(k ? `Deleted ${k} finished job${k === 1 ? '' : 's'}; any still working are kept.` : 'No finished jobs to delete.')
+    return 0
+  }
+  if (what === 'show') {
+    // JOB-29: every turn, as Markdown, to read or keep.
+    const got = await jobsApi(n, `/jobs/${id}`)
+    if (!got) return console.error(NOT_SERVING), 1
+    if (got.status !== 200) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
+    const turns = got.data.turns?.length ? got.data.turns : [{ prompt: got.data.prompt, ...(got.data.answer && { answer: got.data.answer }) }]
+    process.stdout.write(exchangesMarkdown(turns, `navi job ${id} in ${got.data.directory}`))
     return 0
   }
   if (what === 'delete') {

@@ -34,6 +34,37 @@ function notesOff(prompt: string): { notes: string[]; rest: string } {
   }
 }
 
+/** A trailing `(navi: …)` paragraph, as a watch's runs carry (SCH-11), is navi's too. */
+const tailOff = (prompt: string) => prompt.replace(/\n\n\(navi: [\s\S]*\)\s*$/, '')
+
+export interface Exchange {
+  prompt: string
+  /** The names of files sent with it. */
+  files?: string[]
+  /** The last thing navi said in answer, if it said anything. */
+  answer?: string
+}
+
+/** What was asked and answered, a turn each (JOB-27): navi's own notes and summaries left out. */
+export function exchanges(messages: ModelMessage[]): Exchange[] {
+  const out: Exchange[] = []
+  for (const m of messages) {
+    if (m.role === 'user') {
+      const { prompt, names } = splitUserContent(m.content as Parameters<typeof splitUserContent>[0])
+      if (prompt.startsWith(SUMMARY)) continue
+      const rest = tailOff(notesOff(prompt).rest).trim()
+      // A note navi sent alone (an escalation) goes on with the turn before it.
+      if (!rest && !names.length) continue
+      out.push({ prompt: rest, ...(names.length && { files: names }) })
+    } else if (m.role === 'assistant' && out.length) {
+      const parts = typeof m.content === 'string' ? [{ type: 'text' as const, text: m.content }] : m.content
+      const text = parts.flatMap((p) => (p.type === 'text' && p.text.trim() ? [p.text.trim()] : [])).join('\n\n')
+      if (text) out[out.length - 1].answer = text
+    }
+  }
+  return out
+}
+
 const quote = (s: string) => s.split('\n').map((l) => `> ${l}`.trimEnd()).join('\n')
 
 export function transcript(messages: ModelMessage[], where?: string): string {
@@ -71,5 +102,15 @@ export function transcript(messages: ModelMessage[], where?: string): string {
     }
   }
   flushTools()
+  return `${out.join('\n\n')}\n`
+}
+
+/** A job's turns as Markdown (JOB-29), as a conversation is shown (SES-15). */
+export function exchangesMarkdown(turns: Exchange[], title: string): string {
+  const out = [`# ${title}`]
+  for (const t of turns) {
+    out.push('## You', [t.prompt, t.files?.length ? `_with ${t.files.join(', ')}_` : ''].filter(Boolean).join('\n\n'))
+    if (t.answer) out.push('## navi', t.answer)
+  }
   return `${out.join('\n\n')}\n`
 }

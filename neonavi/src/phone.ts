@@ -70,6 +70,9 @@ export const PHONE_PAGE = `<!doctype html>
   .pending { background: var(--wait-bg); border-color: var(--wait); }
   pre { background: var(--code); border-radius: 8px; padding: 10px; overflow-x: auto; font: 12.5px/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; }
   .answer { white-space: pre-wrap; word-break: break-word; }
+  .earlier summary { color: var(--accent); font-weight: 600; cursor: pointer; }
+  .turn { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+  .asked { white-space: pre-wrap; word-break: break-word; font-weight: 600; margin-bottom: 6px; }
   .md { white-space: normal; }
   .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
   .md p, .md ul, .md ol, .md blockquote, .md .mt, .md pre { margin: 0 0 10px; }
@@ -156,6 +159,8 @@ ${MARKDOWN_JS}
   let repeat = 'now', time = '08:00', quiet = false
   // MEM-13: what navi remembers, on a page of its own.
   let remembering = false, memory = { facts: [], off: false }, fact = ''
+  // JOB-28: whether a job's earlier turns are shown, kept across refreshes.
+  let earlierOpen = false
   // The files chosen for a new job and for a follow-up, as { name, data } with data base64 (JOB-16, JOB-20).
   let picked = [], more = []
 
@@ -228,7 +233,7 @@ ${MARKDOWN_JS}
     }
     const waiting = jobs.filter((j) => j.status === 'waiting').length
     const finished = jobs.filter((j) => !['queued', 'running', 'waiting'].includes(j.status)).length
-    const head = el('h1', {}, open || remembering ? el('button', { class: 'plain', onclick: () => { open = null; job = null; reply = ''; more = []; remembering = false; failed = ''; render(); refresh() } }, '‹ Jobs') : 'navi',
+    const head = el('h1', {}, open || remembering ? el('button', { class: 'plain', onclick: () => { open = null; job = null; reply = ''; more = []; remembering = false; failed = ''; earlierOpen = false; render(); refresh() } }, '‹ Jobs') : 'navi',
       el('small', {}, waiting ? waiting + ' waiting' : jobs.some((j) => j.status === 'running' || j.status === 'queued') ? 'working' : ''))
     const err = (failed || problem) && el('p', { class: 'err' }, failed || problem)
     if (remembering) {
@@ -254,12 +259,21 @@ ${MARKDOWN_JS}
     } else if (open && job) {
       // JOB-23: a queued job is stopped as one running is.
       const live = job.status === 'queued' || job.status === 'running' || job.status === 'waiting'
+      const turns = job.turns || []
       put(head,
         el('div', { class: 'card' },
           el('div', { class: 'status s-' + job.status }, job.unchanged ? 'nothing new' : job.status),
           el('div', { class: 'answer' }, job.prompt),
           el('div', { class: 'meta' }, short(job.directory) + (job.model ? ' · ' + job.model : '') + ' · ' + ago(job.created)),
           job.files && el('div', { class: 'meta' }, 'With ' + job.files.join(', '))),
+        // JOB-28: after a follow-up, the turns before it folded away, and what was asked last.
+        turns.length > 1 && el('details', { class: 'card earlier', open: earlierOpen, ontoggle: (e) => (earlierOpen = e.target.open) },
+          el('summary', {}, 'Earlier in this job (' + (turns.length - 1) + ')'),
+          turns.slice(0, -1).map((t) => el('div', { class: 'turn' },
+            el('div', { class: 'asked' }, t.prompt),
+            t.files && el('div', { class: 'meta' }, 'With ' + t.files.join(', ')),
+            t.answer ? el('div', { class: 'md' }, renderMarkdown(t.answer, el)) : el('div', { class: 'meta' }, 'No answer')))),
+        turns.length > 1 && el('div', { class: 'card' }, el('div', { class: 'meta' }, 'Then you asked'), el('div', { class: 'answer' }, turns[turns.length - 1].prompt)),
         job.pending && el('div', { class: 'card pending' },
           el('div', { class: 'status s-waiting' }, 'Allow this?'),
           el('pre', {}, job.pending.command),

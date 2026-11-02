@@ -14,6 +14,7 @@ import { isAbsolute } from 'node:path'
 import { working, type Job, type Jobs } from './jobs.ts'
 import { checkWhen, type Schedules } from './schedules.ts'
 import { addFact, forgetFact, readMemory } from './memory.ts'
+import { exchanges } from './transcript.ts'
 import { PHONE_PAGE } from './phone.ts'
 import { attachUploads } from './attach.ts'
 import { jobChanges, undo, undoneReport } from './undo.ts'
@@ -193,7 +194,13 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
   const job = parts[0] ? jobs.get(parts[0]) : undefined
   if (!job) return error(res, 404, `There is no job ${parts[0] ?? ''}.`)
   const home = o.home ?? homedir()
-  if (req.method === 'GET' && parts.length === 1) return json(res, 200, { ...shownJob(job), changes: await jobChanges(home, job.directory, job.id) })
+  // JOB-27: what was asked and answered, a turn each, never the conversation itself.
+  if (req.method === 'GET' && parts.length === 1) {
+    const turns = exchanges(job.history)
+    // A follow-up is in the conversation only once it ends well; until then, or if it failed, what it asked.
+    if (job.asked && turns.length && turns[turns.length - 1].prompt !== job.asked) turns.push({ prompt: job.asked })
+    return json(res, 200, { ...shownJob(job), changes: await jobChanges(home, job.directory, job.id), turns })
+  }
   if (req.method === 'POST' && parts.length === 2 && parts[1] === 'undo') {
     // UND-11: not while it may still be writing.
     if (working(job.status)) return error(res, 400, 'The job is still working; stop it or wait for it first.')

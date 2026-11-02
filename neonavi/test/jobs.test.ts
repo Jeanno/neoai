@@ -587,3 +587,27 @@ test('a finished job can be deleted, for good, and clear deletes all those not w
     server.close()
   }
 })
+
+// JOB-27
+test('a job lists its turns, a follow-up still running included, never its conversation', async () => {
+  const { jobs, home } = await setup()
+  const token = 't'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const get = async (id: string) =>
+    (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/jobs/${id}`, { headers: { authorization: `Bearer ${token}` } })).json()
+  try {
+    const job = jobs.create('first question', '/tmp')
+    await jobs.idle()
+    assert.deepEqual((await get(job.id)).turns, [{ prompt: 'first question', answer: 'Answer to first question.' }])
+    assert.ok(jobs.reply(job.id, 'hang'))
+    await until(jobs, job.id, 'running')
+    const running = await get(job.id)
+    assert.deepEqual(running.turns, [{ prompt: 'first question', answer: 'Answer to first question.' }, { prompt: 'hang' }])
+    assert.equal(running.history, undefined)
+    jobs.stop(job.id)
+    await jobs.idle()
+    assert.deepEqual((await get(job.id)).turns.at(-1), { prompt: 'hang' })
+  } finally {
+    server.close()
+  }
+})

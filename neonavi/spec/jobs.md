@@ -135,6 +135,24 @@ terminal that started them closes.
 - JOB-23: `navi jobs` and the phone page show a queued job as `queued`; the
   phone page offers Stop for it, as for one running.
 
+## Earlier turns
+
+- JOB-27: `GET /jobs/<id>` gives `turns`: what was asked and answered, a
+  turn each, oldest first, as `{ prompt, files?, answer? }`, the answer
+  being the last thing navi said in that turn. navi's own notes (an undo,
+  an escalation, a watch's instructions) and compaction summaries are left
+  out; the conversation itself is still never sent (JOB-15). A follow-up
+  still running, or one that failed before it was kept, is the last turn,
+  with its prompt and no answer.
+- JOB-28: The phone page shows a job that has been followed up with its
+  earlier turns folded under Earlier in this job (N), each prompt with its
+  answer formatted (JOB-17), and the latest prompt as Then you asked above
+  its answer. Unfolded stays unfolded across refreshes, until the job is
+  left.
+- JOB-29: `navi jobs <id> show` prints every turn as Markdown on stdout, as
+  `navi sessions show` does (SES-15), and `navi jobs <id>` mentions it for a
+  job with more than one turn.
+
 ## Deleting
 
 - JOB-24: `POST /jobs/<id>/delete` deletes a job that is not working

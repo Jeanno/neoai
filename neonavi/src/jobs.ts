@@ -53,6 +53,8 @@ export interface Job {
   unchanged?: true
   /** The names of the files it was given (JOB-15). */
   files?: string[]
+  /** The latest follow-up, shown while it runs (JOB-27). */
+  asked?: string
 }
 
 /** How a job is started beyond its prompt and directory. */
@@ -70,7 +72,7 @@ export const NOTHING_NEW = 'NOTHING NEW'
 export const nothingNew = (answer: string | undefined) => /^\W*nothing new\W*$/i.test(answer ?? '')
 
 /** A job as listed: no conversation or log (JOB-7). */
-export type Listed = Omit<Job, 'history' | 'log'>
+export type Listed = Omit<Job, 'history' | 'log' | 'asked'>
 
 export interface JobDeps {
   home: string
@@ -279,7 +281,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
     void save(job)
   }
 
-  const listed = ({ history: _h, log: _l, ...rest }: Job): Listed => rest
+  const listed = ({ history: _h, log: _l, asked: _a, ...rest }: Job): Listed => rest
 
   return {
     list: () => [...jobs.values()].sort((a, b) => b.created.localeCompare(a.created)).map(listed),
@@ -323,6 +325,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
       const names = attachments?.map((x) => x.name) ?? []
       job.log.push(`> ${prompt}${names.length ? ` (with ${names.join(', ')})` : ''}`)
       if (names.length) job.files = [...(job.files ?? []), ...names]
+      job.asked = prompt
       begin(job, prompt, attachments)
       return true
     },

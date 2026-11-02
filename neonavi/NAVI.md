@@ -78,6 +78,9 @@ holds no place (JOB-21 to JOB-23).
 A job you are done with can be deleted (`navi jobs <id> delete`, or Delete
 job on the phone page), and `navi jobs clear` or Clear finished jobs
 deletes every one not still working (JOB-24 to JOB-26).
+A job followed up keeps its earlier answers: on the phone page under
+Earlier in this job, and all of it with `navi jobs <id> show`
+(JOB-27 to JOB-29).
 Answers on the phone page are shown formatted (headings, lists, tables,
 code, links), and since an answer can quote a web page, none of it is ever
 read as HTML: only http(s) links work, and nothing in an answer can run
