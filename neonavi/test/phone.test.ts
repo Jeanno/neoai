@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -246,4 +246,37 @@ test('JOB-23: a queued job shows as queued, and Stop takes it out', { skip }, as
   await page.getByRole('button', { name: 'Stop' }).click()
   await page.locator('.s-stopped').waitFor()
   assert.equal(jobs.get(queued.id)!.status, 'stopped')
+})
+
+test('MEM-13: the phone shows what navi remembers, adds a fact and forgets one', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  await mkdir(join(home, '.neoai'), { recursive: true })
+  await writeFile(join(home, '.neoai', 'memory.md'), '- Keeps bees\n')
+  const jobs = await makeJobs({ home, start: async () => { throw new Error('unused') }, notify: () => {} })
+  const token = '7'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  page.on('dialog', (d) => d.accept())
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByRole('button', { name: 'What navi remembers ›' }).click()
+  await page.getByText('Keeps bees').waitFor()
+  await page.getByText('These go with every turn').waitFor()
+  await page.getByPlaceholder('Something navi should know about you').fill('Prefers metric units')
+  await page.getByPlaceholder('Something navi should know about you').press('Enter')
+  await page.locator('.fact', { hasText: 'Prefers metric units' }).waitFor()
+  assert.equal(await page.getByPlaceholder('Something navi should know about you').inputValue(), '')
+  await page.getByRole('button', { name: 'Forget Keeps bees' }).click()
+  await page.locator('.fact', { hasText: 'Keeps bees' }).waitFor({ state: 'detached' })
+  assert.equal(await readFile(join(home, '.neoai', 'memory.md'), 'utf8'), '- Prefers metric units\n')
+  // A refused fact says why, and stays in the box to fix.
+  await page.getByPlaceholder('Something navi should know about you').fill('prefers METRIC units')
+  await page.getByRole('button', { name: 'Remember' }).click()
+  await page.getByText('That is already remembered.').waitFor()
+  await page.getByRole('button', { name: '‹ Jobs' }).click()
+  await page.getByText('No jobs yet.').waitFor()
 })

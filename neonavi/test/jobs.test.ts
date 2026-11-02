@@ -516,3 +516,42 @@ test('the jobs allowed at once is 2 unless the config gives a whole number from 
     assert.equal(made.filter((j) => j.status === 'running').length, want, `atOnce ${atOnce}`)
   }
 })
+
+// MEM-12
+test('memory can be read, added to and forgotten through the API, with the token, by exact text', async () => {
+  const { jobs, home } = await setup()
+  const token = 'm'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const call = (path: string, body?: unknown, auth = true) =>
+    fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { ...(auth && { authorization: `Bearer ${token}` }), 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  try {
+    assert.equal((await call('/memory', undefined, false)).status, 401)
+    assert.deepEqual(await (await call('/memory')).json(), { facts: [], off: false })
+    const added = await call('/memory', { fact: 'Keeps bees' })
+    assert.equal(added.status, 201)
+    assert.deepEqual((await added.json()).facts, ['Keeps bees'])
+    await call('/memory', { fact: 'Keeps bees and chickens' })
+    const dup = await call('/memory', { fact: 'keeps  BEES' })
+    assert.equal(dup.status, 400)
+    assert.match((await dup.json()).error.message, /already/)
+    assert.equal((await call('/memory', { fact: 'two\nlines' })).status, 400)
+    // Exact text only: "Keeps bees" is not "Keeps bees and chickens".
+    const gone = await call('/memory/forget', { fact: 'Keeps bees' })
+    assert.deepEqual((await gone.json()).facts, ['Keeps bees and chickens'])
+    assert.equal((await call('/memory/forget', { fact: 'Keeps bees' })).status, 404)
+    assert.equal(await readFile(join(home, '.neoai', 'memory.md'), 'utf8'), '- Keeps bees and chickens\n')
+  } finally {
+    server.close()
+  }
+  const [off] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home, memory: false } })
+  try {
+    const got = await fetch(`http://127.0.0.1:${(off.address() as AddressInfo).port}/memory`, { headers: { authorization: `Bearer ${token}` } })
+    assert.equal((await got.json()).off, true)
+  } finally {
+    off.close()
+  }
+})

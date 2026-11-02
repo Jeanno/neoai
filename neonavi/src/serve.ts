@@ -13,6 +13,7 @@ import { stat as statPath } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { working, type Job, type Jobs } from './jobs.ts'
 import { checkWhen, type Schedules } from './schedules.ts'
+import { addFact, forgetFact, readMemory } from './memory.ts'
 import { PHONE_PAGE } from './phone.ts'
 import { attachUploads } from './attach.ts'
 import { jobChanges, undo, undoneReport } from './undo.ts'
@@ -78,8 +79,10 @@ export interface JobsOptions {
   directories: () => Promise<string[]>
   /** Jobs started by themselves (schedules.md). */
   schedules?: Schedules
-  /** Where undo keeps jobs' changes (UND-10); the user's home when left out. */
+  /** Where undo keeps jobs' changes (UND-10) and memory is (MEM-12); the user's home when left out. */
   home?: string
+  /** False when the config turns memory off (MEM-4). */
+  memory?: boolean
 }
 
 /** Whether a request carries the token, compared in constant time (JOB-8). */
@@ -110,6 +113,29 @@ async function placeFor(given: unknown, o: JobsOptions): Promise<string | undefi
   const directory = given ?? (await o.directories())[0]
   if (typeof directory !== 'string' || !isAbsolute(directory)) return
   return (await statPath(directory).then((s) => s.isDirectory(), () => false)) ? directory : undefined
+}
+
+/** The memory API (MEM-12); the token is already checked. */
+async function memoryRoute(req: IncomingMessage, res: ServerResponse, path: string, o: JobsOptions) {
+  const home = o.home ?? homedir()
+  const now = async () => ({ facts: await readMemory(home), off: o.memory === false })
+  if (req.method === 'GET' && path === '/memory') return json(res, 200, await now())
+  if (req.method === 'POST' && (path === '/memory' || path === '/memory/forget')) {
+    const body = await jsonBody(req)
+    if (typeof body === 'string') return error(res, 400, body)
+    if (typeof body.fact !== 'string') return error(res, 400, 'Give the fact as { "fact": "…" }.')
+    if (path === '/memory') {
+      // MEM-10: sending it is the yes.
+      const problem = await addFact(home, body.fact)
+      return problem ? error(res, 400, problem) : json(res, 201, await now())
+    }
+    // Exactly that fact, never one that merely contains it.
+    const at = (await readMemory(home)).indexOf(body.fact.trim())
+    if (at < 0) return error(res, 404, 'That fact is not remembered (any more).')
+    await forgetFact(home, String(at + 1))
+    return json(res, 200, await now())
+  }
+  error(res, 404, `Memory answers GET /memory, POST /memory and POST /memory/forget, not ${req.method} ${path}.`)
 }
 
 /** The schedules API (SCH-7); the token is already checked. */
@@ -300,6 +326,14 @@ export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptio
           return error(res, 401, 'Jobs need the token in ~/.neoai/serve-token, as Authorization: Bearer <token>.', 'authentication_error')
         }
         return await jobsRoute(req, res, path, j)
+      }
+      // MEM-12: behind the same token.
+      if (j && (path === '/memory' || path.startsWith('/memory/'))) {
+        if (!bearer(req, j.token)) {
+          via = 'refused: no token'
+          return error(res, 401, 'Memory needs the token in ~/.neoai/serve-token, as Authorization: Bearer <token>.', 'authentication_error')
+        }
+        return await memoryRoute(req, res, path, j)
       }
       // SCH-7: behind the same token.
       if (j?.schedules && (path === '/schedules' || path.startsWith('/schedules/'))) {

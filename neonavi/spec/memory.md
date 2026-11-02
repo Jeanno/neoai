@@ -42,6 +42,21 @@ of facts, read into every turn, that navi can add to only with your yes.
   `navi memory forget <words>` removes the one fact containing them, and
   lists the matches when there are several.
 
+## On the phone
+
+- MEM-12: navi serve answers, behind the jobs token (JOB-8): `GET /memory`
+  (the facts, in order, and whether memory is off, MEM-4), `POST /memory`
+  with `{ fact }` (added with the checks of MEM-6 and no question, as
+  MEM-10: sending it is the yes; a 400 saying why not) and `POST
+  /memory/forget` with `{ fact }` (the fact with exactly that text removed;
+  a 404 when there is none, so a list that changed elsewhere cannot remove
+  the wrong one). Each answers with the facts as they are now. Facts are
+  never written to navi serve's log.
+- MEM-13: The phone page has a What navi remembers page: the facts, each
+  with a way to forget it after a confirm, a box to add one, a note that
+  they go with every turn to whichever model answers, and when memory is
+  off, that it is.
+
 ## Open
 
 - Suggest facts at the end of a conversation instead of only when asked.

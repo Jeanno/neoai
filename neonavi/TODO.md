@@ -84,6 +84,10 @@ add the requirement there first.
 - [x] Memory: a short file of facts about you sent with every turn, added
       by the model only with your yes, whatever the judge says; `navi memory`
       lists, adds and forgets. (MEM-1 to MEM-11, PRM-14)
+- [x] Memory on the phone page: see, add and forget facts (forgotten by
+      exact text, never a near match). (MEM-12, MEM-13)
+- [x] The phone page keeps saying why an action failed until the next one,
+      instead of the refresh after it clearing it at once.
 - [ ] Suggest facts to remember at the end of a conversation, and memory
       per project. (`spec/memory.md` Open)
 - [x] Undo: `navi undo` and `/undo` put back the files navi's last turn

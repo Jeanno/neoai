@@ -232,7 +232,7 @@ async function serve(argv: string[]) {
   const directories = async () => [...new Set([...(await listSessions(home)).flatMap((s) => (s.cwd ? [s.cwd] : [])), home])]
   try {
     await listen(chain, realServeDeps(say), n, {
-      jobs: { jobs, token: await serveToken(home), directories, schedules },
+      jobs: { jobs, token: await serveToken(home), directories, schedules, memory: config.memory !== false },
       tailnet: tailnetAt,
     })
   } catch (e) {

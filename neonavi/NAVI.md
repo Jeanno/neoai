@@ -118,6 +118,8 @@ hand; `navi memory` lists them, `navi memory add "…"` adds one and
 `navi memory forget <n | words>` removes one. They go wherever a turn goes,
 a remote model included; `"memory": false` in the config turns it off
 (`spec/memory.md`).
+On the phone page, What navi remembers shows the same list, with a box to
+add a fact and a way to forget one (MEM-12, MEM-13).
 
 `navi mcp` is navi as an MCP server: clients such as Claude Desktop, Claude
 Code or Cursor get one tool, `ask_navi`, that hands a task (and any files) to

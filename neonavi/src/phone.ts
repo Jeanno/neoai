@@ -51,6 +51,12 @@ export const PHONE_PAGE = `<!doctype html>
   .pick input { display: none; }
   button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 11px 16px; background: var(--accent); color: var(--accent-text); }
   button.plain { background: transparent; color: var(--accent); padding: 8px 4px; }
+  button.more { display: block; margin: 0 0 4px; font-weight: 600; }
+  .fact { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .fact:first-child { border-top: 0; }
+  .fact span { flex: 1; padding-top: 8px; overflow-wrap: anywhere; }
+  .fact button { padding: 8px 10px; }
+  textarea.one { min-height: 0; }
   button.no { background: var(--code); color: var(--text); }
   button:disabled { opacity: .5; }
   .row { display: flex; gap: 8px; margin-top: 10px; }
@@ -146,8 +152,10 @@ ${MARKDOWN_JS}
   const REPEATS = [['now', 'Once, now'], ['30', 'Every 30 minutes'], ['60', 'Every hour'], ['daily', 'Every day at…'], ['weekdays', 'Weekdays at…']]
   const timed = () => repeat === 'daily' || repeat === 'weekdays'
 
-  let jobs = [], schedules = [], dirs = [], open = linked, job = null, problem = '', draft = '', reply = '', dir = '', busy = false
+  let jobs = [], schedules = [], dirs = [], open = linked, job = null, problem = '', failed = '', draft = '', reply = '', dir = '', busy = false
   let repeat = 'now', time = '08:00', quiet = false
+  // MEM-13: what navi remembers, on a page of its own.
+  let remembering = false, memory = { facts: [], off: false }, fact = ''
   // The files chosen for a new job and for a follow-up, as { name, data } with data base64 (JOB-16, JOB-20).
   let picked = [], more = []
 
@@ -196,6 +204,7 @@ ${MARKDOWN_JS}
       if (!dirs.length) { dirs = (await api('/jobs/directories')).directories; dir = dir || dirs[0] || '' }
       // A job that is gone (pruned, or a stale link) goes back to the list.
       job = open ? await api('/jobs/' + open).catch((e) => { open = null; throw e }) : null
+      if (remembering) memory = await api('/memory')
       problem = ''
     } catch (e) { problem = e.message }
     render()
@@ -203,7 +212,9 @@ ${MARKDOWN_JS}
 
   async function act(fn) {
     busy = true; render()
-    try { await fn(); problem = '' } catch (e) { problem = e.message }
+    // What an action could not do stays said until the next, past the refresh after it.
+    failed = ''
+    try { await fn() } catch (e) { failed = e.message }
     busy = false
     await refresh()
   }
@@ -216,10 +227,30 @@ ${MARKDOWN_JS}
       return
     }
     const waiting = jobs.filter((j) => j.status === 'waiting').length
-    const head = el('h1', {}, open ? el('button', { class: 'plain', onclick: () => { open = null; job = null; reply = ''; more = []; render(); refresh() } }, '‹ Jobs') : 'navi',
+    const head = el('h1', {}, open || remembering ? el('button', { class: 'plain', onclick: () => { open = null; job = null; reply = ''; more = []; remembering = false; failed = ''; render(); refresh() } }, '‹ Jobs') : 'navi',
       el('small', {}, waiting ? waiting + ' waiting' : jobs.some((j) => j.status === 'running' || j.status === 'queued') ? 'working' : ''))
-    const err = problem && el('p', { class: 'err' }, problem)
-    if (open && job) {
+    const err = (failed || problem) && el('p', { class: 'err' }, failed || problem)
+    if (remembering) {
+      const add = () => act(async () => { memory = await api('/memory', { fact }); fact = '' })
+      put(head,
+        el('h2', {}, 'What navi remembers'),
+        el('div', { class: 'card' },
+          memory.facts.length
+            ? memory.facts.map((f) => el('div', { class: 'fact' },
+                el('span', {}, f),
+                el('button', { class: 'plain', 'aria-label': 'Forget ' + f, disabled: busy, onclick: () => {
+                  if (confirm('Forget this?\\n\\n' + f)) act(async () => { memory = await api('/memory/forget', { fact: f }) })
+                } }, '×')))
+            : el('p', { class: 'meta' }, 'Nothing yet. navi asks before it remembers anything, or add a fact here.')),
+        el('div', { class: 'card' },
+          el('textarea', { id: 'fact', class: 'one', rows: 2, maxlength: 300, placeholder: 'Something navi should know about you', oninput: (e) => { fact = e.target.value; addButton.disabled = busy || !fact.trim() },
+            onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); if (fact.trim() && !busy) add() } } }, fact),
+          el('div', { class: 'row' }, addButton = el('button', { disabled: busy || !fact.trim(), onclick: add }, 'Remember'))),
+        el('p', { class: 'meta' }, memory.off
+          ? 'Memory is off ("memory": false in the config), so none of this goes with your turns.'
+          : 'These go with every turn, to whichever model answers.'),
+        err)
+    } else if (open && job) {
       // JOB-23: a queued job is stopped as one running is.
       const live = job.status === 'queued' || job.status === 'running' || job.status === 'waiting'
       put(head,
@@ -282,6 +313,7 @@ ${MARKDOWN_JS}
             draft = ''
           }) }, repeat === 'now' ? 'Start' : 'Schedule'))),
         err,
+        el('button', { class: 'plain more', onclick: () => { remembering = true; failed = ''; refresh() } }, 'What navi remembers ›'),
         schedules.length > 0 && el('h2', {}, 'Schedules'),
         schedules.map((s) => el('div', { class: 'card sched' },
           el('div', { class: 'status' }, when(s) + (s.quiet ? ' · watch' : '')),
@@ -291,7 +323,7 @@ ${MARKDOWN_JS}
             el('button', { class: 'no', disabled: busy, onclick: () => act(async () => { open = (await api('/schedules/' + s.id + '/run', {})).id }) }, 'Run now'),
             el('button', { class: 'no', disabled: busy, onclick: () => { if (confirm('Delete this schedule?')) act(() => api('/schedules/' + s.id + '/delete', {})) } }, 'Delete')))),
         schedules.length > 0 && el('h2', {}, 'Jobs'),
-        jobs.length ? jobs.map((j) => el('button', { class: 'job', onclick: () => { open = j.id; refresh() } },
+        jobs.length ? jobs.map((j) => el('button', { class: 'job', onclick: () => { open = j.id; failed = ''; refresh() } },
           el('span', { class: 'status s-' + j.status }, j.unchanged ? 'nothing new' : j.status),
           el('span', { class: 'p' }, j.prompt),
           el('span', { class: 'meta' }, ago(j.created) + (j.model ? ' · ' + j.model : ''))))
@@ -306,7 +338,7 @@ ${MARKDOWN_JS}
       }
     }
   }
-  let start
+  let start, addButton
 
   refresh()
   // Every few seconds, and at once when the page comes back into view; never
