@@ -68,6 +68,10 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
   failed link only for 30 seconds: a long-running navi (`serve`, `mcp`, an
   interactive session) looks again once the user has started the server or
   saved the key it lacked.
+- MOD-23: What is remembered (MOD-22) holds only while the config file
+  (`~/.neoai/config.json`, where links' endpoints and keys are kept) is as
+  it was: once it changes, the next resolution looks afresh, so a
+  long-running navi follows a new endpoint, key or model without a restart.
 - MOD-8: A local link fails when no server is reachable or launchable, or the
   pinned id is not installed.
 - MOD-18: A local link can be probed without launching anything: it then

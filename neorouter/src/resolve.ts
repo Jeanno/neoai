@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { Candidate, Prefer, Resolution, Server } from './types.ts'
 import { detectHardware } from './hardware.ts'
 import { reachableServers } from './discover.ts'
@@ -6,6 +9,7 @@ import { launchable, launch } from './launch.ts'
 import { hostedServers, hostedModels } from './hosted.ts'
 import { providerById } from './providers.ts'
 import { chooseListed, fetchModels, onThisMachine, remoteServer } from './remote.ts'
+import { configDir } from './config.ts'
 
 export interface Resolved extends Resolution {
   server: Server
@@ -267,15 +271,30 @@ function announce(r: Resolved): void {
 // single memo would hand the second caller the first caller's backend.
 const pending = new Map<string, Promise<Resolved>>()
 export const FAILURE_TTL = 30_000
+let remembered: string | undefined
 
-/** Resolution is memoised per process, failures briefly; the first call pays for discovery. */
-export function resolveBackend(
+/** The config file as it is now, as a short hash; endpoints and keys are in it (MOD-23). */
+async function configPrint(): Promise<string> {
+  const text = await readFile(join(configDir(), 'config.json'), 'utf8').catch(() => '')
+  return createHash('sha256').update(text).digest('hex').slice(0, 16)
+}
+
+/**
+ * Resolution is memoised per process, failures briefly; the first call pays
+ * for discovery. All of it is forgotten once the config file changes (MOD-23).
+ */
+export async function resolveBackend(
   prefer?: Prefer,
   remote = false,
   modelId?: string,
   scope?: Scope,
   provider?: string,
 ): Promise<Resolved> {
+  const print = await configPrint()
+  if (print !== remembered) {
+    pending.clear()
+    remembered = print
+  }
   const key = `${prefer ?? 'default'}:${remote}:${modelId ?? ''}:${scope ?? ''}:${provider ?? ''}`
   let p = pending.get(key)
   if (!p) {

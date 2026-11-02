@@ -36,3 +36,37 @@ test('a failed link is looked at again after a while; a resolved one is kept', a
     server.close()
   }
 })
+
+// MOD-23
+test('a changed config is followed at once: a new endpoint for the same link, with no restart', async () => {
+  const listing = (id: string) => createServer((_req, res) => res.end(JSON.stringify({ data: [{ id }] })))
+  const before = listing('m1')
+  const after = listing('m1')
+  for (const s of [before, after]) await new Promise<void>((r) => s.listen(0, '127.0.0.1', r))
+  const url = (s: typeof before) => `http://127.0.0.1:${(s.address() as AddressInfo).port}/v1`
+  const [oldURL, newURL] = [url(before), url(after)]
+  const home = await mkdtemp(join(tmpdir(), 'neorouter-memo-'))
+  await mkdir(join(home, '.neoai'))
+  const file = join(home, '.neoai', 'config.json')
+  await writeFile(file, JSON.stringify({ custom: { box: { baseURL: oldURL } } }))
+  const realHome = process.env.HOME
+  process.env.HOME = home
+  process.env.NEOROUTER_QUIET = '1'
+  const { probeBackend } = await import('../src/resolve.ts')
+  try {
+    const probe = () => probeBackend(undefined, true, 'm1', 'keyed', 'box')
+    assert.equal((await probe())?.baseURL, oldURL)
+    // Kept while the config is as it was, even with the server gone.
+    before.close()
+    assert.equal((await probe())?.baseURL, oldURL)
+    await writeFile(file, JSON.stringify({ custom: { box: { baseURL: newURL } } }))
+    assert.equal((await probe())?.baseURL, newURL)
+    // Concurrent callers still share one look.
+    const [a, b] = await Promise.all([probe(), probe()])
+    assert.equal(a, b)
+  } finally {
+    process.env.HOME = realHome
+    before.close()
+    after.close()
+  }
+})

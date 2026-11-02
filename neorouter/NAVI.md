@@ -28,6 +28,10 @@ including one on another machine:
       "custom": { "homelab": { "baseURL": "http://my-server:8000/v1", "key": "..." } }
     }
 
+What a process has resolved is remembered, but only while this file stays as
+it was: edit a key or an endpoint and a long-running process picks it up at its
+next request, with no restart.
+
 A pinned model must be in the server's live model list. Without one, only
 OpenRouter has a pick: the roomiest free chat model in its catalogue.
 `checkKey` and `fetchModels` tell a refused key from no network, for setup.
