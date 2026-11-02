@@ -114,8 +114,10 @@ add the requirement there first.
       instead of the refresh after it clearing it at once.
 - [x] Memory per project: facts about one repository, asked for by name
       and sent only to turns there; kept in your home. (MEM-14 to MEM-17)
-- [ ] Suggest facts to remember at the end of a conversation; a project's
-      facts on the phone. (`spec/memory.md` Open)
+- [x] A project's facts on the phone: seen, added and forgotten for the
+      projects navi serve offers. (MEM-18, MEM-19)
+- [ ] Suggest facts to remember at the end of a conversation.
+      (`spec/memory.md` Open)
 - [x] Undo: `navi undo` and `/undo` put back the files navi's last turn
       changed, never over edits made since, and the model is told.
       (UND-1 to UND-9)

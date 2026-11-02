@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { readMemory } from '../src/memory.ts'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -530,7 +531,7 @@ test('memory can be read, added to and forgotten through the API, with the token
     })
   try {
     assert.equal((await call('/memory', undefined, false)).status, 401)
-    assert.deepEqual(await (await call('/memory')).json(), { facts: [], off: false })
+    assert.deepEqual(await (await call('/memory')).json(), { facts: [], off: false, projects: [] })
     const added = await call('/memory', { fact: 'Keeps bees' })
     assert.equal(added.status, 201)
     assert.deepEqual((await added.json()).facts, ['Keeps bees'])
@@ -553,6 +554,42 @@ test('memory can be read, added to and forgotten through the API, with the token
     assert.equal((await got.json()).off, true)
   } finally {
     off.close()
+  }
+})
+
+// MEM-18
+test("a project's facts can be read, added to and forgotten through the API, for offered projects only", async () => {
+  const { jobs, home } = await setup()
+  const repo = join(home, 'app')
+  await mkdir(join(repo, '.git'), { recursive: true })
+  await mkdir(join(repo, 'web'))
+  const token = 'p'.repeat(64)
+  // Two directories in one repository are one project; home has none.
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [join(repo, 'web'), repo, home], home } })
+  const call = (path: string, body?: unknown) =>
+    fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  try {
+    assert.deepEqual((await (await call('/memory')).json()).projects, [{ root: repo, facts: [] }])
+    const added = await call('/memory', { fact: 'Tests run with make check', project: repo })
+    assert.equal(added.status, 201)
+    assert.deepEqual(await added.json(), { facts: [], off: false, projects: [{ root: repo, facts: ['Tests run with make check'] }] })
+    assert.deepEqual(await readMemory(home, repo), ['Tests run with make check'])
+    assert.equal((await call('/memory', { fact: 'tests run with  MAKE check', project: repo })).status, 400)
+    for (const project of [join(home, 'elsewhere'), join(repo, 'web'), 7]) {
+      const no = await call('/memory', { fact: 'x', project })
+      assert.equal(no.status, 400)
+      assert.match((await no.json()).error.message, /not a project navi serve offers/)
+    }
+    // The user's facts are not a project's.
+    assert.equal((await call('/memory/forget', { fact: 'Tests run with make check' })).status, 404)
+    const gone = await call('/memory/forget', { fact: 'Tests run with make check', project: repo })
+    assert.deepEqual((await gone.json()).projects, [{ root: repo, facts: [] }])
+  } finally {
+    server.close()
   }
 })
 

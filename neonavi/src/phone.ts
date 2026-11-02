@@ -63,6 +63,7 @@ export const PHONE_PAGE = `<!doctype html>
   .fact:first-child { border-top: 0; }
   .fact span { flex: 1; padding-top: 8px; overflow-wrap: anywhere; }
   .fact button { padding: 8px 10px; }
+  #about { margin-bottom: 8px; }
   textarea.one { min-height: 0; }
   button.no { background: var(--code); color: var(--text); }
   button:disabled { opacity: .5; }
@@ -166,7 +167,7 @@ ${MARKDOWN_JS}
   let jobs = [], schedules = [], dirs = [], open = linked, job = null, problem = '', failed = '', draft = '', reply = '', dir = '', busy = false
   let repeat = 'now', time = '08:00', quiet = false
   // MEM-13: what navi remembers, on a page of its own.
-  let remembering = false, memory = { facts: [], off: false }, fact = ''
+  let remembering = false, memory = { facts: [], off: false, projects: [] }, fact = '', about = ''
   // JOB-28: whether a job's earlier turns are shown, kept across refreshes.
   let earlierOpen = false
   // JOB-34: repeating the open job on a schedule, as { repeat, time, quiet }, or null.
@@ -285,24 +286,35 @@ ${MARKDOWN_JS}
       el('small', {}, waiting ? waiting + ' waiting' : jobs.some((j) => j.status === 'running' || j.status === 'queued') ? 'working' : ''))
     const err = (failed || problem) && el('p', { class: 'err' }, failed || problem)
     if (remembering) {
-      const add = () => act(async () => { memory = await api('/memory', { fact }); fact = '' })
+      // MEM-19: a project's facts too, for the directories navi serve offers.
+      const projects = memory.projects || []
+      if (about && !projects.some((p) => p.root === about)) about = ''
+      const add = () => act(async () => { memory = await api('/memory', about ? { fact, project: about } : { fact }); fact = '' })
+      const factList = (facts, project) => facts.map((f) => el('div', { class: 'fact' },
+        el('span', {}, f),
+        el('button', { class: 'plain', 'aria-label': 'Forget ' + f, disabled: busy, onclick: () => {
+          if (confirm('Forget this?\\n\\n' + f)) act(async () => { memory = await api('/memory/forget', project ? { fact: f, project } : { fact: f }) })
+        } }, '×')))
       put(head,
         el('h2', {}, 'What navi remembers'),
         el('div', { class: 'card' },
           memory.facts.length
-            ? memory.facts.map((f) => el('div', { class: 'fact' },
-                el('span', {}, f),
-                el('button', { class: 'plain', 'aria-label': 'Forget ' + f, disabled: busy, onclick: () => {
-                  if (confirm('Forget this?\\n\\n' + f)) act(async () => { memory = await api('/memory/forget', { fact: f }) })
-                } }, '×')))
-            : el('p', { class: 'meta' }, 'Nothing yet. navi asks before it remembers anything, or add a fact here.')),
+            ? factList(memory.facts)
+            : el('p', { class: 'meta' }, (projects.some((p) => p.facts.length) ? 'Nothing about you yet.' : 'Nothing yet.') + ' navi asks before it remembers anything, or add a fact here.')),
+        projects.filter((p) => p.facts.length).map((p) => [
+          el('h2', { title: p.root }, 'About ' + short(p.root)),
+          el('div', { class: 'card' }, factList(p.facts, p.root))]),
         el('div', { class: 'card' },
-          el('textarea', { id: 'fact', class: 'one', rows: 2, maxlength: 300, placeholder: 'Something navi should know about you', oninput: (e) => { fact = e.target.value; addButton.disabled = busy || !fact.trim() },
+          projects.length > 0 && el('select', { id: 'about', 'aria-label': 'About', onchange: (e) => { about = e.target.value; render() } },
+            [el('option', { value: '', selected: !about }, 'About you')].concat(projects.map((p) => el('option', { value: p.root, selected: p.root === about }, 'About ' + short(p.root))))),
+          el('textarea', { id: 'fact', class: 'one', rows: 2, maxlength: 300, placeholder: about ? 'Something navi should know about this project' : 'Something navi should know about you', oninput: (e) => { fact = e.target.value; addButton.disabled = busy || !fact.trim() },
             onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); if (fact.trim() && !busy) add() } } }, fact),
           el('div', { class: 'row' }, addButton = el('button', { disabled: busy || !fact.trim(), onclick: add }, 'Remember'))),
         el('p', { class: 'meta' }, memory.off
           ? 'Memory is off ("memory": false in the config), so none of this goes with your turns.'
-          : 'These go with every turn, to whichever model answers.'),
+          : projects.some((p) => p.facts.length)
+            ? 'Yours go with every turn, and a project' + String.fromCharCode(39) + 's with every turn in it, to whichever model answers.'
+            : 'These go with every turn, to whichever model answers.'),
         err)
     } else if (open && job) {
       // JOB-23: a queued job is stopped as one running is.

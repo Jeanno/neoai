@@ -13,7 +13,7 @@ import { stat as statPath } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { working, type Job, type Jobs } from './jobs.ts'
 import { checkWhen, type Schedules } from './schedules.ts'
-import { addFact, forgetFact, readMemory } from './memory.ts'
+import { addFact, forgetFact, projectRoot, readMemory } from './memory.ts'
 import { exchanges } from './transcript.ts'
 import { PHONE_PAGE } from './phone.ts'
 import { attachUploads } from './attach.ts'
@@ -116,24 +116,33 @@ async function placeFor(given: unknown, o: JobsOptions): Promise<string | undefi
   return (await statPath(directory).then((s) => s.isDirectory(), () => false)) ? directory : undefined
 }
 
-/** The memory API (MEM-12); the token is already checked. */
+/** The memory API (MEM-12, MEM-18); the token is already checked. */
 async function memoryRoute(req: IncomingMessage, res: ServerResponse, path: string, o: JobsOptions) {
   const home = o.home ?? homedir()
-  const now = async () => ({ facts: await readMemory(home), off: o.memory === false })
+  // MEM-18: the projects of the directories offered, each once, and only those.
+  const roots = async () => [...new Set((await Promise.all((await o.directories()).map((d) => projectRoot(d, home)))).filter((r) => r !== undefined))]
+  const now = async () => ({
+    facts: await readMemory(home),
+    off: o.memory === false,
+    projects: await Promise.all((await roots()).map(async (root) => ({ root, facts: await readMemory(home, root) }))),
+  })
   if (req.method === 'GET' && path === '/memory') return json(res, 200, await now())
   if (req.method === 'POST' && (path === '/memory' || path === '/memory/forget')) {
     const body = await jsonBody(req)
     if (typeof body === 'string') return error(res, 400, body)
     if (typeof body.fact !== 'string') return error(res, 400, 'Give the fact as { "fact": "…" }.')
+    const project = body.project
+    if (project !== undefined && (typeof project !== 'string' || !(await roots()).includes(project)))
+      return error(res, 400, 'That is not a project navi serve offers; GET /memory lists them.')
     if (path === '/memory') {
       // MEM-10: sending it is the yes.
-      const problem = await addFact(home, body.fact)
+      const problem = await addFact(home, body.fact, project)
       return problem ? error(res, 400, problem) : json(res, 201, await now())
     }
     // Exactly that fact, never one that merely contains it.
-    const at = (await readMemory(home)).indexOf(body.fact.trim())
+    const at = (await readMemory(home, project)).indexOf(body.fact.trim())
     if (at < 0) return error(res, 404, 'That fact is not remembered (any more).')
-    await forgetFact(home, String(at + 1))
+    await forgetFact(home, String(at + 1), project)
     return json(res, 200, await now())
   }
   error(res, 404, `Memory answers GET /memory, POST /memory and POST /memory/forget, not ${req.method} ${path}.`)

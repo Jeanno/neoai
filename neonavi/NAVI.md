@@ -159,6 +159,8 @@ run with make check" and navi asks `remember for <project>?`, then knows it
 in every later turn in that repository, and nowhere else. They are kept in
 `~/.neoai/memory/`, never in the repository; `navi memory` lists them after
 yours, and `navi memory add --project "…"` adds one (MEM-14 to MEM-17).
+The phone's What navi remembers page shows them too, for the projects of
+the folders it offers jobs in, and can add or forget one (MEM-18, MEM-19).
 On the phone page, What navi remembers shows the same list, with a box to
 add a fact and a way to forget one (MEM-12, MEM-13).
 

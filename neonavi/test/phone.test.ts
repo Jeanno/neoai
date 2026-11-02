@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { chromium } from 'playwright-core'
 import { findBrowser } from '../src/browser.ts'
 import { makeJobs } from '../src/jobs.ts'
+import { addFact, readMemory } from '../src/memory.ts'
 import { makeSchedules } from '../src/schedules.ts'
 import { listen, type ServeDeps } from '../src/serve.ts'
 import { makeRecorder } from '../src/undo.ts'
@@ -279,6 +280,41 @@ test('MEM-13: the phone shows what navi remembers, adds a fact and forgets one',
   await page.getByText('That is already remembered.').waitFor()
   await page.getByRole('button', { name: '‹ Jobs' }).click()
   await page.getByText('No jobs yet.').waitFor()
+})
+
+test("MEM-19: the phone shows a project's facts, adds one about the project and forgets one", { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const repo = join(home, 'code', 'app')
+  await mkdir(join(repo, '.git'), { recursive: true })
+  await addFact(home, 'Keeps bees')
+  await addFact(home, 'Deploys with make ship', repo)
+  const jobs = await makeJobs({ home, start: async () => { throw new Error('unused') }, notify: () => {} })
+  const token = '8'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [repo, home], home } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage({ viewport: { width: 320, height: 700 } })
+  page.on('dialog', (d) => d.accept())
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByRole('button', { name: 'What navi remembers ›' }).click()
+  await page.getByRole('heading', { name: 'About …/code/app' }).waitFor()
+  await page.locator('.fact', { hasText: 'Deploys with make ship' }).waitFor()
+  await page.getByText('a project' + "'" + 's with every turn in it').waitFor()
+  await page.getByLabel('About').selectOption({ label: 'About …/code/app' })
+  const box = page.getByPlaceholder('Something navi should know about this project')
+  await box.fill('Tests run with make check')
+  await page.getByRole('button', { name: 'Remember' }).click()
+  await page.locator('.fact', { hasText: 'Tests run with make check' }).waitFor()
+  assert.deepEqual(await readMemory(home, repo), ['Deploys with make ship', 'Tests run with make check'])
+  assert.deepEqual(await readMemory(home), ['Keeps bees'])
+  await page.getByRole('button', { name: 'Forget Deploys with make ship' }).click()
+  await page.locator('.fact', { hasText: 'Deploys with make ship' }).waitFor({ state: 'detached' })
+  assert.deepEqual(await readMemory(home, repo), ['Tests run with make check'])
+  // Nothing wider than the phone.
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
 })
 
 test('JOB-26: the phone deletes a finished job, and clears the rest', { skip }, async (t) => {

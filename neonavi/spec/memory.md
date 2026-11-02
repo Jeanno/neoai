@@ -78,8 +78,16 @@ of facts, read into every turn, that navi can add to only with your yes.
   on from them so one number names one fact, with the file's path;
   `navi memory add --project <fact>` adds one to the project's; `forget`
   takes a number or words across both.
+- MEM-18: `GET /memory` also answers `projects`: for each directory navi
+  serve offers jobs (JOB-9), its project's root and facts, each project
+  once and in that order, none for home. `POST /memory` and `POST
+  /memory/forget` take `project`, one of those roots, to add to or forget
+  from its facts as MEM-12 does the user's; any other project is a 400, so
+  the phone cannot write facts for a project navi serve does not offer.
+- MEM-19: The phone's What navi remembers page shows each project's facts
+  under its name after the user's, each with forget, and the box to add one
+  has a choice of whom it is about: the user, or one of those projects.
 
 ## Open
 
 - Suggest facts at the end of a conversation instead of only when asked.
-- A project's facts on the phone, for a job's directory.
