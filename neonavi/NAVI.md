@@ -70,6 +70,10 @@ from the camera or library (sent as a JPEG at most 1600 pixels on a side) or
 any file, up to four; from the terminal, `navi job "…" -a receipt.jpg`. navi
 serve reads them as `-a` does, so a photo of a receipt or a whiteboard, a PDF
 or a text file all work (`spec/jobs.md` JOB-14 to JOB-16).
+Answers on the phone page are shown formatted (headings, lists, tables,
+code, links), and since an answer can quote a web page, none of it is ever
+read as HTML: only http(s) links work, and nothing in an answer can run
+(JOB-17, JOB-18).
 
 The phone page has them too: its box can start a job now or schedule it
 (every 30 minutes, every hour, or each day or weekday at a time, as a watch

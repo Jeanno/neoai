@@ -72,7 +72,9 @@ add the requirement there first.
 - [x] Files with a job: photos (scaled to JPEG on the phone, HEIC
       included) or any file from the phone page, `navi job -a` from the
       terminal, read as -a reads them. (JOB-14 to JOB-16)
-- [ ] The phone page shows answers as raw Markdown (`**bold**`); render it.
+- [x] Answers on the phone page formatted from their Markdown (lists,
+      tables, code, links), built as elements so nothing in an answer runs;
+      only http(s) links. (JOB-17, JOB-18)
 - [x] Memory: a short file of facts about you sent with every turn, added
       by the model only with your yes, whatever the judge says; `navi memory`
       lists, adds and forgets. (MEM-1 to MEM-11, PRM-14)

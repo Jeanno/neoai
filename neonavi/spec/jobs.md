@@ -96,6 +96,18 @@ terminal that started them closes.
   schedule takes no files. `navi job "<prompt>" -a <file>` (more than once
   for more) does the same from the terminal.
 
+## Answers on the phone
+
+- JOB-17: The phone page shows a job's answer with its Markdown formatted:
+  paragraphs, headings, bulleted and numbered lists, quotes, code (inline
+  and fenced), tables, rules, bold, italics and links. It is built as page
+  elements holding the answer's text, never as HTML read from the answer,
+  so nothing in an answer (which may quote a web page) can run, style the
+  page or load anything.
+- JOB-18: Only http and https links become links; they open in a new tab
+  without a referrer. Any other link (`javascript:`, `data:`, a relative
+  path) is shown as the text it was written as.
+
 ## Open
 
 - A queue, so a busy computer runs a few at a time.

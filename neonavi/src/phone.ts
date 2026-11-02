@@ -1,3 +1,5 @@
+import { MARKDOWN_JS } from './markdown.ts'
+
 /**
  * The page navi serve gives a phone (JOB-10, SCH-12): jobs, their approvals,
  * schedules, and a box to start either. It holds no secret: the token comes
@@ -62,6 +64,20 @@ export const PHONE_PAGE = `<!doctype html>
   .pending { background: var(--wait-bg); border-color: var(--wait); }
   pre { background: var(--code); border-radius: 8px; padding: 10px; overflow-x: auto; font: 12.5px/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; }
   .answer { white-space: pre-wrap; word-break: break-word; }
+  .md { white-space: normal; }
+  .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+  .md p, .md ul, .md ol, .md blockquote, .md .mt, .md pre { margin: 0 0 10px; }
+  .md p { white-space: pre-line; }
+  .md ul, .md ol { padding-left: 22px; } .md li { margin: 2px 0; white-space: pre-line; }
+  .md .mh { font-weight: 700; margin-top: 14px; } .md .mh1, .md .mh2 { font-size: 1.15em; }
+  .md code { background: var(--code); border-radius: 5px; padding: 1px 5px; font: .9em ui-monospace, Menlo, monospace; }
+  .md pre code { background: none; padding: 0; }
+  .md blockquote { border-left: 3px solid var(--line); padding-left: 10px; color: var(--muted); }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+  .md .mt { overflow-x: auto; }
+  .md table { border-collapse: collapse; font-size: 14px; }
+  .md th, .md td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+  .md a { color: var(--accent); word-break: break-all; }
   .empty, .note { color: var(--muted); text-align: center; padding: 24px 8px; }
   .err { color: var(--bad); font-size: 14px; margin-top: 8px; }
 </style>
@@ -69,6 +85,7 @@ export const PHONE_PAGE = `<!doctype html>
 <body>
 <main id="app"><p class="note">Loading…</p></main>
 <script>
+${MARKDOWN_JS}
 (() => {
   const KEY = 'navi-token'
   const store = {
@@ -206,7 +223,8 @@ export const PHONE_PAGE = `<!doctype html>
           el('div', { class: 'row' },
             el('button', { class: 'no', disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/answer', { yes: false })) }, 'No'),
             el('button', { disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/answer', { yes: true })) }, 'Yes'))),
-        job.answer && el('div', { class: 'card answer' }, job.answer),
+        // JOB-17: formatted, as elements holding the text.
+        job.answer && el('div', { class: 'card answer md' }, renderMarkdown(job.answer, el)),
         job.error && el('p', { class: 'err' }, job.error),
         job.log.length > 0 && el('div', { class: 'card' }, el('div', { class: 'meta' }, 'What it did'), el('pre', {}, job.log.join('\\n'))),
         // UND-13: what it changed can be put back once it is done; what happened goes in the log above.

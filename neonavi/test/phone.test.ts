@@ -160,3 +160,44 @@ test('JOB-16: the phone sends picked files with a job, photos as JPEG', { skip }
   await page.getByRole('button', { name: '‹ Jobs' }).click()
   assert.equal(await page.getByText('receipt.jpg').count(), 0)
 })
+
+test('JOB-17, JOB-18: an answer shows formatted, and nothing in it runs', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const answer = '# Receipt\nThe latte was **$5.25**.\n\n- one\n- two\n\n<img src=x onerror="document.title=\'pwned\'"> [bad](javascript:document.title=1) [good](https://example.com)'
+  const jobs = await makeJobs({
+    home,
+    start: async () => ({
+      model: 'small',
+      session: {
+        history: [],
+        async *turn() {
+          yield { type: 'done', history: [], text: answer, empty: false, stopped: false } as const
+        },
+      },
+    }),
+    notify: () => {},
+  })
+  const job = jobs.create('read it', home)
+  await jobs.idle()
+  const token = '8'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage()
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByText('read it').click()
+  const md = page.locator('.md')
+  await md.locator('strong', { hasText: '$5.25' }).waitFor()
+  assert.equal(await md.locator('li').count(), 2)
+  assert.equal(await md.locator('img').count(), 0)
+  assert.match(await md.innerText(), /<img src=x onerror=/)
+  assert.deepEqual(await md.locator('a').evaluateAll((as) => as.map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('rel')])), [
+    ['good', 'https://example.com', 'noopener noreferrer'],
+  ])
+  await page.waitForTimeout(200)
+  assert.notEqual(await page.title(), 'pwned')
+  assert.equal(job.answer, answer)
+})
