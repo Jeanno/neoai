@@ -391,7 +391,7 @@ test('JOB-30: a search box narrows a long job list as you type', { skip }, async
   assert.equal(await page.locator('button.job').count(), 4)
 })
 
-test('SCH-18: the phone edits a schedule in its card, and a refresh keeps what is typed', { skip }, async (t) => {
+test('SCH-18, SCH-21: the phone edits, pauses and resumes a schedule, and a refresh keeps what is typed', { skip }, async (t) => {
   const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
   const jobs = await makeJobs({ home, start: async () => { throw new Error('no model here') }, notify: () => {} })
   const schedules = await makeSchedules({ home, start: (p, d, o) => jobs.create(p, d, o).id, answerOf: () => undefined, busy: () => false })
@@ -425,6 +425,15 @@ test('SCH-18: the phone edits a schedule in its card, and a refresh keeps what i
   await page.locator('.sched .status', { hasText: 'Every hour' }).waitFor()
   assert.deepEqual({ every: schedules.get(s.id)?.every, quiet: schedules.get(s.id)?.quiet, prompt: schedules.get(s.id)?.prompt },
     { every: 60, quiet: undefined, prompt: 'check the status page and the disks' })
+
+  // SCH-21: Pause shows it paused; Resume brings back its next run.
+  await page.getByRole('button', { name: 'Pause' }).click()
+  await page.getByText('Paused · Every hour').waitFor()
+  await page.getByText(/^Not running/).waitFor()
+  assert.equal(schedules.get(s.id)?.paused, true)
+  await page.getByRole('button', { name: 'Resume' }).click()
+  await page.locator('.sched .meta', { hasText: /^Next / }).waitFor()
+  assert.equal(schedules.get(s.id)?.paused, undefined)
 
   // Cancel changes nothing.
   await page.getByRole('button', { name: 'Edit' }).click()

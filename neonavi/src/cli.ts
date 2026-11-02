@@ -106,7 +106,7 @@ const USAGE = [
   '       navi job "<what you want done>" [-a <file>]… [-C <directory>]',
   '       navi jobs [<id> [y | n | stop | undo | delete | show | reply "<follow-up>" [-a <file>]…] | find <words> | clear | link]',
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
-  '       navi schedules [<id> run | rm | edit [--prompt …] [--at …] [--days …] [--every …] [--only-changes | --every-run]]',
+  '       navi schedules [<id> run | pause | resume | rm | edit [--prompt …] [--at …] [--days …] [--every …] [--only-changes | --every-run]]',
   '       navi push test',
   '       navi memory [add "<fact>" | forget <n | words>]',
   '       navi undo [--list] [-C <directory>]',
@@ -133,7 +133,7 @@ const ABOUT = [
   'navi jobs            list jobs; <id> shows one, then y, n, stop, undo, delete, show (every turn) or reply; find lists those mentioning words; clear deletes finished ones; link is for a phone',
   'navi schedule "…"    have navi serve start a job at a time of day or every so often;',
   '                     --only-changes makes it a watch that only speaks when something changed',
-  'navi schedules       list schedules and their next run; <id> run starts one now, edit changes it, rm deletes it',
+  'navi schedules       list schedules and their next run; <id> run starts one now, pause, resume, edit changes it, rm deletes it',
   'navi push test       send a test push to your phone (set "push" in the config first)',
   'navi memory          what navi remembers about you; add a fact, or forget one by number or words',
   "navi undo            put back the files navi's last turn here changed; --list shows what can be",
@@ -501,7 +501,7 @@ async function scheduleCommand(argv: string[]) {
 }
 
 const SCHEDULES_USAGE =
-  'usage: navi schedules [<id> run | rm | edit [--prompt "<prompt>"] [--at HH:MM] [--days mon,tue,…|all] [--every 30m|2h] [--only-changes | --every-run]] [--port N]'
+  'usage: navi schedules [<id> run | pause | resume | rm | edit [--prompt "<prompt>"] [--at HH:MM] [--days mon,tue,…|all] [--every 30m|2h] [--only-changes | --every-run]] [--port N]'
 
 /** `navi schedules <id> edit …` (SCH-17): only what is given changes. */
 async function editScheduleCommand(n: number, id: string, argv: string[]) {
@@ -541,7 +541,7 @@ async function schedulesCommand(argv: string[]) {
   const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
   const [id, what, ...extra] = port.rest
   if (what === 'edit' && Number.isInteger(n)) return editScheduleCommand(n, id, extra)
-  if (extra.length || !Number.isInteger(n) || (id !== undefined && !['run', 'rm'].includes(what ?? ''))) {
+  if (extra.length || !Number.isInteger(n) || (id !== undefined && !['run', 'rm', 'pause', 'resume'].includes(what ?? ''))) {
     console.error(SCHEDULES_USAGE)
     return 1
   }
@@ -552,13 +552,16 @@ async function schedulesCommand(argv: string[]) {
     const list = got.data.schedules ?? []
     if (!list.length) console.log('No schedules. Add one with `navi schedule "<what you want done>" --at 08:00`.')
     for (const s of list)
-      console.log(`${bold(s.id)}  ${`${whenText(s)}${s.quiet ? ' · watch' : ''}`.padEnd(22)}  next ${nextText(new Date(s.next)).padEnd(15)}  ${titleOf(s.prompt)}`)
+      console.log(`${bold(s.id)}  ${`${whenText(s)}${s.quiet ? ' · watch' : ''}`.padEnd(22)}  ${(s.paused ? 'paused' : `next ${nextText(new Date(s.next))}`).padEnd(20)}  ${titleOf(s.prompt)}`)
     return 0
   }
-  const got = await jobsApi(n, `/schedules/${id}/${what === 'rm' ? 'delete' : 'run'}`, {})
+  const got = await jobsApi(n, `/schedules/${id}/${what === 'rm' ? 'delete' : what}`, {})
   if (!got) return console.error(NOT_SERVING), 1
   if (got.status >= 300) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
   if (what === 'rm') console.log(`Deleted schedule ${bold(id)}.`)
+  // SCH-21
+  else if (what === 'pause') console.log(`Paused schedule ${bold(id)}; \`navi schedules ${id} resume\` starts it again.`)
+  else if (what === 'resume') console.log(`Resumed schedule ${bold(id)}: ${whenText(got.data)}, next ${nextText(new Date(got.data.next))}.`)
   else console.log(`Started job ${bold(got.data.id)}. Follow it with \`navi jobs ${got.data.id}\`.`)
   return 0
 }

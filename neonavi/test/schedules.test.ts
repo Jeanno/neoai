@@ -253,3 +253,42 @@ test('SCH-16: the edit API changes only what it is given, and checks it', async 
   assert.equal((await edit('nope', { quiet: true })).status, 404)
   assert.equal(schedules.get(s.id)?.every, 120)
 })
+
+test('SCH-19, SCH-20: a paused schedule is never due, survives a restart, and resumes from the resume', async (t) => {
+  const { deps, schedules, started } = await setup()
+  const s = await schedules.add('the morning brief', '/tmp', { every: 30 })
+  const other = await schedules.add('later one', '/tmp', { every: 60 })
+  const made = new Date(s.created)
+  await schedules.pause(s.id, true)
+  // Listed after the one that will run, though it would be sooner.
+  assert.deepEqual(schedules.list(made).map((x) => x.id), [other.id, s.id])
+  await schedules.tick(new Date(made.getTime() + 45 * 60_000))
+  assert.deepEqual(started.map((x) => x.schedule), [])
+  assert.equal((await makeSchedules(deps)).get(s.id)?.paused, true)
+  // Run now still runs it.
+  await schedules.run(s.id)
+  assert.equal(started.length, 1)
+  const back = new Date(made.getTime() + 5 * 60 * 60_000)
+  await schedules.pause(s.id, false, back)
+  assert.equal(schedules.get(s.id)?.paused, undefined)
+  // Five hours missed are not made up: the next is half an hour after resuming.
+  await schedules.tick(back)
+  assert.equal(started.filter((x) => x.schedule === s.id).length, 1)
+  assert.equal(schedules.list(back).find((x) => x.id === s.id)?.next, new Date(back.getTime() + 30 * 60_000).toISOString())
+  assert.equal(await schedules.pause('nope', true), undefined)
+
+  const home = await mkdtemp(join(tmpdir(), 'navi-schedules-api-'))
+  const jobs = await makeJobs({ home, start: async () => { throw new Error('no model') }, notify: () => {} })
+  const api = await makeSchedules({ home, start: (p, d, o) => jobs.create(p, d, o).id, answerOf: () => undefined, busy: () => false })
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token: 'a'.repeat(64), directories: async () => [home], schedules: api } })
+  t.after(() => server.close())
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const post = (path: string) => fetch(base + path, { method: 'POST', headers: { authorization: `Bearer ${'a'.repeat(64)}`, 'content-type': 'application/json' }, body: '{}' })
+  const one = await api.add('brief', home, { at: '08:00' })
+  const paused = await post(`/schedules/${one.id}/pause`)
+  assert.equal(paused.status, 200)
+  assert.equal((await paused.json()).paused, true)
+  assert.equal((await (await post(`/schedules/${one.id}/resume`)).json()).paused, undefined)
+  assert.equal((await post('/schedules/nope/pause')).status, 404)
+  assert.equal((await post(`/schedules/${one.id}/stop`)).status, 404)
+})

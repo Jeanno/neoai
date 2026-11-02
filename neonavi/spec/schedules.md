@@ -101,6 +101,19 @@ every so often. A morning brief, a page watched every hour.
   the watch checkbox, with Save and Cancel. What is being typed survives the
   page's refreshes.
 
+## Pausing
+
+- SCH-19: A paused schedule is kept, with everything about it, but never
+  comes due; Run now still starts it. Resuming counts from the resume, as an
+  edit does (SCH-15): runs missed while it was paused are not made up, and
+  the next run is the first one after it. Paused survives a restart (SCH-5).
+- SCH-20: `POST /schedules/<id>/pause` and `POST /schedules/<id>/resume`
+  answer the schedule; `GET /schedules` marks a paused one `paused: true`
+  and lists it after those that will run.
+- SCH-21: `navi schedules <id> pause` and `navi schedules <id> resume`, and
+  Pause and Resume on the phone page, which shows a paused schedule as
+  Paused instead of its next run; `navi schedules` shows it as paused.
+
 ## Open
 
-- Pausing a schedule without deleting it.
+- Making a schedule from a job that went well, with its prompt and folder.

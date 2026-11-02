@@ -71,6 +71,8 @@ add the requirement there first.
       there. (SCH-12, SCH-13)
 - [x] Edit a schedule in place: prompt, when, watch or not; from
       `navi schedules <id> edit` or the phone. (SCH-15 to SCH-18)
+- [x] Pause and resume a schedule, from the terminal or the phone.
+      (SCH-19 to SCH-21)
 - [x] Files with a job: photos (scaled to JPEG on the phone, HEIC
       included) or any file from the phone page, `navi job -a` from the
       terminal, read as -a reads them. (JOB-14 to JOB-16)

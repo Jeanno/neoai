@@ -58,6 +58,9 @@ up once, not one by one, unless they are more than 12 hours late
 A schedule can be changed in place, with `navi schedules <id> edit` (`--prompt`,
 `--at`, `--days`, `--every`, `--only-changes` or `--every-run`) or Edit on the
 phone page; a new time counts from the change (SCH-15 to SCH-18).
+`navi schedules <id> pause` (or Pause on the phone) keeps one without it
+running, and `resume` starts it again from then, missed runs not made up
+(SCH-19 to SCH-21).
 
     navi schedule "summarise what's new on my GitHub notifications page" --at 08:30 --days weekdays
 

@@ -143,7 +143,7 @@ async function memoryRoute(req: IncomingMessage, res: ServerResponse, path: stri
 async function schedulesRoute(req: IncomingMessage, res: ServerResponse, path: string, o: JobsOptions, schedules: Schedules) {
   const parts = path.split('/').slice(2)
   if (req.method === 'GET' && !parts.length) return json(res, 200, { schedules: schedules.list() })
-  if (req.method !== 'POST') return error(res, 404, `Schedules answer GET /schedules, POST /schedules and POST /schedules/<id>/run, edit or delete, not ${req.method} ${path}.`)
+  if (req.method !== 'POST') return error(res, 404, `Schedules answer GET /schedules, POST /schedules and POST /schedules/<id>/run, edit, pause, resume or delete, not ${req.method} ${path}.`)
   const body = await jsonBody(req)
   if (typeof body === 'string') return error(res, 400, body)
   if (!parts.length) {
@@ -161,6 +161,11 @@ async function schedulesRoute(req: IncomingMessage, res: ServerResponse, path: s
   if (parts[1] === 'run' && parts.length === 2) {
     const job = await schedules.run(parts[0])
     return json(res, 201, job && o.jobs.get(job))
+  }
+  if ((parts[1] === 'pause' || parts[1] === 'resume') && parts.length === 2) {
+    // SCH-20
+    await schedules.pause(parts[0], parts[1] === 'pause')
+    return json(res, 200, schedules.list().find((s) => s.id === parts[0]))
   }
   if (parts[1] === 'edit' && parts.length === 2) {
     // SCH-16: only what is given changes.
@@ -183,7 +188,7 @@ async function schedulesRoute(req: IncomingMessage, res: ServerResponse, path: s
     await schedules.remove(parts[0])
     return json(res, 200, { deleted: parts[0] })
   }
-  error(res, 404, `Schedules answer GET /schedules, POST /schedules and POST /schedules/<id>/run, edit or delete, not ${req.method} ${path}.`)
+  error(res, 404, `Schedules answer GET /schedules, POST /schedules and POST /schedules/<id>/run, edit, pause, resume or delete, not ${req.method} ${path}.`)
 }
 
 /** A job as the API shows it: never its conversation, which can hold whole photos (JOB-15). */

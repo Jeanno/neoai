@@ -28,6 +28,8 @@ export interface Schedule {
   quiet?: true
   /** What a watch's last run with news answered (SCH-9). */
   news?: string
+  /** Kept, but never due (SCH-19). */
+  paused?: true
   /** A job whose answer an edit forgot, not to be compared with (SCH-15). */
   forgot?: string
 }
@@ -50,6 +52,8 @@ export interface Schedules {
   get(id: string): Schedule | undefined
   add(prompt: string, directory: string, when: When, quiet?: boolean): Promise<Schedule>
   remove(id: string): Promise<boolean>
+  /** Pauses or resumes it (SCH-19); undefined when there is none. */
+  pause(id: string, paused: boolean, now?: Date): Promise<Schedule | undefined>
   /** Changes it in place (SCH-15); undefined when there is none. */
   edit(id: string, change: Change, now?: Date): Promise<Schedule | undefined>
   /** Starts it now (SCH-7); the job's id. */
@@ -173,7 +177,8 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
           // One already due runs at the next look.
           return { ...s, next: (next < now ? now : next).toISOString() }
         })
-        .sort((a, b) => a.next.localeCompare(b.next)),
+        // SCH-20: paused ones after those that will run.
+        .sort((a, b) => Number(!!a.paused) - Number(!!b.paused) || a.next.localeCompare(b.next)),
     get: (id) => all.find((s) => s.id === id),
     async add(prompt, directory, when, quiet) {
       const s: Schedule = {
@@ -196,6 +201,18 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
       if (all.length === before) return false
       await save()
       return true
+    },
+    async pause(id, paused, now = new Date()) {
+      const s = all.find((x) => x.id === id)
+      if (!s) return
+      if (paused) s.paused = true
+      else if (s.paused) {
+        delete s.paused
+        // Counted from the resume: what it missed is not made up.
+        s.last = now.toISOString()
+      }
+      await save()
+      return s
     },
     async edit(id, change, now = new Date()) {
       const s = all.find((x) => x.id === id)
@@ -236,6 +253,7 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
     async tick(now = new Date()) {
       let changed = false
       for (const s of all) {
+        if (s.paused) continue
         const due = nextRun(s, from(s))
         if (due > now) continue
         changed = true

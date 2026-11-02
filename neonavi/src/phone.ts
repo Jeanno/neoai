@@ -44,6 +44,9 @@ export const PHONE_PAGE = `<!doctype html>
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 20px 4px 8px; }
   .sched .p { display: block; margin: 2px 0; }
   .sched .status { color: var(--accent); }
+  .sched .status.paused { color: var(--muted); }
+  .sched .row { flex-wrap: wrap; }
+  .sched .row button { white-space: nowrap; padding-left: 6px; padding-right: 6px; flex: 1 0 auto; }
   .files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .file { display: inline-flex; align-items: center; gap: 4px; background: var(--code); border-radius: 8px; padding: 2px 2px 2px 10px; font-size: 14px; max-width: 100%; }
   .file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -376,11 +379,13 @@ ${MARKDOWN_JS}
         el('button', { class: 'plain more', onclick: () => { remembering = true; failed = ''; refresh() } }, 'What navi remembers ›'),
         schedules.length > 0 && el('h2', {}, 'Schedules'),
         schedules.map((s) => editing && editing.id === s.id ? editForm(s) : el('div', { class: 'card sched' },
-          el('div', { class: 'status' }, when(s) + (s.quiet ? ' · watch' : '')),
+          el('div', { class: 'status' + (s.paused ? ' paused' : '') }, (s.paused ? 'Paused · ' : '') + when(s) + (s.quiet ? ' · watch' : '')),
           el('span', { class: 'p' }, s.prompt),
-          el('span', { class: 'meta' }, 'Next ' + soon(s.next) + ' · ' + short(s.directory)),
+          el('span', { class: 'meta' }, (s.paused ? 'Not running' : 'Next ' + soon(s.next)) + ' · ' + short(s.directory)),
           el('div', { class: 'row' },
             el('button', { class: 'no', disabled: busy, onclick: () => act(async () => { open = (await api('/schedules/' + s.id + '/run', {})).id }) }, 'Run now'),
+            // SCH-21
+            el('button', { class: 'no', disabled: busy, onclick: () => act(() => api('/schedules/' + s.id + (s.paused ? '/resume' : '/pause'), {})) }, s.paused ? 'Resume' : 'Pause'),
             el('button', { class: 'no', disabled: busy, onclick: () => { editing = { id: s.id, prompt: s.prompt, repeat: repeatOf(s), time: s.at || '08:00', quiet: !!s.quiet }; failed = ''; render() } }, 'Edit'),
             el('button', { class: 'no', disabled: busy, onclick: () => { if (confirm('Delete this schedule?')) act(() => api('/schedules/' + s.id + '/delete', {})) } }, 'Delete')))),
         schedules.length > 0 && el('h2', {}, 'Jobs'),

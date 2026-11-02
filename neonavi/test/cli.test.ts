@@ -368,7 +368,7 @@ test('JOB-31: navi jobs find lists the jobs that mention the words', async () =>
   }
 })
 
-test('SCH-17: navi schedules <id> edit changes what it is told and says what the schedule now is', async () => {
+test('SCH-17, SCH-21: navi schedules <id> edit, pause and resume', async () => {
   const { makeJobs, serveToken } = await import('../src/jobs.ts')
   const { makeSchedules } = await import('../src/schedules.ts')
   const { listen } = await import('../src/serve.ts')
@@ -396,6 +396,12 @@ test('SCH-17: navi schedules <id> edit changes what it is told and says what the
     const refused = await navi(['schedules', s.id, 'edit', '--days', 'mon', '--port', port], { home })
     assert.equal(refused.code, 1)
     assert.match(refused.stderr, /days go with at/)
+    // SCH-21: paused, listed as paused, and back.
+    assert.match((await navi(['schedules', s.id, 'pause', '--port', port], { home })).stdout, /Paused schedule/)
+    assert.match((await navi(['schedules', '--port', port], { home })).stdout, /paused/)
+    assert.equal(schedules.get(s.id)?.paused, true)
+    assert.match((await navi(['schedules', s.id, 'resume', '--port', port], { home })).stdout, /Resumed schedule .*every 2 h, next in 120 min|Resumed schedule .*next/)
+    assert.equal(schedules.get(s.id)?.paused, undefined)
   } finally {
     server.close()
     await jobs.idle()
