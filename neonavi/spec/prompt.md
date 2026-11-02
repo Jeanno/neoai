@@ -33,3 +33,6 @@ Rebuilt at startup and sent with every turn.
   worked out again for every turn, so a session left open overnight or a
   scheduled job (SCH-2) never works from a stale day. It changes once a day
   only, so a provider's prompt cache still holds within the day.
+- PRM-14: When memory is on (MEM-4), says to use remember when the user tells
+  it something lasting about themselves or asks it to; the facts themselves
+  come just before the date (MEM-2).

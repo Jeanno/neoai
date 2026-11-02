@@ -19,6 +19,7 @@ import { describe, entryLabel, escalationFor, modelLabel } from './setup-core.ts
 import { readLedger, stats } from './ledger.ts'
 import { makeJobs, serveToken, tailnetAddresses, titleOf, type JobDeps } from './jobs.ts'
 import { push, pushConfig } from './push.ts'
+import { addFact, forgetFact, memoryFile, readMemory } from './memory.ts'
 import { makeSchedules, nextText, parseDays, parseEvery, whenText } from './schedules.ts'
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -103,6 +104,7 @@ const USAGE = [
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
   '       navi schedules [<id> run | rm]',
   '       navi push test',
+  '       navi memory [add "<fact>" | forget <n | words>]',
 ].join('\n')
 
 /** What each form does, for --help (CLI-24). */
@@ -127,6 +129,7 @@ const ABOUT = [
   '                     --only-changes makes it a watch that only speaks when something changed',
   'navi schedules       list schedules and their next run; <id> run starts one now, rm deletes it',
   'navi push test       send a test push to your phone (set "push" in the config first)',
+  'navi memory          what navi remembers about you; add a fact, or forget one by number or words',
 ].join('\n')
 
 /** Each link that did not answer, and why (MOD-21). */
@@ -438,6 +441,40 @@ async function pushCommand(argv: string[]) {
   return 0
 }
 
+/** `navi memory [add "<fact>" | forget <n | words>]` (MEM-9 to MEM-11). */
+async function memoryCommand(argv: string[]) {
+  const home = homedir()
+  const [verb, ...rest] = argv
+  const words = rest.join(' ')
+  if (verb === 'add' && words) {
+    const problem = await addFact(home, words)
+    if (problem) return console.error(problem), 1
+    console.log(`remembered: ${words.trim()}`)
+    return 0
+  }
+  if (verb === 'forget' && words) {
+    const got = await forgetFact(home, words)
+    if ('removed' in got) return console.log(`forgot: ${got.removed}`), 0
+    if (!got.matches.length) console.error(`Nothing remembered matches ${words}; navi memory lists what there is.`)
+    else {
+      console.error(`${got.matches.length} facts match; say which by number:`)
+      const all = await readMemory(home)
+      for (const m of got.matches) console.error(`  ${all.indexOf(m) + 1}. ${m}`)
+    }
+    return 1
+  }
+  if (verb !== undefined) {
+    console.error('usage: navi memory [add "<fact>" | forget <n | words>]')
+    return 1
+  }
+  const facts = await readMemory(home)
+  if (!facts.length) console.log('navi remembers nothing about you yet. Tell it something to remember, or: navi memory add "…"')
+  facts.forEach((f, i) => console.log(`${String(i + 1).padStart(3)}. ${f}`))
+  const config = await readConfig()
+  console.log(dim(`${memoryFile(home)}${config.memory === false ? ' · off ("memory": false in the config)' : ''}; edit it by hand if you like`))
+  return 0
+}
+
 /** `navi stats [--days N]`: how each model has done (LED-6). */
 async function showStats(argv: string[]) {
   const days = argv[0] === '--days' && argv.length === 2 ? Number(argv[1]) : argv.length ? NaN : 30
@@ -543,6 +580,7 @@ async function main() {
   if (argv[0] === 'schedule') return scheduleCommand(argv.slice(1))
   if (argv[0] === 'push') return pushCommand(argv.slice(1))
   if (argv[0] === 'schedules') return schedulesCommand(argv.slice(1))
+  if (argv[0] === 'memory') return memoryCommand(argv.slice(1))
   const steps = takeFlag(argv, '--max-steps', true)
   argv = steps.rest
   const resume = takeFlag(argv, '--resume', false)
@@ -645,14 +683,16 @@ async function main() {
     maxSteps,
     browser: () => makeTab({ home: homedir() }),
     // The question would otherwise be drawn beside a spinning frame.
-    approve: async (command, { change, action, signal }) => {
+    approve: async (command, { change, action, memory, signal }) => {
       spin.stop()
       endLine()
       const ok = change
         ? await asker.approveChange(command, change, signal)
         : action
           ? await asker.approveAction(command, action.url, signal)
-          : await asker.approve(command, signal)
+          : memory !== undefined
+            ? await asker.approveMemory(memory, signal)
+            : await asker.approve(command, signal)
       spin.start()
       return ok
     },

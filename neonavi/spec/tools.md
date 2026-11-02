@@ -1,8 +1,8 @@
 # Tools
 
-Nine tools, and the browser's ten (`browser.md`) where a front end offers
-them. Nothing writes to disk except a shell command or a file change that
-was approved. Only web_search, fetch_url, the browser and the model itself
+Nine tools, remember (`memory.md`), and the browser's ten (`browser.md`)
+where a front end offers them. Nothing writes to disk except a shell command,
+a file change or a fact that was approved. Only web_search, fetch_url, the browser and the model itself
 send anything off the machine.
 
 ## Limits

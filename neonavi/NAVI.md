@@ -80,6 +80,16 @@ sent, so a push says only what happened and the job's id; add
 prompt and the command. The token never leaves this computer
 (`spec/push.md`).
 
+navi remembers a few things about you between conversations. Tell it
+something lasting ("remember I want temperatures in Celsius") and it offers
+to keep it, asking `remember? …` first, always, whatever the judge would say,
+so nothing a web page or file says can slip into what it is sent every turn.
+The facts live in `~/.neoai/memory.md`, one per line, and you can edit it by
+hand; `navi memory` lists them, `navi memory add "…"` adds one and
+`navi memory forget <n | words>` removes one. They go wherever a turn goes,
+a remote model included; `"memory": false` in the config turns it off
+(`spec/memory.md`).
+
 `navi mcp` is navi as an MCP server: clients such as Claude Desktop, Claude
 Code or Cursor get one tool, `ask_navi`, that hands a task (and any files) to
 navi and your model in a directory they name. There is no one to say `y` over

@@ -39,6 +39,8 @@ export interface Approver {
   approveChange: (summary: string, change: FileChange, signal?: AbortSignal) => Promise<boolean>
   /** A browser action by its one-line description and its page (BRW-11); never "always". */
   approveAction: (line: string, url: string, signal?: AbortSignal) => Promise<boolean>
+  /** A fact to remember (MEM-7); never "always". */
+  approveMemory: (fact: string, signal?: AbortSignal) => Promise<boolean>
   close: () => void
 }
 
@@ -229,6 +231,10 @@ export function makeApprover(
     },
     approveAction: async (action, url, signal) => {
       const answer = await line.ask(`\n${bold('do?')} ${visible(action)}\n${dim(visible(url))}\n${dim('[y/N]')} `, { signal })
+      return (answer ?? '').trim().toLowerCase() === 'y'
+    },
+    approveMemory: async (fact, signal) => {
+      const answer = await line.ask(`\n${bold('remember?')} ${visible(fact)}\n${dim('[y/N]')} `, { signal })
       return (answer ?? '').trim().toLowerCase() === 'y'
     },
     close: () => line.close(),

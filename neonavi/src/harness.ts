@@ -4,6 +4,7 @@ import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { systemPrompt, today } from './args.ts'
 import { collectContext } from './context.ts'
+import { memorySection, readMemory } from './memory.ts'
 import { allowCommand, gated, type Answer } from './approve.ts'
 import { judge } from './judge.ts'
 import { makeTools } from './tools.ts'
@@ -49,6 +50,8 @@ export interface HarnessConfig {
   browser?: unknown
   /** false keeps no ledger (LED-5). */
   ledger?: boolean
+  /** false reads no memory and removes remember (MEM-4). */
+  memory?: boolean
 }
 
 /** The model a struggling turn is handed to (ESC-1). */
@@ -75,9 +78,10 @@ export interface HarnessOptions {
    * then, declines. Leaving it out declines every such request. `'always'`
    * runs a command and adds it to the allowlist (TL-43). For a browser action
    * (BRW-11), `command` is its one-line description and `action` says on
-   * which page; it is never remembered.
+   * which page; it is never remembered. For a fact to remember (MEM-7),
+   * `command` is `remember: <fact>` and `memory` is the fact.
    */
-  approve?: (command: string, o: { signal: AbortSignal; change?: FileChange; action?: { url: string } }) => Promise<Answer>
+  approve?: (command: string, o: { signal: AbortSignal; change?: FileChange; action?: { url: string }; memory?: string }) => Promise<Answer>
   /**
    * Makes a tab in navi's browser (`makeTab` from `neonavi/browser`), once per
    * session on first use. Left out, there are no browser tools (BRW-13).
@@ -173,13 +177,14 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
   const fetch = web && config.fetch_url !== false
   const write = config.write !== false
   const browsing = !!o.browser && web && config.browser !== false
+  const remembering = config.memory !== false
   const entries = await readdir(o.cwd).catch(() => [])
   const context = await collectContext(o.cwd, o.home ?? homedir())
-  const system = systemPrompt(o.cwd, entries, context, web, fetch, write, browsing)
+  const system = systemPrompt(o.cwd, entries, context, web, fetch, write, browsing, remembering)
   const systemTokens = estimateTokens([{ role: 'system', content: system }])
 
   /** The front end's answer, or a decline if it throws or the turn stops first. */
-  const askUser = (command: string, signal: AbortSignal, change?: FileChange, action?: { url: string }) =>
+  const askUser = (command: string, signal: AbortSignal, change?: FileChange, action?: { url: string }, memory?: string) =>
     new Promise<Answer>((resolve) => {
       if (!o.approve || signal.aborted) return resolve(false)
       // Removed once answered: a long turn would otherwise pile listeners on one signal.
@@ -190,7 +195,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       const declined = () => settle(false)
       signal.addEventListener('abort', declined, { once: true })
       Promise.resolve()
-        .then(() => o.approve!(command, { signal, ...(change && { change }), ...(action && { action }) }))
+        .then(() => o.approve!(command, { signal, ...(change && { change }), ...(action && { action }), ...(memory !== undefined && { memory }) }))
         .then((ok) => settle(ok === true || ok === 'always' ? ok : false), declined)
     })
 
@@ -226,8 +231,8 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
     async function run(prompt: string, attachments: Attachment[] | undefined, signal: AbortSignal, emit: (e: HarnessEvent) => void) {
       const started = Date.now()
       let declined = 0
-      const ask = (command: string, signal: AbortSignal, change?: FileChange, action?: { url: string }) =>
-        askUser(command, signal, change, action).then((ok) => {
+      const ask = (command: string, signal: AbortSignal, change?: FileChange, action?: { url: string }, memory?: string) =>
+        askUser(command, signal, change, action, memory).then((ok) => {
           if (ok === false && !signal.aborted) declined++
           return ok
         })
@@ -286,9 +291,17 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         }
         return (await ask(line, toolSignal ?? signal, undefined, { url })) !== false
       }
+      // Always asked, whatever the mode or judge (MEM-7): a fact is sent with every later turn.
+      const remember = async (fact: string, toolSignal?: AbortSignal, id?: string) => {
+        await after(id)
+        return (await ask(`remember: ${fact}`, toolSignal ?? signal, undefined, undefined, fact)) !== false
+      }
       const tools = makeTools(
-        { approve, change, act },
-        { web, fetch, write, cwd: o.cwd, ripgrep: o.ripgrep, search: searchBackend(config.search), browser },
+        { approve, change, act, remember },
+        {
+          web, fetch, write, cwd: o.cwd, ripgrep: o.ripgrep, search: searchBackend(config.search), browser,
+          ...(remembering && { memory: home }),
+        },
       )
 
       const tally: Record<string, number> = {}
@@ -327,7 +340,8 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
             const result = streamText({
               model: m,
               // PRM-13: the day, as of this turn.
-              system: `${system}\n${today()}`,
+              // MEM-2: memory as of this turn, too.
+              system: `${system}${remembering ? memorySection(await readMemory(home)) : ''}\n${today()}`,
               tools,
               messages,
               stopWhen: stepCountIs(maxSteps),
