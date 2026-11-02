@@ -12,7 +12,7 @@ import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } fro
 import { ago, clearAllSessions, clearSession, listSessions, addPrompt, loadPrompts, loadSession, saveSession, sessionFile } from './session.ts'
 import { exchangesMarkdown, transcript } from './transcript.ts'
 import { attachStdin, MAX_UPLOAD } from './attach.ts'
-import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
+import { attach, createHarness, CUT_NOTE, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
 import { readConfig, reset } from 'neorouter'
 import { configuredBrowser, disconnect, findBrowser, installBrowser, makeTab, showBrowser } from './browser.ts'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
@@ -1048,6 +1048,8 @@ async function main() {
     }
     if (!done!.empty) {
       if (!streaming) console.log(done!.text)
+      // HAR-11: an answer that ends mid-thought says why.
+      if (done!.cut) console.error(dim(CUT_NOTE))
       return true
     }
     console.error(dim('the model returned no answer; ask again'))

@@ -37,6 +37,9 @@ function fakeSession(approve: Approve, start: ModelMessage[]): Session {
           : { action: { url: 'https://shop.example/cart?id=7' } }
         const ok = await approve(prompt === 'edit' ? 'edit a.ts (+1 -1)' : 'click "Buy now"', { signal: signal ?? new AbortController().signal, ...o })
         yield end(ok ? 'Did it.' : 'Left it.')
+      } else if (prompt === 'long') {
+        history = [...history, { role: 'user', content: prompt }, { role: 'assistant', content: 'Once upon' }]
+        yield { type: 'done', history, text: 'Once upon', empty: false, stopped: false, cut: true }
       } else if (prompt === 'hang') {
         if (!signal?.aborted) await new Promise((r) => signal?.addEventListener('abort', r, { once: true }))
         yield end('', { stopped: true })
@@ -601,6 +604,15 @@ test("a project's facts can be read, added to and forgotten through the API, for
   } finally {
     server.close()
   }
+})
+
+// HAR-11
+test("a job whose answer was cut at the token cap says so in its log", async () => {
+  const { jobs } = await setup()
+  const job = jobs.create('long', '/tmp')
+  await jobs.idle()
+  assert.equal(jobs.get(job.id)!.status, 'done')
+  assert.match(jobs.get(job.id)!.log.join('\n'), /· cut short: the answer reached the model’s token cap/)
 })
 
 // LED-7

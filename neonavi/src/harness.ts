@@ -118,6 +118,9 @@ export interface HarnessOptions {
   streamsToolCalls?: boolean
 }
 
+/** What a front end says of an answer cut at the token cap (HAR-11). */
+export const CUT_NOTE = 'cut short: the answer reached the model’s token cap (maxTokens in "modelOptions", or the server’s own); ask it to go on'
+
 export type HarnessEvent =
   /** The history outgrew the window and its older part was summarised (SES-11). */
   | { type: 'compacted'; messages: number }
@@ -145,9 +148,10 @@ export type HarnessEvent =
   /**
    * Always the last event. `history` is what to store and pass back (HAR-3);
    * `text` is the final step's answer, `empty` when it is blank (CLI-12), and
-   * `stopped` when the turn was aborted.
+   * `stopped` when the turn was aborted, and `cut` when the answer ended at
+   * the model's token cap rather than where the model finished (HAR-11).
    */
-  | { type: 'done'; history: ModelMessage[]; text: string; empty: boolean; stopped: boolean }
+  | { type: 'done'; history: ModelMessage[]; text: string; empty: boolean; stopped: boolean; cut?: true }
 
 export interface Session {
   /** The conversation so far, updated when each turn ends. */
@@ -355,6 +359,8 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         let inARow = 0
         let lastCalledTools = false
         let taken = 0
+        // HAR-11: how the last step ended.
+        let cut = false
         if (!stopped) {
           try {
             const result = streamText({
@@ -378,8 +384,11 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
             for await (const part of result.fullStream) {
               switch (part.type) {
                 case 'start-step':
+                  partial = ''
+                  break
                 case 'finish-step':
                   partial = ''
+                  cut = part.finishReason === 'length'
                   break
                 case 'text-delta':
                   partial += part.text
@@ -438,7 +447,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           if (taken >= maxSteps && lastCalledTools) trouble = `it used all ${maxSteps} steps still calling tools`
           else if (!text.trim()) trouble = 'it gave no answer'
         }
-        return { messages: [...finished, ...kept], text, stopped, trouble }
+        return { messages: [...finished, ...kept], text, stopped, trouble, cut: cut && !stopped && !trouble }
       }
 
       // Escalation is only tried where there is somewhere to go (ESC-3).
@@ -481,6 +490,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           outcome: stopped ? 'stopped' : text.trim() ? 'answered' : failed ? 'error' : 'empty',
           ...(escalated && { escalated }),
           ...(answered && Date.now() - answered.at < CORRECTION_WINDOW && readsAsCorrection(prompt) && { corrects: answered.model }),
+          ...(done.cut && { cut: true as const }),
         }
         await record(home, entry)
       }
@@ -488,7 +498,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       // On disk before done, so an undo straight after finds it.
       recorder.answeredBy(answering.model)
       await recorder.saved()
-      emit({ type: 'done', history, text, empty: !text.trim(), stopped })
+      emit({ type: 'done', history, text, empty: !text.trim(), stopped, ...(done.cut && text.trim() && { cut: true as const }) })
     }
 
     return {

@@ -16,6 +16,7 @@ add the requirement there first.
       is described as on this computer, not REMOTE. (`spec/models.md` MOD-20)
 - [x] Options per link: a token cap, a temperature, and leave to think,
       under `"modelOptions"`. (MOD-24, MOD-25)
+- [x] An answer cut at the token cap says so, everywhere. (HAR-11)
 - [x] Say why a link failed: unreachable, key refused, model gone, with the
       link named, in `navi`, `navi setup --check` and Raycast. (MOD-21)
 - [x] The installer leaves `navi` runnable: it already warns when

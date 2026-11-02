@@ -147,3 +147,10 @@ test('RAY-12: an escalation is a note naming the new model and why', () => {
     { kind: 'note', line: 'escalated to claude-sonnet-5-5 on Anthropic (REMOTE): it gave no answer' },
   ])
 })
+
+test('HAR-11: an answer cut at the token cap ends with a note saying so', () => {
+  const turn = fold([{ type: 'done', history: [], text: 'Once upon', empty: false, stopped: false, cut: true }])
+  assert.equal(turn.items.at(-1)?.kind, 'note')
+  assert.match((turn.items.at(-1) as { line: string }).line, /^cut short: the answer reached the model’s token cap/)
+  assert.equal(fold([{ type: 'done', history: [], text: 'Done.', empty: false, stopped: false }]).items.length, 0)
+})

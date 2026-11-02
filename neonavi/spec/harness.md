@@ -37,6 +37,11 @@ jack-ins are others (`jackins/NAVI.md`).
   give a way to resolve the escalation model (ESC-1); the harness keeps the
   ledger and escalates, so every front end does both the same way. A
   harness made without a front end's name keeps no ledger.
+- HAR-11: An answer that ended because the model reached its token cap
+  (`maxTokens`, MOD-24, or the server's own), not because it was finished,
+  is marked `cut` on `done`; a stopped or escalated one is not. The CLI says
+  so after it, a job in its log, Raycast as a note, all in the same words
+  and saying how to go on, and the ledger keeps `cut` (LED-1).
 - HAR-5: The harness never writes to stdout or stderr itself; everything a user
   might see is an event or a callback, so a front end with no terminal works.
 - HAR-6: The CLI is built on the library, with its behaviour in `cli.md`

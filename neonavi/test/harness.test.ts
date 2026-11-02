@@ -48,7 +48,7 @@ const call = (id: string, toolName: string, input: unknown): Part => ({
   toolName,
   input: JSON.stringify(input),
 })
-const finish = (finishReason: 'stop' | 'tool-calls'): Part => ({ type: 'finish', finishReason, usage })
+const finish = (finishReason: 'stop' | 'tool-calls' | 'length'): Part => ({ type: 'finish', finishReason, usage })
 
 /**
  * Streams one scripted step per call; doGenerate is the judge and the
@@ -187,6 +187,24 @@ test("a project's fact is asked for by name and sent with the next turn there", 
   const other = fake([[...text('t', 'Hi.'), finish('stop')]])
   await collect((await harness(other, { home })).session().turn('hi'))
   assert.doesNotMatch(String(other.doStreamCalls[0].prompt.find((m) => m.role === 'system')?.content), /npm test/)
+})
+
+// HAR-11: an answer that ends at the token cap says so, and the ledger keeps it.
+test('an answer cut at the token cap is marked cut, and one that finished is not', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-cut-'))
+  const model = fake([
+    [...text('t1', 'The sea never stopped talking to'), finish('length')],
+    [...text('t2', 'Done.'), finish('stop')],
+  ])
+  const h = await createHarness({ model, contextWindow: 100_000, cwd: home, home, config: { web_search: false }, front: 'cli', name: { model: 'small', local: true } })
+  const s = h.session()
+  const cut = (await collect(s.turn('a story'))).at(-1) as any
+  assert.equal(cut.type, 'done')
+  assert.equal(cut.cut, true)
+  assert.equal(cut.text, 'The sea never stopped talking to')
+  const whole = (await collect(s.turn('thanks'))).at(-1) as any
+  assert.equal(whole.cut, undefined)
+  assert.deepEqual((await ledgerOf(home)).map((e) => e.cut), [true, undefined])
 })
 
 // MEM-7: declined, nothing is written and the model is told not to ask again.

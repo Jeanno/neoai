@@ -1,5 +1,5 @@
 import type { ModelMessage } from 'ai'
-import { splitUserContent, type HarnessEvent } from 'neonavi/harness'
+import { CUT_NOTE, splitUserContent, type HarnessEvent } from 'neonavi/harness'
 import { splitThinking } from './think'
 import type { Approval } from './approval'
 
@@ -98,7 +98,11 @@ export function applyEvent(turn: Turn, e: HarnessEvent): Turn {
       return {
         ...turn,
         // A call cut short by stopping never got its result.
-        items: items.map((i) => (i.kind === 'tool' && i.state === 'running' ? { ...i, state: 'failed' } : i)),
+        items: [
+          ...items.map((i) => (i.kind === 'tool' && i.state === 'running' ? { ...i, state: 'failed' as const } : i)),
+          // HAR-11: an answer that ends mid-thought says why.
+          ...(e.cut ? [{ kind: 'note' as const, line: CUT_NOTE }] : []),
+        ],
         final: e.text,
         stopped: e.stopped,
       }

@@ -3,7 +3,7 @@ import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/
 import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
 import type { ModelMessage } from 'ai'
-import type { Answer, HarnessOptions, Session } from './harness.ts'
+import { CUT_NOTE, type Answer, type HarnessOptions, type Session } from './harness.ts'
 import type { Attachment } from './attach.ts'
 import { glance, glancePage } from './diff.ts'
 
@@ -253,6 +253,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         } else if (e.type === 'done') {
           job.history = e.history
           job.answer = e.text
+          if (e.cut) job.log.push(`· ${CUT_NOTE}`)
           job.status = e.stopped ? 'stopped' : e.empty && errors.length ? 'failed' : 'done'
           if (job.status === 'failed') job.error = errors[0]
         } else continue

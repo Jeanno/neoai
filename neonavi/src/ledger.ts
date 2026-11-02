@@ -26,6 +26,8 @@ export interface LedgerEntry {
   escalated?: { from: string; reason: string }
   /** The model whose answer this turn's prompt corrected (LED-7); never the prompt. */
   corrects?: string
+  /** The answer ended at the token cap (HAR-11). */
+  cut?: true
 }
 
 /** A line saying the user undid a turn's changes (LED-9): when, and whose turn; nothing else. */
