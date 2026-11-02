@@ -166,5 +166,16 @@ terminal that started them closes.
   and Clear finished jobs under the list when there are any, each after a
   confirm; a deleted job's page goes back to the list.
 
+## Finding
+
+- JOB-30: The phone page has a Find a job box above the list once there are
+  more than three jobs. Typing narrows the list to the jobs holding every
+  word typed, in any case, in the prompt, the answer, the error or the
+  status; with none, it says no job mentions them. It filters the list it
+  already has: nothing more is sent.
+- JOB-31: `navi jobs find <words>` lists the jobs `navi serve` holds that
+  match as JOB-30 does, in the same form as `navi jobs`, and exits 1 saying
+  so when none does.
+
 ## Open
 

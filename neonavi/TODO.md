@@ -80,6 +80,8 @@ add the requirement there first.
       JOB-23)
 - [x] A followed-up job's earlier turns: folded on the phone page, every
       turn with `navi jobs <id> show`. (JOB-27 to JOB-29)
+- [x] Find a job by words in its prompt or answer: a box on the phone list,
+      `navi jobs find <words>`. (JOB-30, JOB-31)
 - [x] Delete a finished job, or clear them all, from the phone page or
       `navi jobs`; never one still working. (JOB-24 to JOB-26)
 - [x] Answers on the phone page formatted from their Markdown (lists,

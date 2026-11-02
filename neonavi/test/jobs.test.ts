@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ModelMessage } from 'ai'
 import type { HarnessEvent, HarnessOptions, Session } from '../src/harness.ts'
-import { jobsDir, makeJobs, serveToken, tailnetAddresses, type JobDeps, type Jobs } from '../src/jobs.ts'
+import { jobsDir, makeJobs, matches, serveToken, tailnetAddresses, type JobDeps, type Jobs } from '../src/jobs.ts'
 import { listen, type ServeDeps } from '../src/serve.ts'
 import { makeRecorder } from '../src/undo.ts'
 
@@ -610,4 +610,13 @@ test('a job lists its turns, a follow-up still running included, never its conve
   } finally {
     server.close()
   }
+})
+
+test('JOB-30: a job matches when it holds every word, in any case, in its prompt, answer, error or status', () => {
+  const job = { prompt: 'Check the Backups', status: 'failed' as const, answer: 'Disk is nearly full', error: 'timed out' }
+  assert.ok(matches(job, 'backups'))
+  assert.ok(matches(job, 'DISK   check'))
+  assert.ok(matches(job, 'timed failed'))
+  assert.ok(!matches(job, 'backups printer'))
+  assert.ok(matches({ prompt: 'x', status: 'done' }, '  '))
 })

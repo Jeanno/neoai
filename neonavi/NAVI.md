@@ -81,6 +81,9 @@ deletes every one not still working (JOB-24 to JOB-26).
 A job followed up keeps its earlier answers: on the phone page under
 Earlier in this job, and all of it with `navi jobs <id> show`
 (JOB-27 to JOB-29).
+To find a job, type in Find a job above a phone list of more than three,
+or run `navi jobs find <words>`: jobs holding every word, in the prompt or
+the answer (JOB-30, JOB-31).
 Answers on the phone page are shown formatted (headings, lists, tables,
 code, links), and since an answer can quote a web page, none of it is ever
 read as HTML: only http(s) links work, and nothing in an answer can run

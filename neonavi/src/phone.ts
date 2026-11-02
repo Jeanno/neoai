@@ -35,6 +35,7 @@ export const PHONE_PAGE = `<!doctype html>
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
   textarea, select { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
   textarea { min-height: 84px; resize: vertical; }
+  input.find { width: 100%; font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 12px; }
   select { margin-top: 8px; }
   .row > select, .row > input[type=time] { margin-top: 0; flex: 1; min-width: 0; }
   input[type=time] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; }
@@ -161,6 +162,12 @@ ${MARKDOWN_JS}
   let remembering = false, memory = { facts: [], off: false }, fact = ''
   // JOB-28: whether a job's earlier turns are shown, kept across refreshes.
   let earlierOpen = false
+  // JOB-30: the words the job list is narrowed to.
+  let find = ''
+  const holds = (j, words) => {
+    const hay = [j.prompt, j.answer, j.error, j.status].filter(Boolean).join(' ').toLowerCase()
+    return words.toLowerCase().split(/\\s+/).filter(Boolean).every((w) => hay.includes(w))
+  }
   // The files chosen for a new job and for a follow-up, as { name, data } with data base64 (JOB-16, JOB-20).
   let picked = [], more = []
 
@@ -344,7 +351,10 @@ ${MARKDOWN_JS}
             el('button', { class: 'no', disabled: busy, onclick: () => act(async () => { open = (await api('/schedules/' + s.id + '/run', {})).id }) }, 'Run now'),
             el('button', { class: 'no', disabled: busy, onclick: () => { if (confirm('Delete this schedule?')) act(() => api('/schedules/' + s.id + '/delete', {})) } }, 'Delete')))),
         schedules.length > 0 && el('h2', {}, 'Jobs'),
-        jobs.length ? jobs.map((j) => el('button', { class: 'job', onclick: () => { open = j.id; failed = ''; refresh() } },
+        jobs.length > 3 && el('input', { id: 'find', type: 'search', class: 'find', placeholder: 'Find a job', value: find, autocomplete: 'off',
+          oninput: (e) => { find = e.target.value; render() } }),
+        jobs.length && find.trim() && !jobs.some((j) => holds(j, find)) && el('p', { class: 'empty' }, 'No job mentions ' + find.trim() + '.'),
+        jobs.length ? jobs.filter((j) => holds(j, find)).map((j) => el('button', { class: 'job', onclick: () => { open = j.id; failed = ''; refresh() } },
           el('span', { class: 'status s-' + j.status }, j.unchanged ? 'nothing new' : j.status),
           el('span', { class: 'p' }, j.prompt),
           el('span', { class: 'meta' }, ago(j.created) + (j.model ? ' · ' + j.model : ''))))
@@ -358,7 +368,7 @@ ${MARKDOWN_JS}
       if (again) {
         again.focus()
         // A list, time or checkbox has no caret to put back.
-        if (again.tagName === 'TEXTAREA') { const n = again.value.length; again.setSelectionRange(n, n) }
+        if (again.tagName === 'TEXTAREA' || again.type === 'search') { const n = again.value.length; again.setSelectionRange(n, n) }
       }
     }
   }

@@ -111,6 +111,12 @@ export interface Jobs {
 const KEPT = 100
 export const jobsDir = (home: string) => join(home, '.neoai', 'jobs')
 
+/** Whether a job holds every one of the words, in its prompt, answer, error or status, any case (JOB-30). */
+export function matches(job: Pick<Job, 'prompt' | 'status'> & { answer?: string; error?: string; asked?: string }, words: string): boolean {
+  const hay = [job.prompt, job.asked, job.answer, job.error, job.status].filter(Boolean).join('\n').toLowerCase()
+  return words.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w))
+}
+
 /** A job's start, for notifications and lists. */
 export const titleOf = (prompt: string) => (prompt.length > 60 ? `${prompt.slice(0, 57).trimEnd()}…` : prompt).replace(/\s+/g, ' ')
 

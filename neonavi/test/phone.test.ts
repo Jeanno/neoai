@@ -354,3 +354,39 @@ test('JOB-28: a followed-up job folds its earlier turns away, and they stay open
   await page.waitForTimeout(3500)
   assert.equal(await page.locator('.earlier strong').isVisible(), true)
 })
+
+test('JOB-30: a search box narrows a long job list as you type', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const answers: Record<string, string> = { 'water the plants': 'Watered the ferns.', 'check the printer': 'Out of toner.', 'tidy downloads': 'Moved 12 files.', 'read the news': 'Nothing big.' }
+  const jobs = await makeJobs({
+    home,
+    start: async () => ({
+      model: 'small',
+      session: { history: [], async *turn(prompt: string) { yield { type: 'done', history: [], text: answers[prompt], empty: false, stopped: false } as const } },
+    }),
+    notify: () => {},
+  })
+  for (const p of Object.keys(answers)) jobs.create(p, home)
+  await jobs.idle()
+  const token = '7'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByText('read the news').waitFor()
+  const box = page.getByPlaceholder('Find a job')
+  await box.pressSequentially('Toner')
+  await page.getByText('water the plants').waitFor({ state: 'detached' })
+  assert.equal(await page.locator('button.job').count(), 1)
+  assert.equal(await page.locator('button.job .p').textContent(), 'check the printer')
+  // Typing goes on in the box the page redrew.
+  await box.pressSequentially(' fern')
+  await page.getByText('No job mentions Toner fern.').waitFor()
+  await box.fill('')
+  await page.getByText('water the plants').waitFor()
+  assert.equal(await page.locator('button.job').count(), 4)
+})

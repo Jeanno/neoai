@@ -334,3 +334,36 @@ test('-a - with nothing that is text is reported, and navi exits 1', async () =>
   assert.equal(r.code, 1)
   assert.match(r.stderr, /stdin is not text/)
 })
+
+test('JOB-31: navi jobs find lists the jobs that mention the words', async () => {
+  const { makeJobs, serveToken } = await import('../src/jobs.ts')
+  const { listen } = await import('../src/serve.ts')
+  const home = await mkdtemp(join(tmpdir(), 'navi-cli-'))
+  const answers: Record<string, string> = { 'water the plants': 'Watered the ferns.', 'check the printer': 'Out of toner.' }
+  const jobs = await makeJobs({
+    home,
+    start: async () => ({
+      model: 'small',
+      session: { history: [], async *turn(prompt: string) { yield { type: 'done', history: [], text: answers[prompt], empty: false, stopped: false } as const } },
+    }),
+    notify: () => {},
+  } as any)
+  for (const p of Object.keys(answers)) jobs.create(p, home)
+  await jobs.idle()
+  const token = await serveToken(home)
+  const deps = { route: async () => null, why: async () => 'none', fetch, forget: () => {}, log: () => {} }
+  const [server] = await listen([], deps as any, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  try {
+    const port = String((server.address() as AddressInfo).port)
+    const found = await navi(['jobs', 'find', 'TONER', '--port', port], { home })
+    assert.equal(found.code, 0)
+    assert.match(found.stdout, /check the printer/)
+    assert.doesNotMatch(found.stdout, /water/)
+    const none = await navi(['jobs', 'find', 'toner', 'ferns', '--port', port], { home })
+    assert.equal(none.code, 1)
+    assert.match(none.stderr, /No job mentions toner ferns/)
+    assert.equal((await navi(['jobs', 'find', '--port', port], { home })).code, 1)
+  } finally {
+    server.close()
+  }
+})

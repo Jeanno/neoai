@@ -18,7 +18,7 @@ import { configuredBrowser, disconnect, findBrowser, installBrowser, makeTab, sh
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 import { describe, entryLabel, escalationFor, modelLabel } from './setup-core.ts'
 import { readLedger, stats } from './ledger.ts'
-import { makeJobs, serveToken, tailnetAddresses, titleOf, working, type JobDeps } from './jobs.ts'
+import { makeJobs, matches, serveToken, tailnetAddresses, titleOf, working, type JobDeps } from './jobs.ts'
 import { push, pushConfig } from './push.ts'
 import { addFact, forgetFact, memoryFile, readMemory } from './memory.ts'
 import { listUndo, namer, redo, redoneLines, undo, undoneReport } from './undo.ts'
@@ -104,7 +104,7 @@ const USAGE = [
   '       navi browser [--install]',
   '       navi stats [--days N]',
   '       navi job "<what you want done>" [-a <file>]… [-C <directory>]',
-  '       navi jobs [<id> [y | n | stop | undo | delete | show | reply "<follow-up>" [-a <file>]…] | clear | link]',
+  '       navi jobs [<id> [y | n | stop | undo | delete | show | reply "<follow-up>" [-a <file>]…] | find <words> | clear | link]',
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
   '       navi schedules [<id> run | rm]',
   '       navi push test',
@@ -130,7 +130,7 @@ const ABOUT = [
   "navi browser         open navi's browser to sign in to sites; --install gets Chromium for it",
   'navi stats           how each model has done, from the ledger; --days N (default 30)',
   'navi job "…"         hand navi serve a job to do in the background; -a sends a file, -C sets where',
-  'navi jobs            list jobs; <id> shows one, then y, n, stop, undo, delete, show (every turn) or reply; clear deletes finished ones; link is for a phone',
+  'navi jobs            list jobs; <id> shows one, then y, n, stop, undo, delete, show (every turn) or reply; find lists those mentioning words; clear deletes finished ones; link is for a phone',
   'navi schedule "…"    have navi serve start a job at a time of day or every so often;',
   '                     --only-changes makes it a watch that only speaks when something changed',
   'navi schedules       list schedules and their next run; <id> run starts one now, rm deletes it',
@@ -395,7 +395,7 @@ async function replyJobCommand(n: number, id: string, argv: string[]) {
   return 0
 }
 
-const JOBS_USAGE = 'usage: navi jobs [<id> [y | n | stop | undo | delete | show | reply "<follow-up>" [-a <file>]…] | clear | link] [--port N]'
+const JOBS_USAGE = 'usage: navi jobs [<id> [y | n | stop | undo | delete | show | reply "<follow-up>" [-a <file>]…] | find <words> | clear | link] [--port N]'
 
 /** `navi jobs [<id> [y | n | stop | undo | delete | reply …] | clear | link] [--port N]` (JOB-12, JOB-13, JOB-20, JOB-26). */
 async function jobsCommand(argv: string[]) {
@@ -403,6 +403,17 @@ async function jobsCommand(argv: string[]) {
   const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
   const [id, what, ...extra] = port.rest
   if (what === 'reply' && Number.isInteger(n)) return replyJobCommand(n, id, extra)
+  if (id === 'find' && Number.isInteger(n)) {
+    // JOB-31
+    const words = [what, ...extra].filter(Boolean).join(' ')
+    if (!words.trim()) return console.error(JOBS_USAGE), 1
+    const got = await jobsApi(n, '/jobs')
+    if (!got) return console.error(NOT_SERVING), 1
+    const found = (got.data.jobs ?? []).filter((j: any) => matches(j, words))
+    if (!found.length) return console.error(`No job mentions ${words}.`), 1
+    for (const j of found) console.log(`${bold(j.id)}  ${statusWord(j.status, j.unchanged).padEnd(10)}  ${ago(new Date(j.created)).padEnd(10)}  ${titleOf(j.prompt)}`)
+    return 0
+  }
   if (extra.length || !Number.isInteger(n) || (what !== undefined && !['y', 'n', 'stop', 'undo', 'delete', 'show'].includes(what))) {
     console.error(JOBS_USAGE)
     return 1
