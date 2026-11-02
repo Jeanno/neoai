@@ -22,7 +22,7 @@ import { makeJobs, matches, serveToken, tailnetAddresses, titleOf, working, type
 import { push, pushConfig } from './push.ts'
 import { addFact, forgetFact, memoryFile, readMemory } from './memory.ts'
 import { listUndo, namer, redo, redoneLines, undo, undoneReport } from './undo.ts'
-import { makeSchedules, nextText, parseDays, parseEvery, whenText } from './schedules.ts'
+import { makeSchedules, nextText, parseDays, parseEvery, runMarks, whenText } from './schedules.ts'
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 
@@ -572,7 +572,7 @@ async function schedulesCommand(argv: string[]) {
     const list = got.data.schedules ?? []
     if (!list.length) console.log('No schedules. Add one with `navi schedule "<what you want done>" --at 08:00`.')
     for (const s of list)
-      console.log(`${bold(s.id)}  ${`${whenText(s)}${s.quiet ? ' · watch' : ''}`.padEnd(22)}  ${(s.paused ? 'paused' : `next ${nextText(new Date(s.next))}`).padEnd(20)}  ${titleOf(s.prompt)}`)
+      console.log(`${bold(s.id)}  ${`${whenText(s)}${s.quiet ? ' · watch' : ''}`.padEnd(22)}  ${runMarks(s.runs ?? []).padEnd(5)}  ${(s.paused ? 'paused' : `next ${nextText(new Date(s.next))}`).padEnd(20)}  ${titleOf(s.prompt)}`)
     return 0
   }
   const got = await jobsApi(n, `/schedules/${id}/${what === 'rm' ? 'delete' : what}`, {})

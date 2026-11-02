@@ -114,6 +114,18 @@ every so often. A morning brief, a page watched every hour.
   Pause and Resume on the phone page, which shows a paused schedule as
   Paused instead of its next run; `navi schedules` shows it as paused.
 
+## How it has gone
+
+- SCH-22: `GET /schedules` gives each schedule its `runs`: the jobs it
+  started that are still kept (JOB-6), newest first, at most five, each as
+  `{ id, status, created, unchanged? }`. Nothing about a job but that.
+- SCH-23: Each run is shown as a mark, oldest first: ✓ done, – done with
+  nothing new (SCH-10), ✗ failed or interrupted, ■ stopped, … still
+  working. `navi schedules` prints the marks after each schedule's when.
+- SCH-24: On the phone page the marks sit on the schedule's card, each
+  colored as its status is in the job list and named for a screen reader
+  (`done, 2 h ago`); tapping one opens its job.
+
 ## Open
 
-- A schedule's run history: how its last few jobs went, at a glance.
+- Telling the user when a schedule's runs keep failing.

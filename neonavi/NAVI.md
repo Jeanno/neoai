@@ -61,6 +61,9 @@ phone page; a new time counts from the change (SCH-15 to SCH-18).
 `navi schedules <id> pause` (or Pause on the phone) keeps one without it
 running, and `resume` starts it again from then, missed runs not made up
 (SCH-19 to SCH-21).
+Each schedule shows how its last five runs went, as marks (✓ done, – nothing
+new, ✗ failed, ■ stopped, … working): in `navi schedules`, and on the phone,
+where a mark opens its job (SCH-22 to SCH-24).
 
     navi schedule "summarise what's new on my GitHub notifications page" --at 08:30 --days weekdays
 

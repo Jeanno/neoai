@@ -73,6 +73,8 @@ add the requirement there first.
       `navi schedules <id> edit` or the phone. (SCH-15 to SCH-18)
 - [x] Pause and resume a schedule, from the terminal or the phone.
       (SCH-19 to SCH-21)
+- [x] A schedule's last runs at a glance, as marks that open their jobs.
+      (SCH-22 to SCH-24)
 - [x] Files with a job: photos (scaled to JPEG on the phone, HEIC
       included) or any file from the phone page, `navi job -a` from the
       terminal, read as -a reads them. (JOB-14 to JOB-16)

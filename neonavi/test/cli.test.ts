@@ -407,7 +407,12 @@ test('SCH-17, SCH-21, JOB-33: navi schedules <id> edit, pause and resume, and na
     assert.match((await navi(['jobs', done.id, 'repeat', '--every', '1m', '--port', port], { home })).stderr, /5 at the least/)
     // SCH-21: paused, listed as paused, and back.
     assert.match((await navi(['schedules', s.id, 'pause', '--port', port], { home })).stdout, /Paused schedule/)
-    assert.match((await navi(['schedules', '--port', port], { home })).stdout, /paused/)
+    // SCH-23: the job it started, failed for want of a model, as a mark.
+    await schedules.run(s.id)
+    await jobs.idle()
+    const listed = (await navi(['schedules', '--port', port], { home })).stdout
+    assert.match(listed, /paused/)
+    assert.match(listed, /✗/)
     assert.equal(schedules.get(s.id)?.paused, true)
     assert.match((await navi(['schedules', s.id, 'resume', '--port', port], { home })).stdout, /Resumed schedule .*every 2 h, next in 120 min|Resumed schedule .*next/)
     assert.equal(schedules.get(s.id)?.paused, undefined)

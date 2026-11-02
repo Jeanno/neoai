@@ -142,7 +142,13 @@ async function memoryRoute(req: IncomingMessage, res: ServerResponse, path: stri
 /** The schedules API (SCH-7); the token is already checked. */
 async function schedulesRoute(req: IncomingMessage, res: ServerResponse, path: string, o: JobsOptions, schedules: Schedules) {
   const parts = path.split('/').slice(2)
-  if (req.method === 'GET' && !parts.length) return json(res, 200, { schedules: schedules.list() })
+  if (req.method === 'GET' && !parts.length) {
+    // SCH-22: how its last few runs went, and nothing more of them.
+    const jobs = o.jobs.list()
+    const runs = (id: string) =>
+      jobs.filter((j) => j.schedule === id).slice(0, 5).map((j) => ({ id: j.id, status: j.status, created: j.created, ...(j.unchanged && { unchanged: true }) }))
+    return json(res, 200, { schedules: schedules.list().map((s) => ({ ...s, runs: runs(s.id) })) })
+  }
   if (req.method !== 'POST') return error(res, 404, `Schedules answer GET /schedules, POST /schedules and POST /schedules/<id>/run, edit, pause, resume or delete, not ${req.method} ${path}.`)
   const body = await jsonBody(req)
   if (typeof body === 'string') return error(res, 400, body)

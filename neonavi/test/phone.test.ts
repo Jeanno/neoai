@@ -443,7 +443,7 @@ test('SCH-18, SCH-21: the phone edits, pauses and resumes a schedule, and a refr
   assert.equal(schedules.get(s.id)?.prompt, 'check the status page and the disks')
 })
 
-test('JOB-34: Repeat this makes a schedule of a finished job and goes back to the list', { skip }, async (t) => {
+test('JOB-34, SCH-24: Repeat this makes a schedule of a finished job, whose runs then show on its card', { skip }, async (t) => {
   const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
   const jobs = await makeJobs({
     home,
@@ -483,4 +483,13 @@ test('JOB-34: Repeat this makes a schedule of a finished job and goes back to th
   await page.getByRole('button', { name: '‹ Jobs' }).waitFor()
   await page.getByRole('button', { name: 'Delete job' }).waitFor()
   assert.equal(await page.getByRole('button', { name: 'Repeat this…' }).count(), 0)
+
+  // SCH-24: back on the list, the run shows as a mark that opens its job.
+  await page.getByRole('button', { name: '‹ Jobs' }).click()
+  const mark = page.getByRole('button', { name: /^done, / })
+  await mark.waitFor()
+  assert.equal(await mark.textContent(), '✓')
+  await mark.click()
+  await page.getByRole('button', { name: 'Delete job' }).waitFor()
+  assert.match(await page.locator('.meta').first().textContent() ?? '', /notes|navi-phone/)
 })

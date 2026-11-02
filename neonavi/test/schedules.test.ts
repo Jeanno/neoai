@@ -4,7 +4,7 @@ import { mkdtemp, readFile, stat } from 'node:fs/promises'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkWhen, makeSchedules, nextRun, nextText, parseDays, parseEvery, schedulesFile, whenText, type ScheduleDeps } from '../src/schedules.ts'
+import { checkWhen, makeSchedules, nextRun, nextText, parseDays, parseEvery, runMarks, schedulesFile, whenText, type ScheduleDeps } from '../src/schedules.ts'
 import { makeJobs, type StartOptions } from '../src/jobs.ts'
 import { fromWall, type Offset } from '../src/clock.ts'
 import { listen, type ServeDeps } from '../src/serve.ts'
@@ -334,4 +334,40 @@ test('JOB-32: a finished job is made a schedule of its first prompt, where it ra
   const s = await made.json()
   assert.deepEqual({ prompt: s.prompt, directory: s.directory, at: s.at, days: s.days, quiet: s.quiet }, { prompt: 'summarise the notes', directory: home, at: '07:00', days: [1, 2, 3, 4, 5], quiet: true })
   assert.ok(s.next)
+})
+
+test('SCH-22, SCH-23: a schedule lists its last five runs, newest first, and shows them as marks, oldest first', async (t) => {
+  assert.equal(runMarks([{ status: 'running' }, { status: 'done', unchanged: true }, { status: 'stopped' }, { status: 'interrupted' }, { status: 'failed' }, { status: 'done' }]), '✓✗✗■–…')
+  assert.equal(runMarks([]), '')
+  const home = await mkdtemp(join(tmpdir(), 'navi-schedules-api-'))
+  let n = 0
+  const jobs = await makeJobs({
+    home,
+    start: async () => {
+      // Every third run fails.
+      if (++n % 3 === 0) throw new Error('no model')
+      return { model: 'small', session: { history: [], async *turn() { yield { type: 'done', history: [], text: 'Fine.', empty: false, stopped: false } as const } } }
+    },
+    notify: () => {},
+  })
+  const schedules = await makeSchedules({ home, start: (p, d, o) => jobs.create(p, d, o).id, answerOf: () => undefined, busy: () => false })
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token: 'a'.repeat(64), directories: async () => [home], schedules } })
+  t.after(() => server.close())
+  const s = await schedules.add('brief', home, { every: 60 })
+  const other = await schedules.add('other', home, { every: 60 })
+  const ran: string[] = []
+  for (let i = 0; i < 6; i++) {
+    ran.push((await schedules.run(s.id))!)
+    await jobs.idle()
+    // Started a millisecond apart, so newest first is a fixed order.
+    await new Promise((r) => setTimeout(r, 5))
+  }
+  jobs.create('not from a schedule', home)
+  await jobs.idle()
+  const got = await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/schedules`, { headers: { authorization: `Bearer ${'a'.repeat(64)}` } })).json()
+  const runs = got.schedules.find((x: any) => x.id === s.id).runs
+  assert.deepEqual(runs.map((r: any) => r.id), ran.slice(1).reverse())
+  assert.deepEqual(Object.keys(runs[0]).sort(), ['created', 'id', 'status'])
+  assert.equal(runMarks(runs), '✓✗✓✓✗')
+  assert.deepEqual(got.schedules.find((x: any) => x.id === other.id).runs, [])
 })

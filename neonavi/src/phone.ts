@@ -45,6 +45,9 @@ export const PHONE_PAGE = `<!doctype html>
   .sched .p { display: block; margin: 2px 0; }
   .sched .status { color: var(--accent); }
   .sched .status.paused { color: var(--muted); }
+  .runs { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+  .runs .meta { margin-right: 4px; }
+  button.run { background: none; padding: 2px 6px; min-width: 28px; font-size: 17px; line-height: 1.2; border-radius: 6px; }
   .sched .row { flex-wrap: wrap; }
   .sched .row button { white-space: nowrap; padding-left: 6px; padding-right: 6px; flex: 1 0 auto; }
   .files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
@@ -147,6 +150,7 @@ ${MARKDOWN_JS}
   const when = (s) => s.every
     ? (s.every % 60 ? 'Every ' + s.every + ' min' : s.every === 60 ? 'Every hour' : 'Every ' + s.every / 60 + ' h')
     : 'At ' + s.at + (!s.days ? ' every day' : s.days.join() === '1,2,3,4,5' ? ' on weekdays' : s.days.join() === '0,6' ? ' at weekends' : ' on ' + s.days.map((d) => DAYS[d]).join(', '))
+  const mark = (r) => r.status === 'done' ? (r.unchanged ? '–' : '✓') : r.status === 'failed' || r.status === 'interrupted' ? '✗' : r.status === 'stopped' ? '■' : '…'
   const soon = (iso) => {
     const t = new Date(iso), mins = Math.round((t - Date.now()) / 60000)
     if (mins < 1) return 'now'
@@ -405,6 +409,11 @@ ${MARKDOWN_JS}
           el('div', { class: 'status' + (s.paused ? ' paused' : '') }, (s.paused ? 'Paused · ' : '') + when(s) + (s.quiet ? ' · watch' : '')),
           el('span', { class: 'p' }, s.prompt),
           el('span', { class: 'meta' }, (s.paused ? 'Not running' : 'Next ' + soon(s.next)) + ' · ' + short(s.directory)),
+          // SCH-24: how its last runs went, oldest first; each opens its job.
+          s.runs && s.runs.length > 0 && el('div', { class: 'runs' }, el('span', { class: 'meta' }, 'Last runs'),
+            s.runs.slice().reverse().map((r) => el('button', { class: 'run s-' + (r.unchanged ? 'stopped' : r.status),
+              'aria-label': (r.unchanged ? 'nothing new' : r.status) + ', ' + ago(r.created), title: (r.unchanged ? 'nothing new' : r.status) + ', ' + ago(r.created),
+              onclick: () => { open = r.id; failed = ''; refresh() } }, mark(r)))),
           el('div', { class: 'row' },
             el('button', { class: 'no', disabled: busy, onclick: () => act(async () => { open = (await api('/schedules/' + s.id + '/run', {})).id }) }, 'Run now'),
             // SCH-21

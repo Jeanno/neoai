@@ -121,6 +121,13 @@ const from = (s: Schedule) => new Date(s.last ?? s.created)
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
+/** A schedule's runs as marks, oldest first (SCH-23). */
+export function runMarks(runs: { status: string; unchanged?: boolean }[]): string {
+  const mark = (r: { status: string; unchanged?: boolean }) =>
+    r.status === 'done' ? (r.unchanged ? '–' : '✓') : r.status === 'failed' || r.status === 'interrupted' ? '✗' : r.status === 'stopped' ? '■' : '…'
+  return [...runs].reverse().map(mark).join('')
+}
+
 /** "every 30 min", "at 08:00 on Mon, Tue". */
 export function whenText(s: When): string {
   if (s.every !== undefined) return s.every % 60 ? `every ${s.every} min` : `every ${s.every / 60} h`
