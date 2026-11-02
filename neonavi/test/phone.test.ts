@@ -280,3 +280,35 @@ test('MEM-13: the phone shows what navi remembers, adds a fact and forgets one',
   await page.getByRole('button', { name: '‹ Jobs' }).click()
   await page.getByText('No jobs yet.').waitFor()
 })
+
+test('JOB-26: the phone deletes a finished job, and clears the rest', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const jobs = await makeJobs({
+    home,
+    start: async () => ({
+      model: 'small',
+      session: { history: [], async *turn() { yield { type: 'done', history: [], text: 'Done.', empty: false, stopped: false } as const } },
+    }),
+    notify: () => {},
+  })
+  for (const p of ['alpha job', 'beta job', 'gamma job']) jobs.create(p, home)
+  await jobs.idle()
+  const token = '6'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  page.on('dialog', (d) => d.accept())
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByText('beta job').click()
+  await page.getByRole('button', { name: 'Delete job' }).click()
+  await page.getByRole('button', { name: 'Clear finished jobs' }).waitFor()
+  assert.equal(await page.getByText('beta job').count(), 0)
+  assert.equal(jobs.list().length, 2)
+  await page.getByRole('button', { name: 'Clear finished jobs' }).click()
+  await page.getByText('No jobs yet.').waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Clear finished jobs' }).count(), 0)
+})

@@ -102,7 +102,7 @@ const USAGE = [
   '       navi browser [--install]',
   '       navi stats [--days N]',
   '       navi job "<what you want done>" [-a <file>]… [-C <directory>]',
-  '       navi jobs [<id> [y | n | stop | undo | reply "<follow-up>" [-a <file>]…] | link]',
+  '       navi jobs [<id> [y | n | stop | undo | delete | reply "<follow-up>" [-a <file>]…] | clear | link]',
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
   '       navi schedules [<id> run | rm]',
   '       navi push test',
@@ -127,7 +127,7 @@ const ABOUT = [
   "navi browser         open navi's browser to sign in to sites; --install gets Chromium for it",
   'navi stats           how each model has done, from the ledger; --days N (default 30)',
   'navi job "…"         hand navi serve a job to do in the background; -a sends a file, -C sets where',
-  'navi jobs            list jobs; <id> shows one, then y, n, stop, undo or reply; link is for a phone',
+  'navi jobs            list jobs; <id> shows one, then y, n, stop, undo, delete or reply; clear deletes finished ones; link is for a phone',
   'navi schedule "…"    have navi serve start a job at a time of day or every so often;',
   '                     --only-changes makes it a watch that only speaks when something changed',
   'navi schedules       list schedules and their next run; <id> run starts one now, rm deletes it',
@@ -390,15 +390,15 @@ async function replyJobCommand(n: number, id: string, argv: string[]) {
   return 0
 }
 
-const JOBS_USAGE = 'usage: navi jobs [<id> [y | n | stop | undo | reply "<follow-up>" [-a <file>]…] | link] [--port N]'
+const JOBS_USAGE = 'usage: navi jobs [<id> [y | n | stop | undo | delete | reply "<follow-up>" [-a <file>]…] | clear | link] [--port N]'
 
-/** `navi jobs [<id> [y | n | stop | undo | reply …] | link] [--port N]` (JOB-12, JOB-13, JOB-20). */
+/** `navi jobs [<id> [y | n | stop | undo | delete | reply …] | clear | link] [--port N]` (JOB-12, JOB-13, JOB-20, JOB-26). */
 async function jobsCommand(argv: string[]) {
   const port = takeFlag(argv, '--port', true)
   const n = port.value === undefined ? DEFAULT_PORT : Number(port.value)
   const [id, what, ...extra] = port.rest
   if (what === 'reply' && Number.isInteger(n)) return replyJobCommand(n, id, extra)
-  if (extra.length || !Number.isInteger(n) || (what !== undefined && !['y', 'n', 'stop', 'undo'].includes(what))) {
+  if (extra.length || !Number.isInteger(n) || (what !== undefined && !['y', 'n', 'stop', 'undo', 'delete'].includes(what))) {
     console.error(JOBS_USAGE)
     return 1
   }
@@ -416,6 +416,23 @@ async function jobsCommand(argv: string[]) {
     const list = got.data.jobs ?? []
     if (!list.length) console.log('No jobs yet. Start one with `navi job "<what you want done>"`.')
     for (const j of list) console.log(`${bold(j.id)}  ${statusWord(j.status, j.unchanged).padEnd(10)}  ${ago(new Date(j.created)).padEnd(10)}  ${titleOf(j.prompt)}`)
+    return 0
+  }
+  if (id === 'clear' && what === undefined) {
+    // JOB-26
+    const got = await jobsApi(n, '/jobs/clear', {})
+    if (!got) return console.error(NOT_SERVING), 1
+    if (got.status !== 200) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
+    const k = got.data.cleared as number
+    console.log(k ? `Deleted ${k} finished job${k === 1 ? '' : 's'}; any still working are kept.` : 'No finished jobs to delete.')
+    return 0
+  }
+  if (what === 'delete') {
+    // JOB-26
+    const got = await jobsApi(n, `/jobs/${id}/delete`, {})
+    if (!got) return console.error(NOT_SERVING), 1
+    if (got.status !== 200) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
+    console.log(`Deleted job ${bold(id)}.`)
     return 0
   }
   if (what === 'undo') {

@@ -75,6 +75,9 @@ or with `navi jobs <id> reply "<follow-up>" -a <file>` (JOB-19, JOB-20).
 Two jobs run at once (`"jobsAtOnce"` in the config changes that); the rest
 wait as `queued` and start in order, and one waiting on your yes or no
 holds no place (JOB-21 to JOB-23).
+A job you are done with can be deleted (`navi jobs <id> delete`, or Delete
+job on the phone page), and `navi jobs clear` or Clear finished jobs
+deletes every one not still working (JOB-24 to JOB-26).
 Answers on the phone page are shown formatted (headings, lists, tables,
 code, links), and since an answer can quote a web page, none of it is ever
 read as HTML: only http(s) links work, and nothing in an answer can run

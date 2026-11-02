@@ -188,6 +188,8 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
     if (typeof attachments === 'string') return error(res, 400, attachments)
     return json(res, 201, shownJob(jobs.create(body.prompt.trim(), directory, { attachments })))
   }
+  // JOB-25: every job that is done with.
+  if (req.method === 'POST' && parts.length === 1 && parts[0] === 'clear') return json(res, 200, { cleared: await jobs.clear() })
   const job = parts[0] ? jobs.get(parts[0]) : undefined
   if (!job) return error(res, 404, `There is no job ${parts[0] ?? ''}.`)
   const home = o.home ?? homedir()
@@ -217,8 +219,10 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
       return jobs.reply(job.id, body.prompt.trim(), attachments) ? json(res, 200, shownJob(jobs.get(job.id)!)) : error(res, 400, 'The job is still working; wait for it, or stop it.')
     }
     if (parts[1] === 'stop') return jobs.stop(job.id) ? json(res, 200, shownJob(jobs.get(job.id)!)) : error(res, 400, 'The job is not running.')
+    // JOB-24
+    if (parts[1] === 'delete') return (await jobs.remove(job.id)) ? json(res, 200, { deleted: job.id }) : error(res, 400, 'The job is still working; stop it first.')
   }
-  error(res, 404, `Jobs answer GET /jobs, POST /jobs, GET /jobs/<id> and POST /jobs/<id>/answer, reply, stop or undo, not ${req.method} ${path}.`)
+  error(res, 404, `Jobs answer GET /jobs, POST /jobs, POST /jobs/clear, GET /jobs/<id> and POST /jobs/<id>/answer, reply, stop, undo or delete, not ${req.method} ${path}.`)
 }
 
 /**

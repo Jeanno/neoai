@@ -135,5 +135,18 @@ terminal that started them closes.
 - JOB-23: `navi jobs` and the phone page show a queued job as `queued`; the
   phone page offers Stop for it, as for one running.
 
+## Deleting
+
+- JOB-24: `POST /jobs/<id>/delete` deletes a job that is not working
+  (JOB-22): gone from the list and from `~/.neoai/jobs`, after any write of
+  it still under way, so it does not come back. One that is working is a
+  400 saying to stop it first. Files it changed are left as they are.
+- JOB-25: `POST /jobs/clear` deletes every job that is not working and
+  answers how many; those queued, running or waiting are kept.
+- JOB-26: `navi jobs <id> delete` and `navi jobs clear` do the same from the
+  terminal. The phone page has Delete job on a job that is not working,
+  and Clear finished jobs under the list when there are any, each after a
+  confirm; a deleted job's page goes back to the list.
+
 ## Open
 

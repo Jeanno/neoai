@@ -555,3 +555,35 @@ test('memory can be read, added to and forgotten through the API, with the token
     off.close()
   }
 })
+
+// JOB-24, JOB-25
+test('a finished job can be deleted, for good, and clear deletes all those not working', async () => {
+  const { jobs, home } = await setup()
+  const token = 'd'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const call = (path: string) =>
+    fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: '{}' })
+  try {
+    const one = jobs.create('one', '/tmp')
+    const two = jobs.create('two', '/tmp')
+    await jobs.idle()
+    const hanging = jobs.create('hang', '/tmp')
+    assert.equal((await call(`/jobs/${hanging.id}/delete`)).status, 400)
+
+    const del = await call(`/jobs/${one.id}/delete`)
+    assert.deepEqual(await del.json(), { deleted: one.id })
+    assert.equal(jobs.get(one.id), undefined)
+    assert.equal((await call(`/jobs/${one.id}/delete`)).status, 404)
+
+    assert.deepEqual(await (await call('/jobs/clear')).json(), { cleared: 1 })
+    assert.equal(jobs.get(two.id), undefined)
+    assert.ok(jobs.get(hanging.id))
+    // Gone from disk too, so a restart does not bring them back.
+    const again = await makeJobs({ home, start: async () => { throw new Error('unused') }, notify: () => {} })
+    assert.deepEqual(again.list().map((j) => j.id), [hanging.id])
+    jobs.stop(hanging.id)
+    await jobs.idle()
+  } finally {
+    server.close()
+  }
+})

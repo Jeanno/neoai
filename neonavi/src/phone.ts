@@ -227,6 +227,7 @@ ${MARKDOWN_JS}
       return
     }
     const waiting = jobs.filter((j) => j.status === 'waiting').length
+    const finished = jobs.filter((j) => !['queued', 'running', 'waiting'].includes(j.status)).length
     const head = el('h1', {}, open || remembering ? el('button', { class: 'plain', onclick: () => { open = null; job = null; reply = ''; more = []; remembering = false; failed = ''; render(); refresh() } }, '‹ Jobs') : 'navi',
       el('small', {}, waiting ? waiting + ' waiting' : jobs.some((j) => j.status === 'running' || j.status === 'queued') ? 'working' : ''))
     const err = (failed || problem) && el('p', { class: 'err' }, failed || problem)
@@ -287,6 +288,12 @@ ${MARKDOWN_JS}
                 await api('/jobs/' + job.id + '/reply', { prompt: reply, ...(more.length && { files: more }) })
                 reply = ''; more = []
               }) }, 'Send'))),
+        // JOB-26: done with, it can go.
+        !live && el('button', { class: 'plain more', disabled: busy, onclick: () => {
+          if (confirm('Delete this job? Its answer and log go; files it changed stay as they are.')) act(async () => {
+            await api('/jobs/' + job.id + '/delete', {}); open = null; job = null; reply = ''; more = []
+          })
+        } }, 'Delete job'),
         err)
     } else {
       put(head,
@@ -327,7 +334,10 @@ ${MARKDOWN_JS}
           el('span', { class: 'status s-' + j.status }, j.unchanged ? 'nothing new' : j.status),
           el('span', { class: 'p' }, j.prompt),
           el('span', { class: 'meta' }, ago(j.created) + (j.model ? ' · ' + j.model : ''))))
-          : el('p', { class: 'empty' }, 'No jobs yet.'))
+          : el('p', { class: 'empty' }, 'No jobs yet.'),
+        finished > 0 && el('button', { class: 'plain more', disabled: busy, onclick: () => {
+          if (confirm('Delete ' + finished + ' finished job' + (finished === 1 ? '' : 's') + '? Any still working are kept.')) act(() => api('/jobs/clear', {}))
+        } }, 'Clear finished jobs'))
     }
     if (active) {
       const again = document.getElementById(active)

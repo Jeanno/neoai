@@ -98,6 +98,10 @@ export interface Jobs {
   stop(id: string): boolean
   /** Adds lines to a job's log (UND-12); false when there is no such job. */
   note(id: string, lines: string[]): Promise<boolean>
+  /** Deletes a job that is not working (JOB-24); false when there is none, or it is. */
+  remove(id: string): Promise<boolean>
+  /** Deletes every job that is not working (JOB-25); how many. */
+  clear(): Promise<number>
   /** Settles once no job is running: for tests and shutdown. */
   idle(): Promise<void>
 }
@@ -165,14 +169,17 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
     return writes
   }
 
+  /** Gone from memory and disk, after any write of it still on its way. */
+  const forget = (id: string) => {
+    jobs.delete(id)
+    writes = writes.then(() => rm(join(dir, `${id}.json`), { force: true }).catch(() => {}))
+    return writes
+  }
+
   /** Past the 100 most recent, the oldest that are not busy go (JOB-6). */
   const prune = async () => {
     const all = [...jobs.values()].sort((a, b) => b.created.localeCompare(a.created))
-    for (const old of all.slice(KEPT)) {
-      if (working(old.status)) continue
-      jobs.delete(old.id)
-      await rm(join(dir, `${old.id}.json`), { force: true }).catch(() => {})
-    }
+    for (const old of all.slice(KEPT)) if (!working(old.status)) await forget(old.id)
   }
 
   async function run(job: Job, prompt: string, attachments?: Attachment[]) {
@@ -340,6 +347,17 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
       job.log.push(...lines)
       await save(job)
       return true
+    },
+    async remove(id) {
+      const job = jobs.get(id)
+      if (!job || working(job.status)) return false
+      await forget(id)
+      return true
+    },
+    async clear() {
+      const done = [...jobs.values()].filter((j) => !working(j.status))
+      for (const j of done) await forget(j.id)
+      return done.length
     },
     async idle() {
       while (running.size) await Promise.all([...running])

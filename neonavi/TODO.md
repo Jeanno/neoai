@@ -78,6 +78,8 @@ add the requirement there first.
 - [x] A queue: two jobs at once (`"jobsAtOnce"`), the rest `queued` in
       order and stoppable; one waiting on you holds no place. (JOB-21 to
       JOB-23)
+- [x] Delete a finished job, or clear them all, from the phone page or
+      `navi jobs`; never one still working. (JOB-24 to JOB-26)
 - [x] Answers on the phone page formatted from their Markdown (lists,
       tables, code, links), built as elements so nothing in an answer runs;
       only http(s) links. (JOB-17, JOB-18)
