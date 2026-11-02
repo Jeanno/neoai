@@ -133,6 +133,7 @@ add the requirement there first.
 - [x] A project's facts on the phone: seen, added and forgotten for the
       projects navi serve offers. (MEM-18, MEM-19)
 - [x] Suggest facts to remember when leaving a conversation with exit. (MEM-20 to MEM-22)
+- [x] Suggest facts from a finished job on the phone, on a tap. (MEM-23, MEM-24)
 - [x] Undo: `navi undo` and `/undo` put back the files navi's last turn
       changed, never over edits made since, and the model is told.
       (UND-1 to UND-9)

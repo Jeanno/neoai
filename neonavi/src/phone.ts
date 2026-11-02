@@ -170,6 +170,8 @@ ${MARKDOWN_JS}
   let remembering = false, memory = { facts: [], off: false, projects: [] }, fact = '', about = ''
   // JOB-28: whether a job's earlier turns are shown, kept across refreshes.
   let earlierOpen = false
+  // MEM-23: what the model found worth remembering from the open job, and which were kept.
+  let suggested = null
   // JOB-34: repeating the open job on a schedule, as { repeat, time, quiet }, or null.
   let repeating = null
   // SCH-18: the schedule being edited, as { id, prompt, repeat, time, quiet }, kept across refreshes.
@@ -282,7 +284,7 @@ ${MARKDOWN_JS}
     }
     const waiting = jobs.filter((j) => j.status === 'waiting').length
     const finished = jobs.filter((j) => !['queued', 'running', 'waiting'].includes(j.status)).length
-    const head = el('h1', {}, open || remembering ? el('button', { class: 'plain', onclick: () => { open = null; job = null; reply = ''; more = []; remembering = false; failed = ''; earlierOpen = false; repeating = null; render(); refresh() } }, '‹ Jobs') : 'navi',
+    const head = el('h1', {}, open || remembering ? el('button', { class: 'plain', onclick: () => { open = null; job = null; reply = ''; more = []; remembering = false; failed = ''; earlierOpen = false; repeating = null; suggested = null; render(); refresh() } }, '‹ Jobs') : 'navi',
       el('small', {}, waiting ? waiting + ' waiting' : jobs.some((j) => j.status === 'running' || j.status === 'queued') ? 'working' : ''))
     const err = (failed || problem) && el('p', { class: 'err' }, failed || problem)
     if (remembering) {
@@ -349,6 +351,23 @@ ${MARKDOWN_JS}
           el('div', { class: 'meta' }, 'Cut short: the answer reached the model’s token cap.'),
           el('div', { class: 'row' }, el('button', { disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/reply', { prompt: 'Go on from where you stopped.' })) }, 'Go on'))),
         job.error && el('p', { class: 'err' }, job.error),
+        // MEM-23: asked for, never by itself; each kept only on its own tap.
+        !live && job.suggests && (suggested && suggested.id === job.id
+          ? el('div', { class: 'card' },
+              suggested.list.length
+                ? [el('div', { class: 'meta' }, 'Worth remembering?'), suggested.list.map((s) => el('div', { class: 'turn' },
+                    el('div', { class: 'answer' }, s.fact),
+                    el('div', { class: 'meta' }, s.project ? 'About ' + short(s.project) : 'About you'),
+                    suggested.kept.includes(s.fact)
+                      ? el('div', { class: 'meta' }, 'Remembered')
+                      : el('div', { class: 'row' }, el('button', { disabled: busy, onclick: () => act(async () => {
+                          await api('/memory', s.project ? { fact: s.fact, project: s.project } : { fact: s.fact })
+                          suggested.kept.push(s.fact)
+                        }) }, 'Remember'))))]
+                : el('div', { class: 'meta' }, 'Nothing new to remember from this job.'))
+          : el('div', { class: 'row' }, el('button', { class: 'no', disabled: busy, onclick: () => act(async () => {
+              suggested = { id: job.id, list: (await api('/jobs/' + job.id + '/suggest', {})).suggestions, kept: [] }
+            }) }, 'Anything to remember?'))),
         job.log.length > 0 && el('div', { class: 'card' }, el('div', { class: 'meta' }, 'What it did'), el('pre', {}, job.log.join('\\n'))),
         // UND-13: what it changed can be put back once it is done; what happened goes in the log above.
         !live && job.changes && job.changes.length > 0 && el('div', { class: 'card' },

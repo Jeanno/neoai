@@ -614,3 +614,44 @@ test('JOB-35: a cut job offers Go on, which follows up and is gone once it is an
   assert.deepEqual(asked, ['tell me a story', 'Go on from where you stopped.'])
   assert.equal(await page.getByRole('button', { name: 'Go on' }).count(), 0)
 })
+
+test('MEM-23: a finished job asks what is worth remembering only on a tap, and keeps each on its own', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const said = async function* (prompt: string, history: import('ai').ModelMessage[]) {
+    const after: import('ai').ModelMessage[] = [...history, { role: 'user', content: prompt }, { role: 'assistant', content: 'Done.' }]
+    yield { type: 'done' as const, history: after, text: 'Done.', empty: false, stopped: false }
+  }
+  const jobs = await makeJobs({
+    home,
+    start: async ({ history }) => ({ session: { history, turn: (prompt: string) => said(prompt, history) } as never, model: 'small' }),
+    notify: () => {},
+  })
+  jobs.create('rename the photos, I always use tabs', home)
+  await jobs.idle()
+  let asked = 0
+  const suggest = async () => {
+    asked++
+    return [{ fact: 'Uses tabs', project: false }, { fact: 'Keeps photos by year', project: false }]
+  }
+  const token = 'e'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home, suggest } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByText('rename the photos').click()
+  await page.getByRole('button', { name: 'Anything to remember?' }).click()
+  await page.getByText('Keeps photos by year').waitFor()
+  assert.equal(asked, 1)
+  assert.deepEqual(await readMemory(home), [])
+  await page.getByRole('button', { name: 'Remember' }).first().click()
+  await page.getByText('Remembered').waitFor()
+  assert.deepEqual(await readMemory(home), ['Uses tabs'])
+  // The other is still offered, and the list survives the page's refreshes.
+  await page.waitForTimeout(3500)
+  assert.equal(await page.getByRole('button', { name: 'Remember' }).count(), 1)
+  assert.equal(asked, 1)
+})

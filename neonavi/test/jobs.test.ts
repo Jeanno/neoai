@@ -734,3 +734,67 @@ test('SCH-28: a second try says which job it tries again', async () => {
   assert.equal(got.retryOf, 'deadbeef')
   assert.equal(got.log[0], '· trying again: job deadbeef failed')
 })
+
+// MEM-23, MEM-24
+test('a finished job offers suggestions on asking, with project facts only for an offered project', async () => {
+  const { jobs, home } = await setup()
+  const repo = join(home, 'app')
+  await mkdir(join(repo, '.git'), { recursive: true })
+  const elsewhere = join(home, 'other')
+  await mkdir(join(elsewhere, '.git'), { recursive: true })
+  const token = 's'.repeat(64)
+  const seen: { history: ModelMessage[]; known: { you: string[]; project?: string[] } }[] = []
+  const suggest = async (history: ModelMessage[], known: { you: string[]; project?: string[] }) => {
+    seen.push({ history, known })
+    return [{ fact: 'Prefers tabs', project: false }, { fact: 'Tests run with make check', project: true }]
+  }
+  const serve = async (memory?: boolean, withSuggest = true) => {
+    const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [repo, home], home, memory, ...(withSuggest && { suggest }) } })
+    const call = async (path: string, body?: unknown) => {
+      const r = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+      return { status: r.status, body: await r.json() }
+    }
+    return { server, call }
+  }
+  const here = jobs.create('hello', repo)
+  const there = jobs.create('hello', elsewhere)
+  const busy = jobs.create('hang', repo)
+  await until(jobs, here.id, 'done')
+  await until(jobs, there.id, 'done')
+  const { server, call } = await serve()
+  try {
+    assert.equal((await call(`/jobs/${here.id}`)).body.suggests, true)
+    assert.equal((await call(`/jobs/${busy.id}`)).body.suggests, undefined)
+    // Nothing is asked until asked for.
+    assert.equal(seen.length, 0)
+    const got = await call(`/jobs/${here.id}/suggest`, {})
+    assert.deepEqual(got.body, { suggestions: [{ fact: 'Prefers tabs' }, { fact: 'Tests run with make check', project: repo }] })
+    assert.deepEqual(seen[0].known, { you: [], project: [] })
+    assert.ok(seen[0].history.some((m) => m.role === 'user' && m.content === 'hello'))
+    // Nothing is kept by suggesting it.
+    assert.deepEqual(await readMemory(home), [])
+    // The suggested project is one POST /memory takes.
+    assert.equal((await call('/memory', { fact: 'Tests run with make check', project: repo })).status, 201)
+    // A project navi serve does not offer has no project facts suggested.
+    const other = await call(`/jobs/${there.id}/suggest`, {})
+    assert.deepEqual(other.body.suggestions, [{ fact: 'Prefers tabs' }])
+    assert.equal(seen[1].known.project, undefined)
+    assert.equal((await call(`/jobs/${busy.id}/suggest`, {})).status, 400)
+  } finally {
+    server.close()
+    jobs.stop(busy.id)
+  }
+  for (const [memory, withSuggest] of [[false, true], [undefined, false]] as const) {
+    const off = await serve(memory, withSuggest)
+    try {
+      assert.equal((await off.call(`/jobs/${here.id}`)).body.suggests, undefined)
+      assert.equal((await off.call(`/jobs/${here.id}/suggest`, {})).status, 400)
+    } finally {
+      off.server.close()
+    }
+  }
+})

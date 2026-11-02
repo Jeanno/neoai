@@ -15,6 +15,8 @@ import { working, type Job, type Jobs } from './jobs.ts'
 import { checkWhen, type Schedules } from './schedules.ts'
 import { addFact, forgetFact, projectRoot, readMemory } from './memory.ts'
 import { exchanges } from './transcript.ts'
+import type { Suggestion } from './suggest.ts'
+import type { ModelMessage } from 'ai'
 import { PHONE_PAGE } from './phone.ts'
 import { attachUploads } from './attach.ts'
 import { jobChanges, undo, undoneReport } from './undo.ts'
@@ -92,6 +94,8 @@ export interface JobsOptions {
   home?: string
   /** False when the config turns memory off (MEM-4). */
   memory?: boolean
+  /** Facts worth remembering from what a job's user typed (MEM-23); none offered when left out. */
+  suggest?: (history: ModelMessage[], known: { you: string[]; project?: string[] }) => Promise<Suggestion[]>
 }
 
 /** Whether a request carries the token, compared in constant time (JOB-8). */
@@ -244,7 +248,19 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
     const turns = exchanges(job.history)
     // A follow-up is in the conversation only once it ends well; until then, or if it failed, what it asked.
     if (job.asked && turns.length && turns[turns.length - 1].prompt !== job.asked) turns.push({ prompt: job.asked })
-    return json(res, 200, { ...shownJob(job), changes: await jobChanges(home, job.directory, job.id), turns })
+    // MEM-23: whether the phone may ask what is worth remembering from it.
+    const suggests = !!o.suggest && o.memory !== false && !working(job.status) && turns.length > 0
+    return json(res, 200, { ...shownJob(job), changes: await jobChanges(home, job.directory, job.id), turns, ...(suggests && { suggests }) })
+  }
+  if (req.method === 'POST' && parts.length === 2 && parts[1] === 'suggest') {
+    if (!o.suggest || o.memory === false) return error(res, 400, 'Memory is off, or navi serve suggests nothing.')
+    if (working(job.status)) return error(res, 400, 'The job is still working; wait for it, or stop it.')
+    // MEM-24: a project fact only for a project navi serve offers, which POST /memory takes.
+    const root = await projectRoot(job.directory, home)
+    const offered = root !== undefined && (await Promise.all((await o.directories()).map((d) => projectRoot(d, home)))).includes(root)
+    const known = { you: await readMemory(home), ...(offered && { project: await readMemory(home, root) }) }
+    const found = await o.suggest(job.history, known)
+    return json(res, 200, { suggestions: found.filter((s) => offered || !s.project).map((s) => ({ fact: s.fact, ...(s.project && { project: root }) })) })
   }
   if (req.method === 'POST' && parts.length === 2 && parts[1] === 'undo') {
     // UND-11: not while it may still be writing.
@@ -286,7 +302,7 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
     // JOB-24
     if (parts[1] === 'delete') return (await jobs.remove(job.id)) ? json(res, 200, { deleted: job.id }) : error(res, 400, 'The job is still working; stop it first.')
   }
-  error(res, 404, `Jobs answer GET /jobs, POST /jobs, POST /jobs/clear, GET /jobs/<id> and POST /jobs/<id>/answer, reply, stop, undo, schedule or delete, not ${req.method} ${path}.`)
+  error(res, 404, `Jobs answer GET /jobs, POST /jobs, POST /jobs/clear, GET /jobs/<id> and POST /jobs/<id>/answer, reply, stop, undo, suggest, schedule or delete, not ${req.method} ${path}.`)
 }
 
 /**

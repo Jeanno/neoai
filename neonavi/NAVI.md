@@ -174,7 +174,10 @@ When you leave a conversation of three or more answers with `exit`, navi
 looks over what you typed (only that, not its answers or what it read) and
 may suggest up to two facts, each asked about as usual; ^C skips it, ^C or
 ^D at the prompt leave at once, and `"suggest_memory": false` turns it off
-(MEM-20 to MEM-22).
+(MEM-20 to MEM-22). On the phone, a finished job has an "Anything to
+remember?" button that does the same over what you asked it, with a
+Remember button on each suggestion; nothing is asked or kept untapped
+(MEM-23, MEM-24).
 
 `navi mcp` is navi as an MCP server: clients such as Claude Desktop, Claude
 Code or Cursor get one tool, `ask_navi`, that hands a task (and any files) to

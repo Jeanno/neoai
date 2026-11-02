@@ -22,7 +22,7 @@ export interface Suggestion {
   project: boolean
 }
 
-const ASK = `You help an assistant remember things between conversations. Below are the messages a user typed in one conversation. List at most ${MOST} lasting facts the user stated about themselves, how they like to work, or the project they are working in, that would help in later conversations: preferences, names, tools, conventions. Not the task of the moment, not questions, not anything the user only asked about. Write each as one short sentence on its own line, starting "you: " for a fact about the user or "project: " for one about the project. If there is nothing like that, answer NONE.`
+const ASK = `You help an assistant remember things between conversations. Below are the messages a user typed in one conversation. List at most ${MOST} lasting facts the user stated about themselves, how they like to work, or the project they are working in, that would help in later conversations: preferences, names, tools, conventions. Not the task of the moment, not questions, not anything the user only asked about. Write each on its own line, starting "you: " for a fact about the user or "project: " for one about the project, then the fact as a short note without naming the user, as in "you: Prefers tabs to spaces" or "project: Tests run with make check". If there is nothing like that, answer NONE.`
 
 /** What the user typed in this conversation, newest last. */
 export function typed(history: ModelMessage[]): string[] {

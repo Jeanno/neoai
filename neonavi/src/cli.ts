@@ -246,7 +246,21 @@ async function serve(argv: string[]) {
   const directories = async () => [...new Set([...(await listSessions(home)).flatMap((s) => (s.cwd ? [s.cwd] : [])), home])]
   try {
     await listen(chain, realServeDeps(say), n, {
-      jobs: { jobs, token: await serveToken(home), directories, schedules, memory: config.memory !== false },
+      jobs: {
+        jobs,
+        token: await serveToken(home),
+        directories,
+        schedules,
+        memory: config.memory !== false,
+        // MEM-23: asked of whichever model answers now, as a turn would be.
+        ...((config as { suggest_memory?: unknown }).suggest_memory !== false && {
+          suggest: async (history, known) => {
+            const c = await readConfig()
+            const now = (await walkChain(parseModelSpec(c.model, Object.keys(c.custom ?? {})))).chosen
+            return now ? suggestFacts(modelFor(now, c), history, known, AbortSignal.timeout(120_000)) : []
+          },
+        }),
+      },
       tailnet: tailnetAt,
     })
   } catch (e) {

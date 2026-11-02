@@ -105,6 +105,20 @@ of facts, read into every turn, that navi can add to only with your yes.
 - MEM-22: Each suggestion is asked about as the remember tool's are (MEM-7,
   `remember?` or `remember for <project>?`, y/N), and kept only on a yes.
 
+## Suggested on the phone
+
+- MEM-23: A job that is done with, in a navi serve with memory on and
+  `"suggest_memory"` not false, has `suggests: true` in `GET /jobs/<id>`,
+  and its page has an "Anything to remember?" button. Only a tap asks: no
+  job costs a call it was not asked for. `POST /jobs/<id>/suggest` asks the
+  model that answers now, once, as MEM-21 does, over what the job's user
+  typed, and answers `{ suggestions: [{ fact, project? }] }`, at most two;
+  it is a 400 while the job works or when memory is off. The page lists
+  each with whom it is about and a Remember button, which sends it to
+  `POST /memory` (MEM-10: sending it is the yes); none is kept untapped.
+- MEM-24: A suggestion's `project` is the root of the job's directory
+  (MEM-14), and only when that is a project navi serve offers (MEM-18), so
+  POST /memory takes it; otherwise project facts are not suggested.
+
 ## Open
 
-- Suggestions on the phone, when a job ends.
