@@ -58,6 +58,8 @@ add the requirement there first.
       first model does badly on the escalation model. (ESC-6, LED-11, LED-12)
 - [x] Asking the same again in other words counts against the answer;
       `navi stats` shows the share asked again. (LED-13, LED-14)
+- [x] Routing by the ledger counts corrections, repeats and undos of a kind
+      of turn too. (ESC-7, LED-15)
 
 ### 3. Everywhere: navi in the apps I already use
 

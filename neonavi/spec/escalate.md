@@ -37,6 +37,11 @@ struggles, without losing what was done.
   it is tried again once its bad turns are older than 30 days. Unset, or with
   no escalation model that resolves, every turn starts on the chain.
 
+- ESC-7: Routing (ESC-6) also counts as gone badly each answer of the
+  model, of the turn's kind, that the user corrected, asked for again, or
+  undid (LED-15), from the first of the latest turns it is judged by on;
+  never more than those turns.
+
 ## Open
 
 - Escalate sooner within a turn, not only start elsewhere, for a model the

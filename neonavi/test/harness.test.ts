@@ -772,6 +772,8 @@ test('the ledger notes when a turn asks the one before again, never the words; a
   await collect(h.session().turn('write a changelog entry'))
   const entries = await ledgerOf(home)
   assert.deepEqual(entries.map((e) => [e.repeats, e.corrects]), [[undefined, undefined], ['small', undefined], [undefined, 'small'], [undefined, undefined], [undefined, undefined]])
+  // LED-15: each says what sort of turn it was about; the rest say nothing of it.
+  assert.deepEqual(entries.map((e) => e.aboutKind), [undefined, 'ask', 'ask', undefined, undefined])
   assert.doesNotMatch(JSON.stringify(entries), /macos|changelog/i)
 })
 

@@ -64,10 +64,14 @@ what was said.
   taken for what was asked; the first turn of a conversation repeats nothing.
 - LED-14: `navi stats` shows, for a model whose answers were asked for again,
   their share of its answers (`25% asked again`).
+- LED-15: A turn that corrects or repeats (LED-7, LED-13) also records
+  `aboutKind`, the kind (LED-11) of the turn before it, and an undo line
+  (LED-9) records the undone turn's `kind`, by its prompt as kept for undo
+  (files attached to it are not kept there, so it is `change` or `ask`).
 
 ## Open
 
 - Routing by more than the three kinds, such as by the tools a turn ends up
   using.
-- Counting a correction or a repeat as a turn gone badly when routing
-  (ESC-6).
+- Which of a model's turns a correction, repeat or undo was about, rather
+  than how many of its kind since its first sampled turn (ESC-7).

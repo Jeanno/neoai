@@ -30,6 +30,8 @@ export interface LedgerEntry {
   corrects?: string
   /** The model whose answer this turn asked again for, in other words (LED-13); never the prompt. */
   repeats?: string
+  /** The kind of the turn corrected or asked again (LED-15), for routing (ESC-7). */
+  aboutKind?: TurnKind
   /** The answer ended at the token cap (HAR-11). */
   cut?: true
 }
@@ -38,30 +40,38 @@ export interface LedgerEntry {
 export interface UndoneEntry {
   at: string
   undid: string
+  /** The undone turn's kind, by its prompt (LED-15). */
+  kind?: TurnKind
 }
 
 /**
  * Notes that the user undid turns' file changes (LED-9), one line per turn
  * whose model is known; only when something was put back. Never throws.
  */
-export async function recordUndone(home: string, turns: { model?: string }[], put: boolean, now = new Date()): Promise<void> {
+export async function recordUndone(home: string, turns: { model?: string; prompt?: string }[], put: boolean, now = new Date()): Promise<void> {
   if (!put) return
-  for (const t of turns) if (t.model) await record(home, { at: now.toISOString(), undid: t.model })
+  // LED-15: the turn's kind by its prompt; what was attached to it is not kept with it.
+  for (const t of turns) if (t.model) await record(home, { at: now.toISOString(), undid: t.model, ...(t.prompt !== undefined && { kind: kindOf(t.prompt, 0) }) })
 }
 
-/** The models of the turns undone since `since` (LED-9). */
-export async function readUndone(home: string, since = 0): Promise<string[]> {
+/** The undo lines since `since` (LED-9). */
+export async function readUndoneEntries(home: string, since = 0): Promise<UndoneEntry[]> {
   const text = await readFile(ledgerFile(home), 'utf8').catch(() => '')
-  const out: string[] = []
+  const out: UndoneEntry[] = []
   for (const line of text.split('\n')) {
     try {
       const e = JSON.parse(line) as Partial<UndoneEntry>
-      if (typeof e.undid === 'string' && typeof e.at === 'string' && Date.parse(e.at) >= since) out.push(e.undid)
+      if (typeof e.undid === 'string' && typeof e.at === 'string' && Date.parse(e.at) >= since) out.push(e as UndoneEntry)
     } catch {
       // As readLedger.
     }
   }
   return out
+}
+
+/** The models of the turns undone since `since` (LED-9). */
+export async function readUndone(home: string, since = 0): Promise<string[]> {
+  return (await readUndoneEntries(home, since)).map((e) => e.undid)
 }
 
 /** How soon after an answer a correction still counts as one (LED-7). */
@@ -101,15 +111,22 @@ export const ROUTE_MIN = 5
 /**
  * Why a turn of this kind should not start on `model` (ESC-6): more than half
  * of its latest such turns that started on it went badly (it escalated away,
- * or ended with an error or nothing). Turns routed past it are not its own,
- * so a model gets another go once its bad turns are old. Undefined when it
- * should start there.
+ * or ended with an error or nothing), counting too each of its answers of
+ * that kind the user corrected, asked for again or undid since the first of
+ * them (ESC-7). Turns routed past it are not its own, so a model gets another
+ * go once its bad turns are old. Undefined when it should start there.
  */
-export function routeAway(entries: LedgerEntry[], model: string, kind: TurnKind): string | undefined {
+export function routeAway(entries: LedgerEntry[], model: string, kind: TurnKind, undone: UndoneEntry[] = []): string | undefined {
   const started = entries.filter(
     (e) => e.kind === kind && e.outcome !== 'stopped' && !e.escalated?.routed && (e.escalated ? e.escalated.from === model : e.model === model),
   ).slice(-ROUTE_LAST)
-  const bad = started.filter((e) => e.escalated || e.outcome === 'error' || e.outcome === 'empty').length
+  const since = started.length ? started[0].at : ''
+  const told =
+    entries.filter((e) => e.aboutKind === kind && e.at >= since && (e.corrects === model || e.repeats === model)).length +
+    undone.filter((u) => u.kind === kind && u.undid === model && u.at >= since).length
+  const failed = started.filter((e) => e.escalated || e.outcome === 'error' || e.outcome === 'empty').length
+  // A turn can go badly more than one way; it is still one turn.
+  const bad = Math.min(started.length, failed + told)
   if (started.length < ROUTE_MIN || bad * 2 <= started.length) return
   return `by the ledger, ${model} went badly on ${bad} of its last ${started.length} ${KIND_WORDS[kind]}`
 }

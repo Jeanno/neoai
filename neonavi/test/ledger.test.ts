@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { appendFile, mkdtemp, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { kindOf, ledgerFile, readLedger, readsAsCorrection, readsAsRepeat, readUndone, record, recordUndone, routeAway, stats, type LedgerEntry, type TurnKind } from '../src/ledger.ts'
+import { kindOf, ledgerFile, readLedger, readsAsCorrection, readsAsRepeat, readUndone, readUndoneEntries, record, recordUndone, routeAway, stats, type LedgerEntry, type TurnKind } from '../src/ledger.ts'
 
 const entry = (o: Partial<LedgerEntry> = {}): LedgerEntry => ({
   at: new Date().toISOString(),
@@ -171,4 +171,35 @@ test('a prompt that asks the one before again, in other words, reads as a repeat
 test('navi stats shows the share of answers asked for again', () => {
   const e = (extra: Partial<LedgerEntry>): LedgerEntry => ({ at: '2026-11-01T00:00:00Z', front: 'cli', model: 'q', local: true, ms: 1000, steps: 1, tools: {}, toolErrors: 0, declined: 0, promptChars: 1, attachments: 0, outcome: 'answered', ...extra })
   assert.match(stats([e({}), e({}), e({}), e({ repeats: 'q' })], 30), /q: 4 turns · 100% answered · 25% asked again ·/)
+})
+
+// ESC-7, LED-15
+test('corrections, repeats and undos of a kind count against the model when routing, from its first sampled turn on', async () => {
+  const at = (m: number) => new Date(Date.UTC(2026, 10, 1, 0, m)).toISOString()
+  const turn = (m: number, extra: Partial<LedgerEntry> = {}): LedgerEntry => ({ at: at(m), front: 'cli', model: 's', local: true, ms: 1, steps: 1, tools: {},
+    toolErrors: 0, declined: 0, promptChars: 1, attachments: 0, outcome: 'answered', kind: 'change', ...extra })
+  const five = [1, 2, 3, 4, 5].map((m) => turn(m))
+  assert.equal(routeAway(five, 's', 'change'), undefined)
+  // Two corrections and a repeat of its change answers: 3 of 5.
+  const told = [turn(6, { kind: 'ask', corrects: 's', aboutKind: 'change' }), turn(7, { kind: 'ask', repeats: 's', aboutKind: 'change' }), turn(8, { kind: 'ask', corrects: 's', aboutKind: 'change' })]
+  // The three told-turns are questions of s's own, so they are its ask sample; its change sample stays at five.
+  assert.equal(routeAway([...five, ...told], 's', 'change'), 'by the ledger, s went badly on 3 of its last 5 turns asking for a change')
+  // About another kind, or another model, they do not count.
+  assert.equal(routeAway([...five, ...told.map((t) => ({ ...t, aboutKind: 'ask' as const }))], 's', 'change'), undefined)
+  assert.equal(routeAway([...five, ...told.map((t) => ({ ...t, corrects: t.corrects && 'x', repeats: t.repeats && 'x' }))], 's', 'change'), undefined)
+  // Undos count the same way; one from before the sample does not.
+  const undone = [{ at: at(0), undid: 's', kind: 'change' as const }, { at: at(6), undid: 's', kind: 'change' as const }, { at: at(7), undid: 's', kind: 'change' as const }]
+  assert.equal(routeAway(five, 's', 'change', undone), undefined)
+  assert.match(routeAway(five, 's', 'change', [...undone, { at: at(9), undid: 's', kind: 'change' }]) ?? '', /3 of its last 5/)
+  // Never more bad turns than turns.
+  const failing = five.map((t) => ({ ...t, outcome: 'error' as const }))
+  assert.match(routeAway(failing, 's', 'change', undone) ?? '', /5 of its last 5/)
+})
+
+// LED-15
+test('an undo line keeps the kind of the turn it undid, by its prompt', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-led-'))
+  await recordUndone(home, [{ model: 'm', prompt: 'fix the footer' }, { model: 'm', prompt: 'what is in here' }, { model: 'm' }], true)
+  assert.deepEqual((await readUndoneEntries(home)).map((e) => e.kind), ['change', 'ask', undefined])
+  assert.deepEqual(await readUndone(home), ['m', 'm', 'm'])
 })

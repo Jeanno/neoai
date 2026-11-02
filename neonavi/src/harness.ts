@@ -18,7 +18,7 @@ import { splitUserContent, userContent, type Attachment } from './attach.ts'
 
 export { attach, splitUserContent, type Attachment } from './attach.ts'
 import { searchBackend } from './web.ts'
-import { CORRECTION_WINDOW, kindOf, readLedger, readsAsCorrection, readsAsRepeat, record, routeAway, ROUTE_DAYS, type LedgerEntry } from './ledger.ts'
+import { CORRECTION_WINDOW, kindOf, readLedger, readsAsCorrection, readsAsRepeat, readUndoneEntries, record, routeAway, ROUTE_DAYS, type LedgerEntry } from './ledger.ts'
 import type { Tab } from './browser.ts'
 export { allowable, type Answer } from './approve.ts'
 
@@ -251,10 +251,15 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       // LED-7, LED-13: the answer before, if recent enough to be what this turn is about, and what was asked for it.
       const recent = answered && started - answered.at < CORRECTION_WINDOW ? answered : undefined
       // navi's own notes (UND-7, ESC-3) are not what the user asked.
-      const said = (m: ModelMessage) =>
-        m.role === 'user' ? splitUserContent(m.content as Parameters<typeof splitUserContent>[0]).prompt.replace(/^(\(navi: [\s\S]*?\)(\n\n|$))+/, '').trim() : ''
-      let before = ''
-      for (let i = history.length - 1; i >= 0 && !before; i--) before = said(history[i])
+      const said = (m: ModelMessage) => {
+        if (m.role !== 'user') return { text: '', files: 0 }
+        const { prompt, names } = splitUserContent(m.content as Parameters<typeof splitUserContent>[0])
+        return { text: prompt.replace(/^(\(navi: [\s\S]*?\)(\n\n|$))+/, '').trim(), files: names.length }
+      }
+      let before = { text: '', files: 0 }
+      for (let i = history.length - 1; i >= 0 && !before.text && !before.files; i--) before = said(history[i])
+      // LED-15: what sort of turn a correction or repeat is about.
+      const about = { aboutKind: kindOf(before.text, before.files) }
       let declined = 0
       const ask = (command: string, signal: AbortSignal, change?: FileChange, action?: { url: string }, memory?: string, project?: string) =>
         askUser(command, signal, change, action, memory, project).then((ok) => {
@@ -462,7 +467,8 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       const kind = kindOf(prompt, attachments?.length ?? 0)
       // ESC-6: a kind of turn the first model has done badly starts where it would end up.
       const ledgered = config.route === 'ledger' && config.ledger !== false && !!o.escalate
-      const away = ledgered ? routeAway(await readLedger(home, Date.now() - ROUTE_DAYS * 86_400_000), named.model, kind) : undefined
+      const since = Date.now() - ROUTE_DAYS * 86_400_000
+      const away = ledgered ? routeAway(await readLedger(home, since), named.model, kind, await readUndoneEntries(home, since)) : undefined
       const routed = away ? await target() : null
       let escalated: { from: string; reason: string; routed?: true } | undefined
       let answering = named
@@ -509,7 +515,9 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           outcome: stopped ? 'stopped' : text.trim() ? 'answered' : failed ? 'error' : 'empty',
           kind,
           ...(escalated && { escalated }),
-          ...(recent && readsAsCorrection(prompt) ? { corrects: recent.model } : recent && readsAsRepeat(prompt, before) && { repeats: recent.model }),
+          ...(recent && readsAsCorrection(prompt)
+            ? { corrects: recent.model, ...about }
+            : recent && readsAsRepeat(prompt, before.text) && { repeats: recent.model, ...about }),
           ...(done.cut && { cut: true as const }),
         }
         await record(home, entry)
