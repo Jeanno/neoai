@@ -97,6 +97,8 @@ add the requirement there first.
       (UND-1 to UND-9)
 - [x] Undo a job's changes from the phone page (Undo changes) or
       `navi jobs <id> undo`, leaving other jobs' alone. (UND-10 to UND-13)
+- [x] `navi sessions show` prints a saved conversation as Markdown, tools
+      a line each, navi's own notes as quotes. (SES-15 to SES-17)
 - [x] Redo: `navi redo` and `/redo` bring back what an undo put back, never
       over a change made since; the model is told. (UND-14 to UND-16)
 - [ ] Undo from Raycast. (`spec/undo.md` Open)

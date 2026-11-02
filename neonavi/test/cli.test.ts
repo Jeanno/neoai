@@ -91,6 +91,10 @@ test('sessions with nothing saved says so', async () => {
   assert.equal(r.code, 0)
   assert.match(r.stdout, /No saved conversations yet/)
   assert.equal((await navi(['sessions', 'clear', '--all'])).stdout.trim(), 'There were no saved conversations.')
+  // SES-17
+  const none = await navi(['sessions', 'show'])
+  assert.equal(none.code, 1)
+  assert.match(none.stderr, /No conversation is saved for /)
 })
 
 /**
@@ -142,6 +146,10 @@ test('without a terminal navi answers once: the answer on stdout, everything els
   const saved = JSON.parse(await readFile(join(home, '.neoai', 'sessions', file), 'utf8'))
   assert.equal(saved.cwd.endsWith(home.split('/').pop()!), true)
   assert.deepEqual(saved.messages.map((m: any) => m.role), ['user', 'assistant', 'tool', 'assistant'])
+  // SES-15: read back as Markdown, by the path as typed too.
+  const shown = await navi(['sessions', 'show', home], { home })
+  assert.equal(shown.code, 0, shown.stderr)
+  assert.match(shown.stdout, /^# navi in .*\n\n## You\n\nwhat is here\n\n- list_dir: \.\n\n## navi\n\nIt holds \.neoai\.\n$/)
   // SES-14: cleared by the path as typed, though it was saved under the real one (/var is /private/var).
   const cleared = await navi(['sessions', 'clear', home], { home })
   assert.match(cleared.stdout, /^Deleted the conversation saved for /)

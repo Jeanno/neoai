@@ -167,6 +167,9 @@ never what was said), and `navi stats` shows how each model has done
 Each directory keeps its own conversation. `navi sessions` lists them, newest
 first; `navi sessions clear` forgets this directory's, `clear <directory>`
 another's, `clear --all` every one.
+`navi sessions show [<directory>]` prints one as Markdown, prompts, answers
+and the tools used between them, to read or keep:
+`navi sessions show > notes.md` (`spec/session.md` SES-15 to SES-17).
 
 When stdin is not a terminal (a pipe, a script) navi answers once and exits, so
 it still composes: `echo | navi -p "summarize this"` prints one answer.

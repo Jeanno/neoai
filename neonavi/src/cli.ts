@@ -10,6 +10,7 @@ import { makeSpinner } from './spinner.ts'
 import { serveMcp, type Ask } from './mcp.ts'
 import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } from './serve.ts'
 import { ago, clearAllSessions, clearSession, listSessions, addPrompt, loadPrompts, loadSession, saveSession, sessionFile } from './session.ts'
+import { transcript } from './transcript.ts'
 import { attachStdin, MAX_UPLOAD } from './attach.ts'
 import { attach, createHarness, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
 import { readConfig, reset } from 'neorouter'
@@ -97,7 +98,7 @@ const HELP = [
 const USAGE = [
   'usage: navi [-p "what you want done"] [-a file]... [-r|--resume] [--model local|best|<provider>:<model>[,...]] [--max-steps N]',
   '       navi setup [--check]',
-  '       navi sessions [clear [<directory> | --all]]',
+  '       navi sessions [show [<directory>] | clear [<directory> | --all]]',
   '       navi serve [--port N] [--install | --uninstall]',
   '       navi mcp',
   '       navi browser [--install]',
@@ -122,7 +123,7 @@ const ABOUT = [
   '  --model SPEC       use another model chain for this run',
   '  --max-steps N      model responses per turn (default 32)',
   'navi setup           choose models and keys; --check only reports',
-  'navi sessions        list saved conversations; clear one or --all',
+  'navi sessions        list saved conversations; show one as Markdown; clear one or --all',
   'navi serve           an OpenAI-compatible server on 127.0.0.1 for other apps, and jobs;',
   '                     --tailnet lets your phone reach it over Tailscale',
   'navi mcp             navi as a tool for MCP clients such as Claude Code',
@@ -681,7 +682,16 @@ async function sessions(argv: string[]) {
       const where = s.cwd ? tilde(s.cwd) : `(directory unknown) ${s.file}`
       console.log(`${mark} ${where}  ${dim(`${s.messages} messages · ${ago(s.used)}`)}`)
     }
-    console.log(dim('\n* this directory · clear one with `navi sessions clear [<directory>]`, all with `--all`'))
+    console.log(dim('\n* this directory · read one with `navi sessions show [<directory>]` · clear one with `navi sessions clear [<directory>]`, all with `--all`'))
+    return 0
+  }
+  if (argv[0] === 'show' && argv.length <= 2) {
+    // SES-15, SES-16: plain Markdown on stdout, to read or to keep.
+    const typed = resolve(cwd, argv[1] ?? '.')
+    const dir = await realpath(typed).catch(() => typed)
+    const messages = await loadSession(sessionFile(dir, home))
+    if (!messages.length) return console.error(`No conversation is saved for ${tilde(dir)}.`), 1
+    process.stdout.write(transcript(messages, tilde(dir)))
     return 0
   }
   if (argv[0] === 'clear' && argv.length <= 2) {
@@ -698,7 +708,7 @@ async function sessions(argv: string[]) {
     return 0
   }
   console.error(`unexpected: ${argv.join(' ')}`)
-  console.error('usage: navi sessions [clear [<directory> | --all]]')
+  console.error('usage: navi sessions [show [<directory>] | clear [<directory> | --all]]')
   return 1
 }
 

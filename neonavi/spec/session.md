@@ -45,3 +45,16 @@ summarised, in place, by the session's model.
   `navi sessions clear <directory>` that directory's; `navi sessions clear
   --all` every one. Each says what it deleted, or that there was nothing.
   Only files in the sessions directory are touched.
+- SES-15: `navi sessions show [<directory>]` prints that directory's saved
+  conversation (this one's unless given) as Markdown on stdout, plain so it
+  can be kept in a file: a heading naming the directory, each prompt under
+  `## You` with the names of files sent with it, then under one `## navi`
+  what navi said and the tools it used, in the order they came, a tool a
+  line (the command, path or address, cut short; never its output).
+  Nothing is changed.
+- SES-16: A summary left by compaction (SES-9) shows as `## Earlier,
+  summarised`; what navi itself told the model at the start of a turn (an
+  undo, a redo, an escalation) shows as a quote beginning `navi:`, apart
+  from what the user typed. Reasoning is not shown.
+- SES-17: With no conversation saved for the directory it says so on stderr
+  and exits 1.
