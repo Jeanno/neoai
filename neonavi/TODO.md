@@ -47,6 +47,8 @@ add the requirement there first.
 - [x] A ledger of how each turn went, as counts, and `navi stats`. (LED-1 to LED-6)
 - [x] The ledger notes an answer the user corrects next, by model only, and
       `navi stats` shows the share corrected. (LED-7, LED-8)
+- [x] An undo counts against the model whose turn it undid; `navi stats`
+      shows the share of edits undone. (LED-9, LED-10)
 - [ ] Route by the ledger: start a kind of turn where it has gone well.
       (`spec/ledger.md` Open)
 

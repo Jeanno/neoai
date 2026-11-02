@@ -18,6 +18,7 @@ import { exchanges } from './transcript.ts'
 import { PHONE_PAGE } from './phone.ts'
 import { attachUploads } from './attach.ts'
 import { jobChanges, undo, undoneReport } from './undo.ts'
+import { recordUndone } from './ledger.ts'
 import { homedir } from 'node:os'
 
 /** What the server needs from the world; the real ones by default, fakes in tests. */
@@ -243,6 +244,8 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
     if (working(job.status)) return error(res, 400, 'The job is still working; stop it or wait for it first.')
     const got = await undo(home, job.directory, job.id)
     if (!got) return error(res, 400, 'Nothing of this job is left to undo.')
+    // LED-9
+    if ((await readConfig()).ledger !== false) await recordUndone(home, got.turns, got.restored.length + got.removed.length > 0)
     const report = undoneReport(got)
     await jobs.note(job.id, ['↶ undone:', ...report.lines.map((l) => `  ${l}`)])
     return json(res, 200, report)

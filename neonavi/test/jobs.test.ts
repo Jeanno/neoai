@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { readMemory } from '../src/memory.ts'
+import { readUndone } from '../src/ledger.ts'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -321,6 +322,7 @@ test("a finished job's changes are listed and undone through the API, never whil
     const r = makeRecorder(home, dir, 'tidy', undefined, job.id)
     r.wrote(join(dir, 'a.txt'), 'mine', 'navi wrote this')
     r.ran('make clean')
+    r.answeredBy('small on Darkbloom')
     await r.saved()
     const other = makeRecorder(home, dir, 'other', () => new Date(Date.now() + 1000), 'someone-else')
     await writeFile(join(dir, 'b.txt'), 'other')
@@ -336,6 +338,8 @@ test("a finished job's changes are listed and undone through the API, never whil
       lines: ['put back a.txt', 'not undone, what this did: $ make clean'],
     })
     assert.equal(await readFile(join(dir, 'a.txt'), 'utf8'), 'mine')
+    // LED-9: the ledger hears whose turn was undone, and nothing else.
+    assert.deepEqual(await readUndone(home), ['small on Darkbloom'])
     // The other job's file is untouched.
     assert.equal(await readFile(join(dir, 'b.txt'), 'utf8'), 'other')
     const after = await (await call(`/jobs/${job.id}`)).json()

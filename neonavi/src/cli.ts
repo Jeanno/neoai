@@ -17,7 +17,7 @@ import { readConfig, reset } from 'neorouter'
 import { configuredBrowser, disconnect, findBrowser, installBrowser, makeTab, showBrowser } from './browser.ts'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 import { describe, entryLabel, escalationFor, modelLabel } from './setup-core.ts'
-import { readLedger, stats } from './ledger.ts'
+import { readLedger, readUndone, recordUndone, stats } from './ledger.ts'
 import { makeJobs, matches, serveToken, tailnetAddresses, titleOf, working, type JobDeps } from './jobs.ts'
 import { push, pushConfig } from './push.ts'
 import { addFact, forgetFact, memoryFile, projectRoot, readMemory } from './memory.ts'
@@ -677,6 +677,8 @@ async function undoHere(cwd: string): Promise<boolean> {
     console.error('Nothing to undo here: navi has not changed any files in this directory.')
     return false
   }
+  // LED-9: what the user thought of those changes.
+  if ((await readConfig()).ledger !== false) await recordUndone(homedir(), got.turns, got.restored.length + got.removed.length > 0)
   const [turn] = got.turns
   console.error(dim(`undoing the turn that began "${turn.prompt}" (${ago(new Date(turn.at))})`))
   for (const l of undoneReport(got).lines) console.error(l.startsWith('not undone') ? dim(`  ${l}`) : `  ${l}`)
@@ -734,7 +736,8 @@ async function showStats(argv: string[]) {
     console.error('usage: navi stats [--days N]')
     return 1
   }
-  console.log(stats(await readLedger(homedir(), Date.now() - days * 86_400_000), days))
+  const since = Date.now() - days * 86_400_000
+  console.log(stats(await readLedger(homedir(), since), days, await readUndone(homedir(), since)))
   return 0
 }
 

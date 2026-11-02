@@ -486,6 +486,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       }
       answered = !stopped && text.trim() ? { model: answering.model, at: Date.now() } : undefined
       // On disk before done, so an undo straight after finds it.
+      recorder.answeredBy(answering.model)
       await recorder.saved()
       emit({ type: 'done', history, text, empty: !text.trim(), stopped })
     }

@@ -36,9 +36,17 @@ what was said.
 - LED-8: `navi stats` shows, for a model that has been corrected, the share
   of its answers that were (`25% of answers corrected`).
 
+- LED-9: An undo that puts anything back (`navi undo`, `/undo`, or a job's
+  undo on the phone, UND-4 and UND-11) adds a line per turn undone,
+  `{ at, undid }`: when, and the model that answered that turn, kept with
+  the turn's changes for this. Nothing else, so no path or file name. It
+  is not a turn: readers of turns skip it. A redo does not take it back.
+- LED-10: `navi stats` shows, for a model with turns undone, the share of
+  its turns that changed a file which were (`50% of edits undone`), or the
+  count when none of its turns on record changed one.
+
 ## Open
 
 - Route by the ledger: start a kind of turn on the model that has done it
   well, and escalate sooner from one that has not.
-- Other signals from the user: undoing a turn's changes, or asking the same
-  thing again in other words.
+- Asking the same thing again in other words, as a signal.

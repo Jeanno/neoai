@@ -28,6 +28,36 @@ export interface LedgerEntry {
   corrects?: string
 }
 
+/** A line saying the user undid a turn's changes (LED-9): when, and whose turn; nothing else. */
+export interface UndoneEntry {
+  at: string
+  undid: string
+}
+
+/**
+ * Notes that the user undid turns' file changes (LED-9), one line per turn
+ * whose model is known; only when something was put back. Never throws.
+ */
+export async function recordUndone(home: string, turns: { model?: string }[], put: boolean, now = new Date()): Promise<void> {
+  if (!put) return
+  for (const t of turns) if (t.model) await record(home, { at: now.toISOString(), undid: t.model })
+}
+
+/** The models of the turns undone since `since` (LED-9). */
+export async function readUndone(home: string, since = 0): Promise<string[]> {
+  const text = await readFile(ledgerFile(home), 'utf8').catch(() => '')
+  const out: string[] = []
+  for (const line of text.split('\n')) {
+    try {
+      const e = JSON.parse(line) as Partial<UndoneEntry>
+      if (typeof e.undid === 'string' && typeof e.at === 'string' && Date.parse(e.at) >= since) out.push(e.undid)
+    } catch {
+      // As readLedger.
+    }
+  }
+  return out
+}
+
 /** How soon after an answer a correction still counts as one (LED-7). */
 export const CORRECTION_WINDOW = 30 * 60_000
 
@@ -48,7 +78,7 @@ const MAX_BYTES = 5 * 1024 * 1024
 export const ledgerFile = (home: string) => join(home, '.neoai', 'ledger.jsonl')
 
 /** Adds one turn (LED-1); never throws (LED-4). */
-export async function record(home: string, entry: LedgerEntry): Promise<void> {
+export async function record(home: string, entry: LedgerEntry | UndoneEntry): Promise<void> {
   const file = ledgerFile(home)
   try {
     await mkdir(join(home, '.neoai'), { recursive: true, mode: 0o700 })
@@ -90,8 +120,11 @@ function median(values: number[]): number {
 
 const seconds = (ms: number) => (ms < 10_000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms / 1000)}s`)
 
+/** Turns that changed a file, as far as the ledger can tell (LED-10). */
+const editing = (turns: LedgerEntry[]) => turns.filter((t) => (t.tools.write_file ?? 0) + (t.tools.edit_file ?? 0) > 0).length
+
 /** One line per model, most turns first (LED-6). */
-export function stats(entries: LedgerEntry[], days: number): string {
+export function stats(entries: LedgerEntry[], days: number, undone: string[] = []): string {
   if (!entries.length) return `No turns recorded in the last ${days} day${days === 1 ? '' : 's'}.`
   const by = new Map<string, LedgerEntry[]>()
   for (const e of entries) by.set(e.model, [...(by.get(e.model) ?? []), e])
@@ -106,6 +139,8 @@ export function stats(entries: LedgerEntry[], days: number): string {
     const count = (o: LedgerEntry['outcome']) => turns.filter((t) => t.outcome === o).length
     // LED-8: of its answers, how many the user then corrected.
     const corrected = entries.filter((e) => e.corrects === model).length
+    // LED-10: and how many turns' changes the user undid.
+    const undid = undone.filter((m) => m === model).length
     const parts = n
       ? [
           `${n} turn${n === 1 ? '' : 's'}`,
@@ -114,6 +149,7 @@ export function stats(entries: LedgerEntry[], days: number): string {
           ...(count('error') ? [`${pct(count('error'), n)} failed`] : []),
           ...(count('stopped') ? [`${pct(count('stopped'), n)} stopped`] : []),
           ...(corrected && count('answered') ? [`${pct(Math.min(corrected, count('answered')), count('answered'))} of answers corrected`] : []),
+          ...(undid ? [editing(turns) ? `${pct(Math.min(undid, editing(turns)), editing(turns))} of edits undone` : `${undid} undone`] : []),
           `${per(turns.reduce((s, t) => s + t.steps, 0), n)} steps`,
           `${per(turns.reduce((s, t) => s + t.toolErrors, 0), n)} tool errors`,
           `median ${seconds(median(turns.map((t) => t.ms)))}`,

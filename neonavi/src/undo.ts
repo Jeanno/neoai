@@ -20,6 +20,8 @@ export interface Turn {
   commands: string[]
   /** The job that ran it (UND-10). */
   job?: string
+  /** The model that answered it, for the ledger (LED-9). */
+  model?: string
 }
 
 interface Kept {
@@ -57,6 +59,8 @@ async function store(home: string, kept: Kept) {
 export interface Recorder {
   wrote(path: string, before: string | null, after: string): void
   ran(command: string): void
+  /** The model that answered the turn, once it is known (LED-9). */
+  answeredBy(model: string): void
   /** Resolves once everything recorded is on disk. */
   saved(): Promise<void>
 }
@@ -87,6 +91,10 @@ export function makeRecorder(home: string, cwd: string, prompt: string, now = ()
     },
     ran(command) {
       turn.commands.push(command)
+      save()
+    },
+    answeredBy(model) {
+      turn.model = model
       save()
     },
     saved: () => writes,

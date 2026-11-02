@@ -205,7 +205,9 @@ never what was said), and `navi stats` shows how each model has done
 (`spec/ledger.md`; `"ledger": false` turns it off). When your next message
 starts as a correction ("no, …", "that's wrong", "still doesn't work"), the
 answer before it is counted as corrected against the model that gave it,
-and `navi stats` shows each model's share (LED-7, LED-8).
+and `navi stats` shows each model's share (LED-7, LED-8). An undo of a
+turn's changes counts against the model that made them too: `navi stats`
+shows the share of its edits you undid (LED-9, LED-10).
 
     navi stats
 

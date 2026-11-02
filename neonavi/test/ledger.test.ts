@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { appendFile, mkdtemp, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ledgerFile, readLedger, readsAsCorrection, record, stats, type LedgerEntry } from '../src/ledger.ts'
+import { ledgerFile, readLedger, readsAsCorrection, readUndone, record, recordUndone, stats, type LedgerEntry } from '../src/ledger.ts'
 
 const entry = (o: Partial<LedgerEntry> = {}): LedgerEntry => ({
   at: new Date().toISOString(),
@@ -103,4 +103,21 @@ test('stats show the share of a model’s answers the user then corrected', () =
   )
   assert.match(out, /qwen on Darkbloom: 4 turns · 100% answered · 25% of answers corrected · /)
   assert.doesNotMatch(out.split('\n')[2], /corrected/)
+})
+
+// LED-9, LED-10
+test('an undo is a line of its own naming whose turn it was, and stats show the share of edits undone', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-led-'))
+  await record(home, entry())
+  await recordUndone(home, [{ model: 'qwen on Darkbloom' }, {}], true, new Date('2026-11-02T10:00:00Z'))
+  await recordUndone(home, [{ model: 'qwen on Darkbloom' }], false)
+  assert.equal((await readLedger(home)).length, 1)
+  assert.deepEqual(await readUndone(home), ['qwen on Darkbloom'])
+  assert.deepEqual(await readUndone(home, Date.parse('2026-11-02T11:00:00Z')), [])
+  const turns = [entry({ tools: { edit_file: 2 } }), entry({ tools: { write_file: 1 } }), entry(), entry({ model: 'claude on Anthropic', local: false })]
+  const out = stats(turns, 7, ['qwen on Darkbloom'])
+  assert.match(out, /qwen on Darkbloom: 3 turns · 100% answered · 50% of edits undone · /)
+  assert.doesNotMatch(out.split('\n')[2], /undone/)
+  // Undone with no edit on record (older lines): a count.
+  assert.match(stats([entry()], 7, ['qwen on Darkbloom']), /· 1 undone ·/)
 })
