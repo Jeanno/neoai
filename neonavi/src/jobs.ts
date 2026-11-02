@@ -58,6 +58,8 @@ export interface Job {
   files?: string[]
   /** The latest follow-up, shown while it runs (JOB-27). */
   asked?: string
+  /** Its last answer reached the token cap (HAR-11), so the phone offers Go on (JOB-35). */
+  cut?: true
 }
 
 /** How a job is started beyond its prompt and directory. */
@@ -209,6 +211,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
     delete job.answer
     delete job.error
     delete job.unchanged
+    delete job.cut
     await save(job)
     const approve = (command: string, o: Parameters<NonNullable<HarnessOptions['approve']>>[1]): Promise<Answer> =>
       new Promise<boolean>((resolve) => {
@@ -253,7 +256,10 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         } else if (e.type === 'done') {
           job.history = e.history
           job.answer = e.text
-          if (e.cut) job.log.push(`· ${CUT_NOTE}`)
+          if (e.cut) {
+            job.log.push(`· ${CUT_NOTE}`)
+            job.cut = true
+          }
           job.status = e.stopped ? 'stopped' : e.empty && errors.length ? 'failed' : 'done'
           if (job.status === 'failed') job.error = errors[0]
         } else continue

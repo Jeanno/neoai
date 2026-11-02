@@ -615,6 +615,17 @@ test("a job whose answer was cut at the token cap says so in its log", async () 
   assert.match(jobs.get(job.id)!.log.join('\n'), /· cut short: the answer reached the model’s token cap/)
 })
 
+// JOB-35
+test('a cut job is marked so until it runs again', async () => {
+  const { jobs } = await setup()
+  const job = jobs.create('long', '/tmp')
+  await jobs.idle()
+  assert.equal(jobs.get(job.id)!.cut, true)
+  jobs.reply(job.id, 'Go on from where you stopped.')
+  await jobs.idle()
+  assert.equal(jobs.get(job.id)!.cut, undefined)
+})
+
 // LED-7
 test("a follow-up's session is told whose answer it follows, and when", async () => {
   const seen: unknown[] = []

@@ -577,3 +577,40 @@ test('SCH-29: a failed run to be tried again shows when, on the phone and in nav
   await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
   await page.locator('.sched .meta', { hasText: /^Trying again / }).waitFor()
 })
+
+test('JOB-35: a cut job offers Go on, which follows up and is gone once it is answered in full', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const asked: string[] = []
+  const jobs = await makeJobs({
+    home,
+    start: async () => ({
+      model: 'small',
+      session: {
+        history: [],
+        async *turn(prompt: string) {
+          asked.push(prompt)
+          const cut = asked.length === 1
+          yield { type: 'done', history: [], text: cut ? 'Once upon' : 'a time, the end.', empty: false, stopped: false, ...(cut && { cut: true as const }) } as const
+        },
+      },
+    }),
+    notify: () => {},
+  })
+  jobs.create('tell me a story', home)
+  await jobs.idle()
+  const token = 'a1'.repeat(32)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home] } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByText('tell me a story').click()
+  await page.getByText('Cut short: the answer reached the model’s token cap.').waitFor()
+  await page.getByRole('button', { name: 'Go on' }).click()
+  await page.getByText('a time, the end.').waitFor()
+  assert.deepEqual(asked, ['tell me a story', 'Go on from where you stopped.'])
+  assert.equal(await page.getByRole('button', { name: 'Go on' }).count(), 0)
+})

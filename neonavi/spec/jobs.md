@@ -191,6 +191,9 @@ terminal that started them closes.
   (and not from a schedule already): the choices a new schedule has, the
   time and the watch checkbox, then Schedule, which goes back to the list
   where the new schedule is shown.
+- JOB-35: A job whose last answer was cut at the token cap (HAR-11) is
+  marked so (`cut`), until it runs again. The phone page shows that under the
+  answer with Go on, which follows up with "Go on from where you stopped."
 
 ## Open
 

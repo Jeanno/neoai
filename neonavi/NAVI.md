@@ -279,7 +279,8 @@ Raycast alike (`spec/models.md`, MOD-24):
     "modelOptions": { "local": { "maxTokens": 4096, "temperature": 0.2 } }
 
 An answer that stops at the cap, or the server's own, says it was cut short
-(in the terminal, a job's log and Raycast); ask navi to go on (HAR-11).
+(in the terminal, a job's log and Raycast); ask navi to go on (HAR-11). On
+the phone, a cut job has a Go on button that does that for you (JOB-35).
 
 Other flags: `-r` / `--resume` (open the loop with this directory's history),
 `--max-steps N` (default 32).

@@ -344,6 +344,10 @@ ${MARKDOWN_JS}
             el('button', { disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/answer', { yes: true })) }, 'Yes'))),
         // JOB-17: formatted, as elements holding the text.
         job.answer && el('div', { class: 'card answer md' }, renderMarkdown(job.answer, el)),
+        // JOB-35: an answer cut at the token cap goes on with one tap.
+        !live && job.cut && el('div', { class: 'card' },
+          el('div', { class: 'meta' }, 'Cut short: the answer reached the model’s token cap.'),
+          el('div', { class: 'row' }, el('button', { disabled: busy, onclick: () => act(() => api('/jobs/' + job.id + '/reply', { prompt: 'Go on from where you stopped.' })) }, 'Go on'))),
         job.error && el('p', { class: 'err' }, job.error),
         job.log.length > 0 && el('div', { class: 'card' }, el('div', { class: 'meta' }, 'What it did'), el('pre', {}, job.log.join('\\n'))),
         // UND-13: what it changed can be put back once it is done; what happened goes in the log above.

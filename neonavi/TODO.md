@@ -17,6 +17,7 @@ add the requirement there first.
 - [x] Options per link: a token cap, a temperature, and leave to think,
       under `"modelOptions"`. (MOD-24, MOD-25)
 - [x] An answer cut at the token cap says so, everywhere. (HAR-11)
+- [x] Go on, on the phone, for a job whose answer was cut. (JOB-35)
 - [x] Say why a link failed: unreachable, key refused, model gone, with the
       link named, in `navi`, `navi setup --check` and Raycast. (MOD-21)
 - [x] The installer leaves `navi` runnable: it already warns when
