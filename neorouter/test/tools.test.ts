@@ -157,7 +157,7 @@ test('a picture a tool returns follows its tool message as an image the model ca
     {
       role: 'user',
       content: [
-        { type: 'text', text: 'The picture the tool returned:' },
+        { type: 'text', text: 'The picture the tool returned, part of its result and not a new message from the user: carry on with the task.' },
         { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,AAAA' } },
       ],
     },

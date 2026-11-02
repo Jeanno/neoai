@@ -96,6 +96,11 @@ test('an action is described in one line, by what its element says', () => {
   )
   assert.equal(describeAction({ kind: 'select', ref: 'e8', option: 'Large' }, lines, { host: '' }), 'choose "Large" in link "Docs"')
   assert.equal(describeAction({ kind: 'press', key: 'Enter' }, lines, { host: 'shop.test' }), 'press Enter on shop.test')
+  // BRW-19
+  assert.equal(
+    describeAction({ kind: 'upload', ref: 'e17', path: '/work/cv.pdf', size: 12_500 }, lines, { host: 'jobs.test' }),
+    'upload /work/cv.pdf (12 KB) into button "Cancel" on jobs.test',
+  )
   assert.equal(describeAction({ kind: 'click', ref: 'e99' }, lines, { host: 'shop.test' }), null)
   assert.equal(
     describeAction({ kind: 'press', key: 'Enter' }, lines, { host: 'shop.test', focus: 'button "Pay"' }),

@@ -38,6 +38,9 @@ before(async () => {
       res.end(`<title>Late</title><div id=app>Loading…</div><script>setTimeout(() => {
         document.getElementById('app').innerHTML = '<h1>Dashboard</h1><button>Refresh</button>'
       }, 800)</script>`)
+    else if (url.pathname === '/upload')
+      res.end(`<title>Apply</title><label>CV <input type=file id=cv onchange="out.textContent='CV: '+this.files[0].name"></label>
+<input type=file id=photo hidden onchange="out.textContent='Photo: '+this.files[0].name+' '+this.files[0].size"><button onclick="photo.click()">Choose photo</button><p id=out></p>`)
     else if (url.pathname === '/never') return // answered only when the server closes
     else if (url.pathname === '/found') res.end(`<title>Found</title><p>Results for ${url.searchParams.get('q')}</p>`)
     else res.end(SHOP)
@@ -242,3 +245,22 @@ test('a page that never loads is read as not loaded yet, without waiting on it',
   // And the tab is not spoiled for the next page.
   assert.match(await tab.open(`${base}/about`), /^About\n/)
 })
+
+// BRW-19
+test('a file goes into a file field, or through the chooser a button opens', { skip }, async () => {
+  const tab = makeTab({ home, headless: true })
+  const page = await tab.open(`${base}/upload`)
+  const file = join(home, 'cv.pdf')
+  await writeFile(file, 'twelve bytes')
+  for (const [element, shows] of [
+    ['button "CV"', /CV: cv\.pdf/],
+    ['button "Choose photo"', /Photo: cv\.pdf 12/],
+  ] as const) {
+    const action = { kind: 'upload' as const, ref: refOf(page, element), path: file, size: 12 }
+    const d = await tab.describe(action)
+    assert.ok('line' in d, JSON.stringify(d))
+    assert.match(d.line, new RegExp(`^upload ${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(12 B\\) into `))
+    assert.match(await tab.act(action, d), shows)
+  }
+})
+

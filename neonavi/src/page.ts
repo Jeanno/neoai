@@ -216,6 +216,8 @@ export type Action =
   | { kind: 'type'; ref: string; text: string; submit?: boolean }
   | { kind: 'select'; ref: string; option: string }
   | { kind: 'press'; key: string }
+  /** `path` absolute, `size` in bytes, both as the file was found (BRW-19). */
+  | { kind: 'upload'; ref: string; path: string; size: number }
 
 /**
  * The element that has focus, from the raw snapshot: the deepest line marked
@@ -244,6 +246,8 @@ export interface Where {
   goes?: string
 }
 
+const bytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
+
 /** One line the judge and the user read (BRW-11); null when the ref is gone. */
 export function describeAction(action: Action, lines: string[], where: Where): string | null {
   const on = where.frame
@@ -256,5 +260,6 @@ export function describeAction(action: Action, lines: string[], where: Where): s
   if (!what) return null
   if (action.kind === 'click') return `click ${what}${where.goes ? ` (goes to ${where.goes})` : ''}${on}`
   if (action.kind === 'select') return `choose ${JSON.stringify(action.option)} in ${what}${on}`
+  if (action.kind === 'upload') return `upload ${action.path} (${bytes(action.size)}) into ${what}${on}`
   return `type ${JSON.stringify(action.text)} into ${what}${on}${action.submit ? ', then press Enter' : ''}`
 }

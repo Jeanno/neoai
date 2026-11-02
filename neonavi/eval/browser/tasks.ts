@@ -7,6 +7,8 @@ export interface Task {
   tests: string
   prompt: (base: string) => string
   check: (answer: string, recorded: Recorded) => string | null
+  /** Files the task needs in the job's directory, by name. */
+  files?: Record<string, string>
 }
 
 /** Null when every part is found, else what is missing. */
@@ -111,5 +113,17 @@ export const TASKS: Task[] = [
     tests: 'a chart drawn on a canvas, with no text to read (BRW-18)',
     prompt: (b) => `Use your browser. The page ${b}/sales shows monthly sales as a chart. Which month had the highest sales, and how much?`,
     check: (a) => has(a, /\bapr(il)?\b/, /\b91\b/),
+  },
+  {
+    id: 'upload',
+    tests: 'attaching a file from this computer to a form (BRW-19)',
+    files: { 'robin-vale-cv.txt': 'Robin Vale. Kettle designer, 8 years.\n' },
+    prompt: (b) => `Use your browser to apply for the job at ${b}/apply as Robin Vale, attaching my CV, the file robin-vale-cv.txt in this folder.`,
+    check: (_a, r) => {
+      const f = posted(r, '/apply/sent')
+      if (!f) return 'the application was never sent'
+      if (f.cv !== 'robin-vale-cv.txt' || !/Kettle designer/.test(f['cv.content'] ?? '')) return `sent with cv ${JSON.stringify(f.cv)}`
+      return /robin vale/i.test(f.name ?? '') ? null : `name was ${JSON.stringify(f.name)}`
+    },
   },
 ]

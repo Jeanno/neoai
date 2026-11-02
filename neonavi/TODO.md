@@ -129,6 +129,13 @@ add the requirement there first.
 - [x] navi can see the browser page: `browser_look` sends a vision model a
       picture of it; neorouter now passes a tool's pictures on as images.
       The canvas chart task passes with it (6s) and fails without it. (BRW-18)
+- [x] File uploads in the browser: `browser_upload(ref, path)` fills a file
+      field or the chooser a button opens, always asked. (BRW-19)
+- [ ] The local model sometimes ends a turn on "Now I'll submit the
+      application." without doing it: the eval's upload task passed 1 of 4
+      runs, each failure stopping so. A turn ending on a stated next step
+      after tool use could be nudged on once.
+- [ ] Downloads in the browser.
 - [ ] Harder eval tasks, or a WebArena-Lite subset for numbers comparable with
       other agents (needs Docker).
 - [x] Find a job by words in its prompt or answer: a box on the phone list,

@@ -716,7 +716,7 @@ test('browser tools come only with a browser, on, and one tab per session', asyn
   assert.deepEqual(await names({ config: { web_search: false }, browser: () => tab }), [])
   assert.deepEqual((await names({ config: {}, browser: () => tab })).sort(), [
     'browser_back', 'browser_click', 'browser_close_tab', 'browser_look', 'browser_open', 'browser_press', 'browser_read',
-    'browser_select', 'browser_switch', 'browser_tabs', 'browser_type',
+    'browser_select', 'browser_switch', 'browser_tabs', 'browser_type', 'browser_upload',
   ])
   // BRW-18: for a model that cannot take images.
   assert.ok(!(await names({ config: { browser: { look: false } }, browser: () => tab })).includes('browser_look'))
@@ -934,5 +934,30 @@ test('browser_look hands the model a picture of the page, with its URL', async (
       { type: 'media', data: Buffer.from('a jpeg').toString('base64'), mediaType: 'image/jpeg' },
     ],
   })
+})
+
+// BRW-19
+test('an upload is always asked, even when the judge would let it through, and only of a file that is there', async () => {
+  const { tab, done } = fakeTab()
+  const dir = await mkdtemp(join(tmpdir(), 'navi-upload-'))
+  await writeFile(join(dir, 'cv.pdf'), 'a cv')
+  const asked: string[] = []
+  const model = fake([
+    [
+      call('c1', 'browser_upload', { ref: 'safe-cmd', path: join(dir, 'cv.pdf') }),
+      call('c2', 'browser_upload', { ref: 'safe-cmd', path: join(dir, 'gone.pdf') }),
+      call('c3', 'browser_upload', { ref: 'safe-cmd', path: dir }),
+      finish('tool-calls'),
+    ],
+    [...text('t', 'ok'), finish('stop')],
+  ])
+  const h = await harness(model, { config: {}, browser: () => tab, approve: async (c) => (asked.push(c), true) })
+  const events = await collect(h.session().turn('apply'))
+  assert.equal(asked.length, 1)
+  assert.ok(!events.some((e) => e.type === 'auto-approved'))
+  assert.deepEqual(done, ['safe-cmd'])
+  const results = Object.fromEntries(events.filter((e) => e.type === 'tool-result').map((e: any) => [e.id, String(e.output)]))
+  assert.match(results.c2, /gone\.pdf is not a file/)
+  assert.match(results.c3, /is not a file/)
 })
 

@@ -62,7 +62,7 @@ export function toMessages(prompt: LanguageModelV2CallOptions['prompt']): {
           if (v.type === 'media' && v.mediaType.startsWith('image/'))
             pictures.push({ type: 'image_url', image_url: { url: imageURL(v.data, v.mediaType) } })
       }
-      if (pictures.length) messages.push({ role: 'user', content: [{ type: 'text', text: `The picture${pictures.length > 1 ? 's' : ''} the tool returned:` }, ...pictures] })
+      if (pictures.length) messages.push({ role: 'user', content: [{ type: 'text', text: `The picture${pictures.length > 1 ? 's' : ''} the tool returned, part of its result and not a new message from the user: carry on with the task.` }, ...pictures] })
       continue
     }
     const calls: OaiToolCall[] = []

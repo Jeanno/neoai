@@ -547,6 +547,16 @@ export function makeTab(o: BrowserOptions): Tab {
         }
         // By the label the user sees only: a value can stand behind a different label.
         else if (action.kind === 'select') await target!.selectOption({ label: action.option }, { timeout: ACT_MS })
+        // BRW-19: a file field takes the file itself; anything else, by the chooser its click opens.
+        else if (action.kind === 'upload') {
+          const field = await target!.evaluate((e) => (e as unknown as { type?: string; tagName: string }).tagName === 'INPUT' && (e as unknown as { type?: string }).type === 'file', undefined, { timeout: ACT_MS })
+          if (field) await target!.setInputFiles(action.path, { timeout: ACT_MS })
+          else {
+            const chooser = p.waitForEvent('filechooser', { timeout: ACT_MS })
+            await target!.click({ timeout: ACT_MS })
+            await (await chooser).setFiles(action.path)
+          }
+        }
         else await p.keyboard.press(action.key)
         await Promise.all([settle(p), opening])
         // A tab the page opened becomes current: it is what the action led to (BRW-15).

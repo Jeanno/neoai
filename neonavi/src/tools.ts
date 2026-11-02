@@ -31,7 +31,7 @@ export interface Gate {
    * Returns true to let a browser action be done (BRW-11): `line` says what
    * and `url` where. Left out, every action declines.
    */
-  act?: (action: { line: string; url: string; shot?: () => Promise<Buffer> }, signal?: AbortSignal, toolCallId?: string) => Promise<boolean>
+  act?: (action: { line: string; url: string; shot?: () => Promise<Buffer>; always?: boolean }, signal?: AbortSignal, toolCallId?: string) => Promise<boolean>
   /** Returns true to let a fact be remembered (MEM-7). Left out, every fact declines. */
   remember?: (fact: string, signal?: AbortSignal, toolCallId?: string, project?: string) => Promise<boolean>
 }
@@ -69,6 +69,9 @@ export interface ToolOptions {
   /** Told of each file written, by where it really is, for undo (UND-1). */
   wrote?: (path: string, before: string | null, after: string) => void
 }
+
+/** The largest file browser_upload sends (BRW-19). */
+const UPLOAD_MAX = 50 * 1024 * 1024
 
 export function makeTools(
   gate: Gate,
@@ -139,7 +142,9 @@ export function makeTools(
       const asked = await tab.describe(action)
       if ('problem' in asked) return asked.problem
       // PSH-17: the page as it looks, for a front end that can show it while asking.
-      if (!gate.act || !(await gate.act({ ...asked, shot: () => tab.shot() }, signal, id)))
+      // BRW-19: a file sent away is always the user's to say.
+      const always = action.kind === 'upload'
+      if (!gate.act || !(await gate.act({ ...asked, shot: () => tab.shot(), ...(always && { always }) }, signal, id)))
         return `The user declined to ${asked.line}. Do not retry it; try another approach.`
       // Approval can take minutes: an action is not done on a page that moved on meanwhile.
       return tab.act(action, asked)
@@ -401,6 +406,20 @@ export function makeTools(
       execute: async ({ ref, option }, { abortSignal, toolCallId }) => act({ kind: 'select', ref, option }, abortSignal, toolCallId),
     }),
 
+    browser_upload: tool({
+      description:
+        'Put a file from this computer into a file field on the browser page, or the "Choose file" button for one, by its ref. ' +
+        'The user is always asked first. Then submit the form as usual.',
+      inputSchema: z.object({ ref: z.string(), path: z.string().describe('the file, from the working directory') }),
+      execute: async ({ ref, path }, { abortSignal, toolCallId }) => {
+        const file = at(path)
+        const found = await lstat(file).catch(() => null)
+        if (!found?.isFile()) return `${path} is not a file; give the path of one, from ${cwd}.`
+        if (found.size > UPLOAD_MAX) return `${path} is ${Math.round(found.size / 1024 / 1024)} MB; at most 50 MB is uploaded.`
+        return act({ kind: 'upload', ref, path: file, size: found.size }, abortSignal, toolCallId)
+      },
+    }),
+
     browser_press: tool({
       description: 'Press a key on the browser page, such as Enter, Escape or PageDown. The user may be asked first.',
       inputSchema: z.object({ key: z.string() }),
@@ -414,7 +433,7 @@ export function makeTools(
   if (!browser)
     for (const name of [
       'browser_open', 'browser_tabs', 'browser_switch', 'browser_close_tab', 'browser_read', 'browser_back',
-      'browser_click', 'browser_type', 'browser_select', 'browser_press',
+      'browser_click', 'browser_type', 'browser_select', 'browser_press', 'browser_upload',
     ] as const)
       delete (tools as Partial<typeof tools>)[name]
   if (!write) {

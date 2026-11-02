@@ -47,6 +47,7 @@ let model = 'the default model'
 for (const task of TASKS.filter((t) => !only || only.includes(t.id))) {
   recorded.posts.length = 0
   recorded.orders = 0
+  for (const [name, text] of Object.entries(task.files ?? {})) await writeFile(join(directories[0], name), text)
   const started = Date.now()
   let job = await api('/jobs', { prompt: task.prompt(base), directory: directories[0] })
   const asked: string[] = []

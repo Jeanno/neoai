@@ -79,6 +79,13 @@ has to look at the whole page again to see what happened.
   changing for 300ms, nor marked busy or saying it is loading) before answering, and so does opening a page. Pages
   are read after their scripts run, so a page drawn by scripts reads as it
   shows once drawn.
+- BRW-19: `browser_upload(ref, path)` puts a file on this computer into a
+  file field, or into whatever a "Choose file" button opens. The path is
+  taken from the working directory; one that is not a file, or over 50 MB,
+  is refused without asking. An upload sends a file away, so it is always
+  asked, whatever the judge or mode: the line names the file and its size,
+  as in `upload /work/cv.pdf (12 KB) into button "Choose file" on
+  jobs.example.com`.
 - BRW-10: An action answers with what changed: a new page answers as
   browser_open; on the same page, the lines that appeared, at most 40, and
   how many went; or that nothing on the page changed.
@@ -131,4 +138,4 @@ has to look at the whole page again to see what happened.
 
 - MCP: offer the browser tools to other agents directly, with the client's
   own approval for actions.
-- Downloads and file uploads.
+- Downloads.

@@ -56,6 +56,21 @@ export const shippingFor = (city: string, kg: number) => {
   return Math.round((base + Math.max(0, kg - 1) * 1.6) * 100) / 100
 }
 
+/** A multipart form's fields: a file's as its name, and its content beside it under `<field>.content`. */
+function multipart(body: string, boundary: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const part of body.split(`--${boundary}`)) {
+    const [head, ...rest] = part.split('\r\n\r\n')
+    const name = /name="([^"]*)"/.exec(head)?.[1]
+    if (!name) continue
+    const value = rest.join('\r\n\r\n').replace(/\r\n$/, '')
+    const file = /filename="([^"]*)"/.exec(head)?.[1]
+    if (file === undefined) out[name] = value
+    else Object.assign(out, { [name]: file, [`${name}.content`]: value })
+  }
+  return out
+}
+
 export async function startSites(): Promise<{ base: string; recorded: Recorded; server: Server }> {
   const recorded: Recorded = { posts: [], orders: 0 }
   const sessions = new Set<string>()
@@ -65,7 +80,8 @@ export async function startSites(): Promise<{ base: string; recorded: Recorded; 
     const cookie = /sid=(\w+)/.exec(req.headers.cookie ?? '')?.[1] ?? ''
     let body = ''
     for await (const c of req) body += c
-    const fields = Object.fromEntries(new URLSearchParams(body))
+    const boundary = /multipart\/form-data;.*boundary=(.+)$/.exec(req.headers['content-type'] ?? '')?.[1]
+    const fields = boundary ? multipart(body, boundary) : Object.fromEntries(new URLSearchParams(body))
     const html = (s: string, status = 200, headers: Record<string, string> = {}) => {
       res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', ...headers })
       res.end(s)
@@ -171,6 +187,12 @@ const c = document.getElementById('c').getContext('2d'), months = ${JSON.stringi
 c.fillStyle = '#fff'; c.fillRect(0, 0, 640, 360); c.font = '16px sans-serif'
 months.forEach((m, i) => { const h = v[i] * 3; c.fillStyle = '#3b6fd1'; c.fillRect(40 + i * 100, 320 - h, 60, h); c.fillStyle = '#222'; c.fillText(m, 50 + i * 100, 345); c.fillText(String(v[i]), 52 + i * 100, 312 - h) })
 </script>`))
+
+    // 13. A job application with a CV to upload.
+    if (p === '/apply')
+      return html(page('Apply: Kettle designer', `<h1>Apply: Kettle designer</h1><form method=post action=/apply/sent enctype=multipart/form-data>
+<label>Full name <input name=name required></label><br><label>Your CV <input type=file name=cv required></label><br><button>Send application</button></form>`))
+    if (p === '/apply/sent') return html(page('Application sent', `<h1>Thank you, ${fields.name ?? ''}</h1><p>We have your CV, ${fields.cv ?? 'none'}.</p>`))
 
     // 11. A cart and checkout, where the order must not be placed.
     if (p === '/store') {

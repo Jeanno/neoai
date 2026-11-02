@@ -209,10 +209,12 @@ A page that never finishes loading is reported as such within seconds,
 rather than holding the task up (BRW-17). For what text cannot carry, such
 as a chart or a picture, navi can look at the page: `browser_look` hands a
 vision model a picture of it (BRW-18; `"browser": {"look": false}` leaves it
-out for a model that cannot take images). How well a model does with the
-browser is measured by `eval/browser`: twelve tasks on local practice sites
+out for a model that cannot take images). It can also attach a file from your
+computer to a form (`browser_upload`); since that sends the file away, it
+always asks you first, naming the file and its size (BRW-19). How well a model does with the
+browser is measured by `eval/browser`: thirteen tasks on local practice sites
 (searching, forms, signing in, cookie banners, frames, new tabs, stopping
-before paying, a chart drawn on a canvas), run against a `navi serve` with
+before paying, a chart drawn on a canvas, uploading a file), run against a `navi serve` with
 `npx tsx eval/browser/run.mts --port <port>`; the latest scores are in
 `eval/browser/RESULTS.md`.
 `"browser": false` in the config removes it (`spec/browser.md`).

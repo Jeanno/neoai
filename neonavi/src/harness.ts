@@ -325,9 +325,9 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         return (await ask(summarize(c), toolSignal ?? signal, c)) !== false
       }
       // Judged as shell commands are (BRW-11), but never remembered: "always" is a plain yes.
-      const act = async ({ line, url, shot }: { line: string; url: string; shot?: () => Promise<Buffer> }, toolSignal?: AbortSignal, id?: string) => {
+      const act = async ({ line, url, shot, always }: { line: string; url: string; shot?: () => Promise<Buffer>; always?: boolean }, toolSignal?: AbortSignal, id?: string) => {
         await after(id)
-        if (config.approve !== 'ask' && (await judge(o.model, line, prompt, { url })) === 'safe') {
+        if (!always && config.approve !== 'ask' && (await judge(o.model, line, prompt, { url })) === 'safe') {
           emit({ type: 'auto-approved', command: line })
           return true
         }
