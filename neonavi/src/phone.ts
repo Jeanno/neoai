@@ -408,7 +408,7 @@ ${MARKDOWN_JS}
         schedules.map((s) => editing && editing.id === s.id ? editForm(s) : el('div', { class: 'card sched' },
           el('div', { class: 'status' + (s.paused ? ' paused' : '') }, (s.stuck ? 'Paused after ' + (s.failures || 3) + ' failed runs · ' : s.paused ? 'Paused · ' : '') + when(s) + (s.quiet ? ' · watch' : '')),
           el('span', { class: 'p' }, s.prompt),
-          el('span', { class: 'meta' }, (s.paused ? 'Not running' : 'Next ' + soon(s.next)) + ' · ' + short(s.directory)),
+          el('span', { class: 'meta' }, (s.paused ? 'Not running' : s.retryAt ? 'Trying again ' + soon(s.retryAt) : 'Next ' + soon(s.next)) + ' · ' + short(s.directory)),
           // SCH-24: how its last runs went, oldest first; each opens its job.
           s.runs && s.runs.length > 0 && el('div', { class: 'runs' }, el('span', { class: 'meta' }, 'Last runs'),
             s.runs.slice().reverse().map((r) => el('button', { class: 'run s-' + (r.unchanged ? 'stopped' : r.status),

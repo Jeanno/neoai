@@ -129,7 +129,8 @@ every so often. A morning brief, a page watched every hour.
 ## Failing
 
 - SCH-25: A schedule counts its runs that fail in a row, as each one ends
-  (within SCH-6's half minute). A run that is done resets the count; one
+  (within SCH-6's half minute), a run tried again (SCH-28) counting once,
+  by how its second try ended. A run that is done resets the count; one
   stopped or interrupted (navi serve stopping under it) leaves it as it is;
   one whose job is gone is not counted.
 - SCH-26: On the third failure in a row navi pauses the schedule itself
@@ -140,6 +141,19 @@ every so often. A morning brief, a page watched every hour.
 - SCH-27: The phone page shows a schedule navi paused as `Paused after 3
   failed runs`; `navi schedules` shows it as `paused: failing`.
 
+## Trying again
+
+- SCH-28: A run that came due (not Run now) and failed is tried once more,
+  5 minutes after it ended, unless the schedule's next run comes before
+  that, which then serves instead. The second try is a job of its own,
+  marked `retryOf` the failed one, whose log says so; it does not move the
+  schedule's next run. It is not tried again itself, and is skipped while
+  the schedule is paused or its last job still busy.
+- SCH-29: Pausing, resuming or editing a schedule drops a second try still
+  to come. `GET /schedules` gives one to come as `retryAt`; the phone page
+  shows `Trying again in N min` in place of the next run, and `navi
+  schedules` `retry in N min`.
+
 ## Open
 
-- Retrying a failed run once, a few minutes later, before counting it.
+- Quiet hours: schedules that do not notify between times the user sets.

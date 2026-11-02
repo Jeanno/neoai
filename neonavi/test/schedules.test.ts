@@ -4,7 +4,7 @@ import { mkdtemp, readFile, stat } from 'node:fs/promises'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkWhen, makeSchedules, nextRun, nextText, parseDays, parseEvery, runMarks, schedulesFile, whenText, type ScheduleDeps } from '../src/schedules.ts'
+import { RETRY_AFTER, checkWhen, makeSchedules, nextRun, nextText, parseDays, parseEvery, runMarks, schedulesFile, whenText, type ScheduleDeps } from '../src/schedules.ts'
 import { makeJobs, type StartOptions } from '../src/jobs.ts'
 import { fromWall, type Offset } from '../src/clock.ts'
 import { listen, type ServeDeps } from '../src/serve.ts'
@@ -433,4 +433,74 @@ test('SCH-26: an edit resumes a schedule navi paused, but not one the user pause
   await schedules.pause(s.id, true)
   await schedules.edit(s.id, { prompt: 'again' })
   assert.equal(schedules.get(s.id)?.paused, true)
+})
+
+test('SCH-28: a due run that failed is tried once more 5 minutes on, without moving the next run; only its second try counts', async () => {
+  const status = new Map<string, string>()
+  const { schedules, started, sent } = await setup({ statusOf: (id) => status.get(id) as any, notify: () => {} })
+  const s = await schedules.add('the brief', '/tmp', { every: 60 })
+  const t0 = new Date(s.created).getTime()
+  const at = (min: number) => new Date(t0 + min * 60_000)
+  await schedules.tick(at(60))
+  assert.equal(started.length, 1)
+  status.set('job1', 'failed')
+  await schedules.tick(at(61))
+  assert.equal(schedules.get(s.id)?.failures, undefined, 'not counted yet')
+  assert.equal(schedules.get(s.id)?.retryAt, new Date(at(61).getTime() + RETRY_AFTER).toISOString())
+  assert.equal(schedules.list(at(61))[0].retryAt, schedules.get(s.id)?.retryAt)
+  await schedules.tick(at(65))
+  assert.equal(started.length, 1)
+  await schedules.tick(at(66))
+  assert.equal(started.length, 2)
+  assert.equal(sent[1].retry, 'job1')
+  // The next run is still an hour after the first.
+  assert.equal(schedules.list(at(66))[0].next, at(120).toISOString())
+  status.set('job2', 'failed')
+  await schedules.tick(at(67))
+  assert.equal(schedules.get(s.id)?.failures, 1)
+  assert.equal(schedules.get(s.id)?.retryAt, undefined, 'a second try is not tried again')
+  // The next run, done, resets the count.
+  await schedules.tick(at(120))
+  status.set('job3', 'done')
+  await schedules.tick(at(121))
+  assert.equal(schedules.get(s.id)?.failures, undefined)
+  // A second try that is done counts as the run being done.
+  await schedules.tick(at(180))
+  status.set('job4', 'failed')
+  await schedules.tick(at(181))
+  await schedules.tick(at(186))
+  status.set('job5', 'done')
+  await schedules.tick(at(187))
+  assert.equal(schedules.get(s.id)?.failures, undefined)
+  assert.equal(started.length, 5)
+})
+
+test('SCH-28, SCH-29: no second try when the next run comes first, after Run now, or once paused', async () => {
+  const status = new Map<string, string>()
+  const { schedules, started } = await setup({ statusOf: (id) => status.get(id) as any, notify: () => {} })
+  const often = await schedules.add('every five', '/tmp', { every: 5 })
+  const t0 = new Date(often.created).getTime()
+  await schedules.tick(new Date(t0 + 5 * 60_000))
+  status.set('job1', 'failed')
+  await schedules.tick(new Date(t0 + 6 * 60_000))
+  assert.deepEqual({ failures: schedules.get(often.id)?.failures, retryAt: schedules.get(often.id)?.retryAt }, { failures: 1, retryAt: undefined })
+  await schedules.remove(often.id)
+
+  const s = await schedules.add('the brief', '/tmp', { every: 60 })
+  const job = (await schedules.run(s.id))!
+  status.set(job, 'failed')
+  await schedules.tick(new Date())
+  assert.deepEqual({ failures: schedules.get(s.id)?.failures, retryAt: schedules.get(s.id)?.retryAt }, { failures: 1, retryAt: undefined })
+
+  const t1 = new Date(schedules.get(s.id)!.last!).getTime()
+  await schedules.tick(new Date(t1 + 60 * 60_000))
+  status.set(`job${started.length}`, 'failed')
+  await schedules.tick(new Date(t1 + 61 * 60_000))
+  assert.ok(schedules.get(s.id)?.retryAt)
+  await schedules.pause(s.id, true)
+  assert.equal(schedules.get(s.id)?.retryAt, undefined)
+  await schedules.pause(s.id, false, new Date(t1 + 62 * 60_000))
+  const before = started.length
+  await schedules.tick(new Date(t1 + 70 * 60_000))
+  assert.equal(started.length, before)
 })

@@ -33,6 +33,11 @@ export interface Schedule {
   /** Runs failed in a row (SCH-25), and the last job counted. */
   failures?: number
   counted?: string
+  /** The last job started because it came due, and the last second try (SCH-28). */
+  dueJob?: string
+  retried?: string
+  /** When a failed run is tried again (SCH-28). */
+  retryAt?: string
   /** Paused by navi after failing again and again (SCH-26). */
   stuck?: true
   /** A job whose answer an edit forgot, not to be compared with (SCH-15). */
@@ -81,6 +86,8 @@ export interface Change {
 export const MIN_EVERY = 5
 /** Failures in a row that pause a schedule (SCH-26). */
 export const FAILS_TO_PAUSE = 3
+/** How long after a failed run it is tried again (SCH-28). */
+export const RETRY_AFTER = 5 * 60_000
 const NEWS = 4000
 
 /** What a watch's run is sent (SCH-9, SCH-11): the prompt, then what to compare with. */
@@ -174,13 +181,14 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
     return writes
   }
 
-  const start = (s: Schedule, now: Date) => {
+  const start = (s: Schedule, now: Date, retry?: string) => {
     // SCH-10: the last run's answer is what the next compares with, unless it found nothing.
     const answered = s.quiet && s.job && s.job !== s.forgot ? d.answerOf(s.job) : undefined
     delete s.forgot
     if (answered && !nothingNew(answered)) s.news = answered.slice(0, NEWS)
     s.job = d.start(s.prompt, s.directory, {
       schedule: s.id,
+      ...(retry && { retry }),
       ...(s.quiet && { watch: true, ...(s.news && { send: watchPrompt(s.prompt, s.news) }) }),
     })
     s.last = now.toISOString()
@@ -223,6 +231,8 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
     async pause(id, paused, now = new Date()) {
       const s = all.find((x) => x.id === id)
       if (!s) return
+      // SCH-29
+      delete s.retryAt
       if (paused) s.paused = true
       else if (s.paused) {
         delete s.paused
@@ -239,6 +249,7 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
       if (!s) return
       // SCH-26: an edit may well have fixed it.
       delete s.failures
+      delete s.retryAt
       if (s.stuck) {
         delete s.stuck
         delete s.paused
@@ -285,7 +296,10 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
           const status = d.statusOf(s.job)
           s.counted = s.job
           changed = true
+          const again = new Date(now.getTime() + RETRY_AFTER)
           if (status === 'done') delete s.failures
+          // SCH-28: a run that came due is tried once more, unless the next comes first.
+          else if (status === 'failed' && s.job === s.dueJob && s.job !== s.retried && nextRun(s, from(s)) > again) s.retryAt = again.toISOString()
           else if (status === 'failed') s.failures = (s.failures ?? 0) + 1
           if ((s.failures ?? 0) >= FAILS_TO_PAUSE && !s.paused) {
             s.paused = true
@@ -294,12 +308,25 @@ export async function makeSchedules(d: ScheduleDeps): Promise<Schedules> {
           }
         }
         if (s.paused) continue
+        if (s.retryAt) {
+          if (new Date(s.retryAt) > now) continue
+          changed = true
+          delete s.retryAt
+          if (s.job && d.busy(s.job)) continue
+          // Not a run of its own: the next is still counted from the one that failed.
+          const { last } = s
+          const failed = s.job
+          start(s, now, failed)
+          s.last = last
+          s.retried = s.job
+          continue
+        }
         const due = nextRun(s, from(s))
         if (due > now) continue
         changed = true
         // SCH-3 and SCH-4: skipped, and counted as run so the next is the one after.
         if ((s.job && d.busy(s.job)) || now.getTime() - due.getTime() > LATE) s.last = now.toISOString()
-        else start(s, now)
+        else s.dueJob = start(s, now)
       }
       if (changed) await save()
     },

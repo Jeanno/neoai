@@ -49,6 +49,8 @@ export interface Job {
   schedule?: string
   /** Started by a watch, which may answer NOTHING NEW (SCH-9). */
   watch?: true
+  /** The failed job this one tried again (SCH-28). */
+  retryOf?: string
   /** A watch's run that found nothing new, so said nothing (SCH-10). */
   unchanged?: true
   /** The names of the files it was given (JOB-15). */
@@ -63,6 +65,8 @@ export interface StartOptions {
   /** What the model is sent in place of the prompt (SCH-11). */
   send?: string
   watch?: boolean
+  /** The failed job this one tries again (SCH-28). */
+  retry?: string
   /** Sent with the first turn (JOB-14). */
   attachments?: Attachment[]
 }
@@ -306,6 +310,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         history: [],
         ...(o.schedule && { schedule: o.schedule }),
         ...(o.watch && { watch: true as const }),
+        ...(o.retry && { retryOf: o.retry, log: [`· trying again: job ${o.retry} failed`] }),
         ...(o.attachments?.length && { files: o.attachments.map((a) => a.name) }),
       }
       jobs.set(job.id, job)

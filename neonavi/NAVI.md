@@ -67,6 +67,9 @@ where a mark opens its job (SCH-22 to SCH-24).
 A schedule that fails three runs in a row pauses itself and tells you once,
 instead of failing all night; Resume, or an edit, starts it again
 (SCH-25 to SCH-27).
+Before that, a run that came due and failed is tried once more five minutes
+later (unless the next run is sooner), so a model away for a minute does not
+cost you the morning's brief; only a failed second try counts (SCH-28, SCH-29).
 
     navi schedule "summarise what's new on my GitHub notifications page" --at 08:30 --days weekdays
 

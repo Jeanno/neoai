@@ -620,3 +620,13 @@ test('JOB-30: a job matches when it holds every word, in any case, in its prompt
   assert.ok(!matches(job, 'backups printer'))
   assert.ok(matches({ prompt: 'x', status: 'done' }, '  '))
 })
+
+test('SCH-28: a second try says which job it tries again', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-jobs-'))
+  const jobs = await makeJobs({ home, start: async () => { throw new Error('no model') }, notify: () => {} })
+  const job = jobs.create('the brief', home, { schedule: 'abc', retry: 'deadbeef' })
+  await jobs.idle()
+  const got = jobs.get(job.id)!
+  assert.equal(got.retryOf, 'deadbeef')
+  assert.equal(got.log[0], '· trying again: job deadbeef failed')
+})

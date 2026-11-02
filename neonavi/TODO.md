@@ -77,6 +77,8 @@ add the requirement there first.
       (SCH-22 to SCH-24)
 - [x] A schedule failing again and again pauses itself, with one
       notification. (SCH-25 to SCH-27)
+- [x] A failed scheduled run is tried once more five minutes later before
+      it counts. (SCH-28, SCH-29)
 - [x] A running `navi serve` follows a changed config (endpoint, key,
       model) at its next job, with no restart. (`spec/models.md` MOD-23)
 - [x] Files with a job: photos (scaled to JPEG on the phone, HEIC
