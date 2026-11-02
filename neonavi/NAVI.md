@@ -231,7 +231,12 @@ what it did), the turn starts on the `"escalate"` model
 instead, and navi says why (`· started on …`). It is off unless you set it,
 since the escalation model may be a remote one. Turns routed past a model
 don't count for or against it, so it gets another try once its bad turns
-are a month old (ESC-6, ESC-7, LED-11, LED-15).
+are a month old (ESC-6, ESC-7, LED-11, LED-15). `navi stats` splits each
+model's line by that sort, so you can see it struggles with changes but not
+questions, and marks a sort routing would start elsewhere now (LED-16):
+
+      changes: 5 turns · 100% answered · 60% of edits undone · routing starts these elsewhere now
+      questions: 15 turns · 100% answered
 
 Each directory keeps its own conversation. `navi sessions` lists them, newest
 first; `navi sessions clear` forgets this directory's, `clear <directory>`

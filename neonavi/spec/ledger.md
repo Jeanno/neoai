@@ -68,6 +68,15 @@ what was said.
   `aboutKind`, the kind (LED-11) of the turn before it, and an undo line
   (LED-9) records the undone turn's `kind`, by its prompt as kept for undo
   (files attached to it are not kept there, so it is `change` or `ask`).
+- LED-16: Under a model's line, `navi stats` shows its turns by kind
+  (LED-11), a line each, when they are of more than one kind: `changes`,
+  `questions` and `with files`, each with its turns, the share answered,
+  and of those answers the share corrected and asked again (by `aboutKind`,
+  LED-15), and the share of its edits undone. With `"route": "ledger"` and
+  an escalation model (ESC-6), a kind that routing would start elsewhere
+  now, judged as routing judges it (its own 30 days, not `--days`), is
+  marked `routing starts these elsewhere now`, and shown even when it is
+  the only kind or has no turns in the days shown.
 
 ## Open
 

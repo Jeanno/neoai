@@ -203,3 +203,29 @@ test('an undo line keeps the kind of the turn it undid, by its prompt', async ()
   assert.deepEqual((await readUndoneEntries(home)).map((e) => e.kind), ['change', 'ask', undefined])
   assert.deepEqual(await readUndone(home), ['m', 'm', 'm'])
 })
+
+// LED-16
+test("stats shows a model's turns by kind, and the kinds routing would start elsewhere now", () => {
+  const e = (kind: TurnKind, o: Partial<LedgerEntry> = {}) => entry({ model: 'q', kind, ...o })
+  const turns = [
+    e('change', { tools: { edit_file: 1 } }),
+    e('change', { tools: { edit_file: 1 } }),
+    e('change', { outcome: 'error' }),
+    e('change'),
+    e('ask'),
+    e('ask', { corrects: 'q', aboutKind: 'change' }),
+    e('ask', { repeats: 'q', aboutKind: 'ask' }),
+  ]
+  const undone = [{ at: new Date().toISOString(), undid: 'q', kind: 'change' as const }]
+  const out = stats(turns, 30, undone)
+  assert.match(out, /\n {6}changes: 4 turns · 75% answered · 33% corrected · 50% of edits undone\n/)
+  assert.match(out, /\n {6}questions: 3 turns · 100% answered · 33% asked again$/)
+  assert.doesNotMatch(out, /with files|routing/)
+  // One kind alone says nothing more than the model's line.
+  assert.equal(stats([e('ask'), e('ask')], 30).split('\n').length, 2)
+  // Routing on: a kind gone badly is marked, even when it is the only kind shown.
+  const bad = Array.from({ length: 5 }, () => e('change', { outcome: 'error' }))
+  const routed = stats([e('ask')], 30, [], { entries: bad, undone: [] })
+  assert.match(routed, /\n {6}changes: 0 turns · routing starts these elsewhere now\n {6}questions: 1 turn · 100% answered$/)
+  assert.doesNotMatch(stats([e('ask'), e('change')], 30, [], { entries: bad.slice(0, 4), undone: [] }), /routing/)
+})

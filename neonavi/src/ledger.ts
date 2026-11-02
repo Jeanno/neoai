@@ -198,8 +198,45 @@ const seconds = (ms: number) => (ms < 10_000 ? `${(ms / 1000).toFixed(1)}s` : `$
 /** Turns that changed a file, as far as the ledger can tell (LED-10). */
 const editing = (turns: LedgerEntry[]) => turns.filter((t) => (t.tools.write_file ?? 0) + (t.tools.edit_file ?? 0) > 0).length
 
-/** One line per model, most turns first (LED-6). */
-export function stats(entries: LedgerEntry[], days: number, undone: string[] = []): string {
+const KINDS: TurnKind[] = ['change', 'ask', 'attached']
+
+/**
+ * A model's turns by kind (LED-16), a line each, when they are of more than
+ * one kind or routing (ESC-6) would start some elsewhere now.
+ */
+function kindLines(model: string, turns: LedgerEntry[], entries: LedgerEntry[], undone: UndoneEntry[], route?: Routing): string[] {
+  const away = new Map(KINDS.map((k) => [k, route && routeAway(route.entries, model, k, route.undone)]))
+  const kinds = KINDS.filter((k) => turns.some((t) => t.kind === k))
+  if (kinds.length < 2 && ![...away.values()].some(Boolean)) return []
+  return KINDS.filter((k) => kinds.includes(k) || away.get(k)).map((k) => {
+    const of = turns.filter((t) => t.kind === k)
+    const answered = of.filter((t) => t.outcome === 'answered').length
+    const told = (field: 'corrects' | 'repeats') => entries.filter((e) => e[field] === model && e.aboutKind === k).length
+    const undid = undone.filter((u) => u.undid === model && u.kind === k).length
+    const parts = [
+      `${of.length} turn${of.length === 1 ? '' : 's'}`,
+      ...(of.length ? [`${pct(answered, of.length)} answered`] : []),
+      ...(told('corrects') && answered ? [`${pct(Math.min(told('corrects'), answered), answered)} corrected`] : []),
+      ...(told('repeats') && answered ? [`${pct(Math.min(told('repeats'), answered), answered)} asked again`] : []),
+      ...(undid ? [editing(of) ? `${pct(Math.min(undid, editing(of)), editing(of))} of edits undone` : `${undid} undone`] : []),
+      ...(away.get(k) ? ['routing starts these elsewhere now'] : []),
+    ]
+    return `      ${KIND_NAMES[k]}: ${parts.join(' · ')}`
+  })
+}
+
+const KIND_NAMES: Record<TurnKind, string> = { change: 'changes', ask: 'questions', attached: 'with files' }
+
+/** What routing by the ledger (ESC-6) reads: its own window, not the one shown. */
+export interface Routing {
+  entries: LedgerEntry[]
+  undone: UndoneEntry[]
+}
+
+/** One line per model, most turns first (LED-6), each with its kinds of turn under it (LED-16). */
+export function stats(entries: LedgerEntry[], days: number, undoneGiven: (string | UndoneEntry)[] = [], route?: Routing): string {
+  const undoneEntries = undoneGiven.map((u) => (typeof u === 'string' ? { at: '', undid: u } : u))
+  const undone = undoneEntries.map((u) => u.undid)
   if (!entries.length) return `No turns recorded in the last ${days} day${days === 1 ? '' : 's'}.`
   const by = new Map<string, LedgerEntry[]>()
   for (const e of entries) by.set(e.model, [...(by.get(e.model) ?? []), e])
@@ -243,6 +280,7 @@ export function stats(entries: LedgerEntry[], days: number, undone: string[] = [
     const routed = past.get(model)
     if (routed) parts.push(`${routed} routed past it`)
     lines.push(`  ${model}${turns[0]?.local === false ? ' (REMOTE)' : ''}: ${parts.join(' · ')}`)
+    lines.push(...kindLines(model, turns, entries, undoneEntries, route))
   }
   return lines.join('\n')
 }

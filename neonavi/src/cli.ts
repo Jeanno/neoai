@@ -17,7 +17,7 @@ import { readConfig, reset } from 'neorouter'
 import { configuredBrowser, disconnect, findBrowser, installBrowser, makeTab, showBrowser } from './browser.ts'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 import { describe, entryLabel, escalationFor, modelLabel } from './setup-core.ts'
-import { readLedger, readUndone, recordUndone, stats } from './ledger.ts'
+import { readLedger, readUndoneEntries, recordUndone, ROUTE_DAYS, stats } from './ledger.ts'
 import { makeJobs, matches, serveToken, tailnetAddresses, titleOf, working, type JobDeps } from './jobs.ts'
 import { push, pushConfig } from './push.ts'
 import { addFact, forgetFact, memoryFile, projectRoot, readMemory } from './memory.ts'
@@ -753,7 +753,11 @@ async function showStats(argv: string[]) {
     return 1
   }
   const since = Date.now() - days * 86_400_000
-  console.log(stats(await readLedger(homedir(), since), days, await readUndone(homedir(), since)))
+  const config = await readConfig()
+  // LED-16: what routing by the ledger would do now, over its own window.
+  const routeSince = Date.now() - ROUTE_DAYS * 86_400_000
+  const route = config.route === 'ledger' && config.escalate ? { entries: await readLedger(homedir(), routeSince), undone: await readUndoneEntries(homedir(), routeSince) } : undefined
+  console.log(stats(await readLedger(homedir(), since), days, await readUndoneEntries(homedir(), since), route))
   return 0
 }
 

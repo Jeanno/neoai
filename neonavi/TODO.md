@@ -135,6 +135,7 @@ add the requirement there first.
 - [x] Suggest facts to remember when leaving a conversation with exit. (MEM-20 to MEM-22)
 - [x] Suggest facts from a finished job on the phone, on a tap. (MEM-23, MEM-24)
 - [x] A hard token cap per link that no caller or app overrides. (MOD-27, SRV-10)
+- [x] `navi stats` by kind of turn, with what routing would do now. (LED-16)
 - [x] Undo: `navi undo` and `/undo` put back the files navi's last turn
       changed, never over edits made since, and the model is told.
       (UND-1 to UND-9)
