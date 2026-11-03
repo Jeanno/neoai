@@ -207,8 +207,9 @@ A window of navi's that has hung (it answers but cannot be driven) is
 closed and a fresh one started, so a task does not fail on it (BRW-16).
 A page that never finishes loading is reported as such within seconds,
 rather than holding the task up (BRW-17). For what text cannot carry, such
-as a chart or a picture, navi can look at the page: `browser_look` hands a
-vision model a picture of it (BRW-18; `"browser": {"look": false}` leaves it
+as a chart or a picture, navi can look at the page: `browser_look` shows a
+vision model a picture of it, apart from the conversation, and works from
+what it saw (BRW-18; `"browser": {"look": false}` leaves it
 out for a model that cannot take images). It can also attach a file from your
 computer to a form (`browser_upload`); since that sends the file away, it
 always asks you first, naming the file and its size (BRW-19). How well a model does with the
@@ -331,6 +332,10 @@ Use it for a server that slows to a crawl, or bills, past a size:
 An answer that stops at the cap, or the server's own, says it was cut short
 (in the terminal, a job's log and Raycast); ask navi to go on (HAR-11). On
 the phone, a cut job has a Go on button that does that for you (JOB-35).
+
+Some models stop mid-task after saying what they will do next ("Now I'll
+submit the form."). When a turn that used tools ends that way, navi tells
+the model to go on and do it, once per turn (HAR-12).
 
 Other flags: `-r` / `--resume` (open the loop with this directory's history),
 `--max-steps N` (default 32).

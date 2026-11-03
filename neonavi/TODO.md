@@ -131,10 +131,13 @@ add the requirement there first.
       The canvas chart task passes with it (6s) and fails without it. (BRW-18)
 - [x] File uploads in the browser: `browser_upload(ref, path)` fills a file
       field or the chooser a button opens, always asked. (BRW-19)
-- [ ] The local model sometimes ends a turn on "Now I'll submit the
-      application." without doing it: the eval's upload task passed 1 of 4
-      runs, each failure stopping so. A turn ending on a stated next step
-      after tool use could be nudged on once.
+- [x] The local model sometimes ended a turn on "Now I'll submit the
+      application." without doing it (the eval's upload task passed 1 of 4
+      runs). Such a turn is now carried on once. (HAR-12)
+- [x] A picture in the conversation (browser_look) made the local model stop
+      calling tools: the upload task passed 3/3 with the tool off, and
+      stalled after looking with it on. The picture is now seen in a call of
+      its own and only what was seen comes back. The eval is 13/13. (BRW-18)
 - [ ] Downloads in the browser.
 - [ ] Harder eval tasks, or a WebArena-Lite subset for numbers comparable with
       other agents (needs Docker).

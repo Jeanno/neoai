@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { simulateReadableStream, type ModelMessage } from 'ai'
-import { createHarness, type HarnessConfig, type HarnessEvent, type HarnessOptions, type Model } from '../src/harness.ts'
+import { createHarness, endsOnIntent, type HarnessConfig, type HarnessEvent, type HarnessOptions, type Model } from '../src/harness.ts'
 import type { Tab } from '../src/browser.ts'
 import { today } from '../src/args.ts'
 import { undo } from '../src/undo.ts'
@@ -72,7 +72,11 @@ function fake(steps: Part[][], o: { provider?: string; hang?: Part[] } = {}) {
     },
     doGenerate: async ({ prompt }) => {
       const said = JSON.stringify(prompt)
-      const reply = said.includes('Write the summary now') ? 'the summary' : said.includes('safe-cmd') ? 'SAFE' : 'UNSAFE'
+      const reply = said.includes('Write the summary now')
+        ? 'the summary'
+        : said.includes('a picture of the web page')
+          ? `seen: ${said.includes('"type":"file"') ? 'a picture' : 'no picture'}, asked ${/which bar is tallest/.test(said) ? 'which bar' : 'nothing'}`
+          : said.includes('safe-cmd') ? 'SAFE' : 'UNSAFE'
       return { content: [{ type: 'text', text: reply }], finishReason: 'stop', usage, warnings: [] }
     },
   })
@@ -921,19 +925,14 @@ test('the ledger keeps counts of each turn, never what was said, and only for a 
 })
 
 // BRW-18
-test('browser_look hands the model a picture of the page, with its URL', async () => {
+test('browser_look shows the picture in a call of its own, so the conversation stays text', async () => {
   const { tab } = fakeTab()
-  const model = fake([[call('c1', 'browser_look', {}), finish('tool-calls')], [...text('t', 'a bar chart'), finish('stop')]])
+  const model = fake([[call('c1', 'browser_look', { question: 'which bar is tallest?' }), finish('tool-calls')], [...text('t', 'April'), finish('stop')]])
   // Never asked about: it changes nothing, so it runs with no approver at all.
   await collect((await harness(model, { config: {}, browser: () => tab })).session().turn('what is on the chart?'))
   const result = (model.doStreamCalls[1].prompt as any[]).find((m) => m.role === 'tool').content[0].output
-  assert.deepEqual(result, {
-    type: 'content',
-    value: [
-      { type: 'text', text: 'The page as it looks now: https://shop.test/' },
-      { type: 'media', data: Buffer.from('a jpeg').toString('base64'), mediaType: 'image/jpeg' },
-    ],
-  })
+  assert.deepEqual(result, { type: 'text', value: 'The page at https://shop.test/, as it looks:\nseen: a picture, asked which bar' })
+  assert.ok(!JSON.stringify(model.doStreamCalls[1].prompt).includes('"type":"file"'), 'no picture in the conversation')
 })
 
 // BRW-19
@@ -959,5 +958,50 @@ test('an upload is always asked, even when the judge would let it through, and o
   const results = Object.fromEntries(events.filter((e) => e.type === 'tool-result').map((e: any) => [e.id, String(e.output)]))
   assert.match(results.c2, /gone\.pdf is not a file/)
   assert.match(results.c3, /is not a file/)
+})
+
+// HAR-12
+test('an answer is read as ending on a next step only when it says one it has not done', () => {
+  for (const said of [
+    'Great! The CV is attached. Now I\'ll submit the application.',
+    'The name is filled in. Now let me click **Send application**.',
+    'I see a cookie dialog. Let me accept cookies first, then click the button.',
+    'Next, I will open page 2:',
+    'I’m going to check the second page now.',
+    'Now let me submit the application. click [ref=e8] — Sending application...',
+  ])
+    assert.equal(endsOnIntent(said), true, said)
+  for (const said of [
+    'There are 37 open tickets.',
+    'Let me know if you need anything else.',
+    'I\'ll be here if you need more.',
+    'Shall I submit it?',
+    'I\'ll submit it once you say so.',
+    'I did not place the order.',
+    '',
+  ])
+    assert.equal(endsOnIntent(said), false, said)
+})
+
+// HAR-12
+test('a turn that stops on saying what it will do next is carried on once', async () => {
+  const model = fake([
+    [call('c1', 'read_file', { path: 'a.txt' }), finish('tool-calls')],
+    [...text('t1', 'Read it. Now I\'ll write the summary.'), finish('stop')],
+    [...text('t2', 'Now I\'ll write it again.'), finish('stop')],
+  ])
+  const h = await harness(model, { config: { web_search: false } })
+  const events = await collect(h.session().turn('summarize a.txt'))
+  const done: any = events.find((e) => e.type === 'done')
+  assert.equal(model.doStreamCalls.length, 3, 'carried on once, not twice')
+  assert.equal(done.text, 'Read it. Now I\'ll write the summary.\n\nNow I\'ll write it again.')
+  assert.ok(done.history.some((m: ModelMessage) => m.role === 'user' && String(m.content).startsWith('(navi: you stopped after saying what you would do next')))
+
+  // Without tools, or with a closing offer, it is the answer.
+  for (const said of ['Now I\'ll think about it.', 'Done. Let me know if you need more.']) {
+    const plain = fake(said.startsWith('Now') ? [[...text('t', said), finish('stop')]] : [[call('c1', 'read_file', { path: 'a.txt' }), finish('tool-calls')], [...text('t', said), finish('stop')]])
+    await collect((await harness(plain, { config: { web_search: false } })).session().turn('go'))
+    assert.equal(plain.doStreamCalls.length, said.startsWith('Now') ? 1 : 2, said)
+  }
 })
 

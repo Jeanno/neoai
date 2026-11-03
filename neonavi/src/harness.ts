@@ -1,4 +1,4 @@
-import { stepCountIs, streamText, type LanguageModel, type ModelMessage } from 'ai'
+import { generateText, stepCountIs, streamText, type LanguageModel, type ModelMessage } from 'ai'
 import { configDir, readConfig } from 'neorouter'
 import { readdir } from 'node:fs/promises'
 import { basename } from 'node:path'
@@ -344,6 +344,16 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         {
           web, fetch, write, cwd: o.cwd, ripgrep: o.ripgrep, search: searchBackend(config.search), browser,
           look: (config.browser as { look?: unknown } | undefined)?.look !== false,
+          // BRW-18: a picture shown apart, so the conversation stays text and tool calls go on.
+          see: async (jpeg, question, toolSignal) =>
+            (
+              await generateText({
+                model,
+                messages: [{ role: 'user', content: [{ type: 'image', image: jpeg, mediaType: 'image/jpeg' }, { type: 'text', text: question }] }],
+                maxOutputTokens: 1500,
+                abortSignal: toolSignal ?? signal,
+              })
+            ).text.trim() || 'Nothing could be made out of the picture.',
           ...(remembering && { memory: home, ...(project && { project }) }),
           wrote: recorder.wrote,
         },
@@ -379,6 +389,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         let trouble: string | undefined
         let inARow = 0
         let lastCalledTools = false
+        let called = false
         let taken = 0
         // HAR-11: how the last step ended.
         let cut = false
@@ -416,6 +427,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
                   emit({ type: 'text', text: part.text })
                   break
                 case 'tool-call':
+                  called = true
                   tally[part.toolName] = (tally[part.toolName] ?? 0) + 1
                   emit({ type: 'tool-call', id: part.toolCallId, name: part.toolName, input: part.input })
                   shownCalls.add(part.toolCallId)
@@ -468,7 +480,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           if (taken >= maxSteps && lastCalledTools) trouble = `it used all ${maxSteps} steps still calling tools`
           else if (!text.trim()) trouble = 'it gave no answer'
         }
-        return { messages: [...finished, ...kept], text, stopped, trouble, cut: cut && !stopped && !trouble }
+        return { messages: [...finished, ...kept], text, stopped, trouble, cut: cut && !stopped && !trouble, called }
       }
 
       const kind = kindOf(prompt, attachments?.length ?? 0)
@@ -500,6 +512,14 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         }
         done = await attempt(streamable(to.model), [...whole, note], false)
         whole = [...whole, note, ...done.messages]
+      }
+      // HAR-12: a turn that stopped on saying what it would do next is carried on, once.
+      if (!escalated && !done.stopped && !done.trouble && !done.cut && done.called && endsOnIntent(done.text)) {
+        const note: ModelMessage = { role: 'user', content: '(navi: you stopped after saying what you would do next. Go on and do it, then answer.)' }
+        emit({ type: 'text', text: '\n\n' })
+        const more = await attempt(model, [...whole, note], false)
+        whole = [...whole, note, ...more.messages]
+        done = { ...more, called: true, text: more.text.trim() ? `${done.text.trimEnd()}\n\n${more.text}` : done.text }
       }
       history = whole
       const text = done.text
@@ -545,6 +565,20 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
   }
 
   return { system, session }
+}
+
+/**
+ * An answer ending on what the model says it will do next, or trailing off
+ * (HAR-12): not a closing offer, a wait on the user, or a question.
+ */
+export function endsOnIntent(text: string): boolean {
+  const t = text.replace(/[*_`]/g, '').replace(/’/g, "'").trim()
+  if (!t || t.endsWith('?')) return false
+  // Trailing off ("Sending application...") is still on its way.
+  if (/(\.\.\.|…)$/.test(t)) return true
+  const last = t.split(/\n+/).at(-1)!.split(/(?<=[.!:])\s+/).filter(Boolean).at(-1) ?? ''
+  const m = /\b(?:let me|let's|i'll|i will|i'm going to|i am going to|next,? i)\s+(?:now\s+|then\s+|go ahead and\s+)?(\w+)/i.exec(last)
+  return !!m && !/^(know|be|keep|wait|stop|leave|need|have)$/i.test(m[1]) && !/\b(if|whenever|when|once) you\b/i.test(last)
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))

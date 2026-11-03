@@ -42,6 +42,13 @@ jack-ins are others (`jackins/NAVI.md`).
   is marked `cut` on `done`; a stopped or escalated one is not. The CLI says
   so after it, a job in its log, Raycast as a note, all in the same words
   and saying how to go on, and the ledger keeps `cut` (LED-1).
+- HAR-12: A turn that used tools and whose answer ends by saying what the
+  model will do next, without doing it ("Now I'll submit the
+  application.") or trails off ("Sending application..."), is carried on once: the model is told it stopped after
+  saying what it would do, and to go on and do it. Its answer is then both
+  parts. A closing offer ("Let me know if…", "I'll be here"), a question,
+  a turn without tools, and one stopped, cut or escalated are not carried
+  on, nor is a turn twice.
 - HAR-5: The harness never writes to stdout or stderr itself; everything a user
   might see is an event or a callback, so a front end with no terminal works.
 - HAR-6: The CLI is built on the library, with its behaviour in `cli.md`
