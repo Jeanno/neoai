@@ -74,6 +74,9 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
   Answer, Try Again a failed or interrupted job (JOB-42), Stop one working,
   and Start Job with what is typed in the search bar, in navi serve's first
   folder (JOB-8). What navi serve refuses is shown as it says it.
+- RAY-18: A job that is not working has Follow up, which opens a form for
+  the follow-up and sends it to the same job (JOB-3), back to the list where
+  it shows working; and Delete Job (⌃X), which asks first (JOB-24).
 - RAY-17: With no navi serve answering, or no token (navi serve has never
   run), the command says navi serve is not running and offers to copy
   `navi serve --install`. The token is only read, never made or shown.

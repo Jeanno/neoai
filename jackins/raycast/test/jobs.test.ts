@@ -59,7 +59,7 @@ test('RAY-15, RAY-16: jobs are listed, answered, tried again and started through
   await until(async () => (await client.list())[0].status === 'waiting')
   const [waiting] = await client.list()
   assert.equal(waiting.pending?.command, 'rm -rf build')
-  assert.deepEqual(actionsFor(waiting), { allow: true, copy: false, retry: false, stop: true })
+  assert.deepEqual(actionsFor(waiting), { allow: true, copy: false, retry: false, stop: true, followUp: false, remove: false })
   assert.match(detailOf(waiting), /### navi asks to\n\n```\nrm -rf build\n```/)
   await client.answer(waiting.id, true)
   await until(async () => (await client.list())[0].status === 'done')
@@ -71,6 +71,13 @@ test('RAY-15, RAY-16: jobs are listed, answered, tried again and started through
   assert.match(detailOf(failed), /\*\*Failed:\*\* the backend is unreachable/)
   await client.retry(failed.id)
   await until(async () => (await client.list()).find((j) => j.id === failed.id)!.status === 'done')
+  // RAY-18: followed up in the same job, and deleted.
+  assert.deepEqual(actionsFor((await client.list()).find((j) => j.id === failed.id)!), { allow: false, copy: true, retry: false, stop: false, followUp: true, remove: true })
+  await client.reply(failed.id, 'and then')
+  await until(async () => (await client.list()).find((j) => j.id === failed.id)!.answer === 'Answer to and then.')
+  assert.equal((await client.list()).length, 2)
+  await client.remove(started.id)
+  assert.deepEqual((await client.list()).map((j) => j.id), [failed.id])
   // What navi serve refuses is said as it says it.
   await assert.rejects(client.retry(failed.id), /Only a job that failed or was interrupted/)
   await assert.rejects(client.start('  '), /Give the job a prompt/)

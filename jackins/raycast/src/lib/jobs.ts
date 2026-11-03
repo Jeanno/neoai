@@ -65,6 +65,8 @@ export function jobsClient(o: { home?: string; port?: number; fetch?: typeof fet
     answer: (id: string, yes: boolean) => post(id, 'answer', { yes }),
     retry: (id: string) => post(id, 'retry'),
     stop: (id: string) => post(id, 'stop'),
+    reply: (id: string, prompt: string) => post(id, 'reply', { prompt }),
+    remove: (id: string) => post(id, 'delete'),
   }
 }
 
@@ -92,12 +94,16 @@ const WORDS: Record<Status, string> = {
 export const statusWord = (j: Pick<JobRow, 'status' | 'unchanged'>) => (j.unchanged ? 'Nothing new' : WORDS[j.status] ?? j.status)
 
 /** What can be done with a job from the list (RAY-16). */
-export function actionsFor(j: JobRow): { allow: boolean; copy: boolean; retry: boolean; stop: boolean } {
+export function actionsFor(j: JobRow): { allow: boolean; copy: boolean; retry: boolean; stop: boolean; followUp: boolean; remove: boolean } {
+  const working = j.status === 'queued' || j.status === 'running' || j.status === 'waiting'
   return {
+    // RAY-18
+    followUp: !working,
+    remove: !working,
     allow: j.status === 'waiting' && !!j.pending,
     copy: !!j.answer,
     retry: j.status === 'failed' || j.status === 'interrupted',
-    stop: j.status === 'queued' || j.status === 'running' || j.status === 'waiting',
+    stop: working,
   }
 }
 

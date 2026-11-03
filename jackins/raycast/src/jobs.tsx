@@ -1,4 +1,4 @@
-import { Action, ActionPanel, Clipboard, Color, Icon, List, showToast, Toast } from '@raycast/api'
+import { Action, ActionPanel, Alert, Clipboard, Color, confirmAlert, Form, Icon, List, showToast, Toast, useNavigation } from '@raycast/api'
 import { useCallback, useEffect, useState } from 'react'
 import { actionsFor, detailOf, jobsClient, NotServing, sections, statusWord, type JobRow } from './lib/jobs'
 
@@ -116,6 +116,25 @@ export default function Command() {
                     {can.copy && <Action title="Copy Answer" icon={Icon.Clipboard} onAction={() => Clipboard.copy(j.answer!).then(() => showToast({ title: 'Copied answer' }))} />}
                     {can.retry && <Action title="Try Again" icon={Icon.RotateClockwise} shortcut={{ modifiers: ['cmd', 'shift'], key: 'r' }} onAction={() => act('Trying again…', () => client.retry(j.id))} />}
                     {startJob}
+                    {can.followUp && (
+                      <Action.Push title="Follow up" icon={Icon.Reply} target={<FollowUp job={j} onSent={reload} />} />
+                    )}
+                    {can.remove && (
+                      <Action
+                        title="Delete Job"
+                        icon={Icon.Trash}
+                        style={Action.Style.Destructive}
+                        shortcut={{ modifiers: ['ctrl'], key: 'x' }}
+                        onAction={async () => {
+                          const yes = await confirmAlert({
+                            title: 'Delete this job?',
+                            message: 'Its answer and log go; files it changed stay as they are.',
+                            primaryAction: { title: 'Delete', style: Alert.ActionStyle.Destructive },
+                          })
+                          if (yes) await act('Deleting…', () => client.remove(j.id))
+                        }}
+                      />
+                    )}
                     {can.stop && (
                       <Action title="Stop Job" icon={Icon.Stop} style={Action.Style.Destructive} shortcut={{ modifiers: ['ctrl'], key: 'x' }} onAction={() => act('Stopping…', () => client.stop(j.id))} />
                     )}
@@ -127,5 +146,42 @@ export default function Command() {
         </List.Section>
       ))}
     </List>
+  )
+}
+
+/** A follow-up to a job, sent to it as the phone page's box sends one (RAY-18). */
+function FollowUp({ job, onSent }: { job: JobRow; onSent: () => Promise<void> }) {
+  const { pop } = useNavigation()
+  const [error, setError] = useState<string>()
+  return (
+    <Form
+      navigationTitle={`Follow up: ${job.prompt.split('\n')[0]}`}
+      actions={
+        <ActionPanel>
+          <Action.SubmitForm
+            title="Send Follow-Up"
+            icon={Icon.Reply}
+            onSubmit={async ({ prompt }: { prompt: string }) => {
+              if (!prompt.trim()) return setError('Say what navi should do next.')
+              const toast = await showToast({ style: Toast.Style.Animated, title: 'Following up…' })
+              try {
+                await client.reply(job.id, prompt.trim())
+                toast.style = Toast.Style.Success
+                toast.title = 'Followed up'
+                await onSent()
+                pop()
+              } catch (e) {
+                toast.style = Toast.Style.Failure
+                toast.title = 'Could not follow up'
+                toast.message = (e as Error).message
+              }
+            }}
+          />
+        </ActionPanel>
+      }
+    >
+      <Form.Description title="Job" text={job.answer ? `${job.prompt.split('\n')[0]}\n\n${job.answer.slice(0, 400)}${job.answer.length > 400 ? '…' : ''}` : job.prompt} />
+      <Form.TextArea id="prompt" title="Follow-Up" placeholder="What next?" error={error} onChange={() => setError(undefined)} autoFocus />
+    </Form>
   )
 }
