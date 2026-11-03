@@ -1,6 +1,7 @@
 import { after, before, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
+import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -50,6 +51,11 @@ before(async () => {
       res.end(`<title>Invoices</title><script>alert('Welcome back')</script><ul><li id=inv>Invoice 7</li></ul>
 <button onclick="if (confirm('Delete invoice 7?')) inv.remove()">Delete</button>
 <button onclick="out.textContent = 'Renamed to ' + prompt('New name?')">Rename</button><p id=out></p>`)
+    else if (url.pathname === '/menu')
+      res.end(`<title>Menu</title><style>#m{display:none}nav:hover #m{display:block}</style><nav><button aria-haspopup=menu>Account</button><ul id=m><li><a href="/about">Orders</a></li><li><a href="/about">Sign out</a></li></ul></nav>`)
+    else if (url.pathname === '/menu2')
+      res.end(`<title>Menu</title><nav id=menu><a href="/about">Branches</a><ul id=list hidden><li><a href="/about">Riverside</a></li></ul></nav>
+<script>menu.onmouseenter=()=>list.hidden=false;menu.onmouseleave=()=>list.hidden=true;addEventListener('pageshow',()=>list.hidden=true)</script>`)
     else if (url.pathname === '/never') return // answered only when the server closes
     else if (url.pathname === '/found') res.end(`<title>Found</title><p>Results for ${url.searchParams.get('q')}</p>`)
     else res.end(SHOP)
@@ -92,8 +98,10 @@ test('a page is opened, read and acted on as text', { skip }, async () => {
 
   const searched = await done(tab, { kind: 'type', ref: refOf(page, 'textbox "Query"'), text: 'hats', submit: true })
   assert.match(searched, /^Found\nhttp:\/\/127\.0\.0\.1:\d+\/found\?q=hats\n\ntext: Results for hats$/)
-  assert.match(await tab.back(), /^Shop\n/)
-  assert.match(await done(tab, { kind: 'click', ref: refOf(page, 'link "About"') }), /^About\n.*\/about\n\nheading "About us" \[level=1\]\ntext: We sell things\.$/)
+  // Gone back to, the page is loaded afresh (BRW-23), its refs as back reads them.
+  const again = await tab.back()
+  assert.match(again, /^Shop\n/)
+  assert.match(await done(tab, { kind: 'click', ref: refOf(again, 'link "About"') }), /^About\n.*\/about\n\nheading "About us" \[level=1\]\ntext: We sell things\.$/)
   assert.match((await tab.read({})).split('\n')[0], /\/about$/)
 })
 
@@ -315,4 +323,59 @@ test('a pop-up never hangs the tab: a message is told, a question answered Cance
   const rename = refOf(page, 'button "Rename"')
   assert.match(await done(tab, { kind: 'click', ref: rename, dialog: 'Invoice 8' }), /answered "Invoice 8"\.[\s\S]*Renamed to Invoice 8/)
   assert.match(await done(tab, { kind: 'click', ref: rename }), /answered Cancel[\s\S]*Renamed to null/)
+})
+
+// BRW-22
+test('a hover shows what the page shows only on hover, and a gone ref says so', { skip }, async () => {
+  const tab = makeTab({ home, headless: true })
+  const page = await tab.open(`${base}/menu`)
+  assert.doesNotMatch(page, /Sign out/)
+  const shown = await tab.hover(refOf(page, 'button "Account"'))
+  assert.match(shown, /link "Orders"[\s\S]*link "Sign out"/)
+  // A menu its script opens as the pointer enters, after a click and back left the pointer over it.
+  const scripted = await tab.open(`${base}/menu2`)
+  const head = refOf(scripted, 'link "Branches"')
+  await done(tab, { kind: 'click', ref: head })
+  const again = refOf(await tab.back(), 'link "Branches"')
+  assert.match(await tab.hover(again), /link "Riverside"/)
+  assert.match(await tab.hover('e999'), /No element \[ref=e999\] is on the page now/)
+})
+
+// BRW-23
+test('a page gone back to can be acted on, also in a browser started with a back-forward cache', { skip }, async () => {
+  const own = await mkdtemp(join(tmpdir(), 'navi-bfcache-'))
+  // Started as before BRW-23, without the flag; navi attaches to it.
+  const chrome = spawn((await findBrowser())!, [
+    `--user-data-dir=${profileDir(own)}`, '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1',
+    '--no-first-run', '--headless=new', '--use-mock-keychain', 'about:blank',
+  ], { stdio: 'ignore' })
+  try {
+    for (const tab of [makeTab({ home, headless: true }), makeTab({ home: own, headless: true })]) {
+      // As the bug was seen: a page before, so the one gone back to is restored rather than opened afresh.
+      await tab.open(`${base}/found?q=first`)
+      const page = await tab.open(`${base}/menu2`)
+      await done(tab, { kind: 'click', ref: refOf(page, 'link "Branches"') })
+      const again = await tab.back()
+      assert.match(await done(tab, { kind: 'click', ref: refOf(again, 'link "Branches"') }), /About us/)
+    }
+  } finally {
+    await quitBrowser(own).catch(() => {})
+    chrome.kill()
+    await rm(own, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  }
+})
+
+// BRW-21
+test('a pop-up in a tab that is no session\'s is left to the user, not dismissed', { skip }, async () => {
+  const own = await (await connect({ home, headless: true })).contexts()[0].newPage()
+  try {
+    await own.goto(`${base}/about`)
+    await own.evaluate("setTimeout(() => { window.said = confirm('Leave?') }, 0)")
+    await new Promise((r) => setTimeout(r, 800))
+    // Still open, for the user to answer: the page runs nothing meanwhile, where dismissed it would say false at once.
+    const said = await Promise.race([own.evaluate('window.said'), new Promise((r) => setTimeout(() => r('still open'), 1000))])
+    assert.equal(said, 'still open')
+  } finally {
+    await own.close({ runBeforeUnload: false }).catch(() => {})
+  }
 })

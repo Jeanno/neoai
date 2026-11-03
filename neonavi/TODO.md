@@ -182,6 +182,13 @@ add the requirement there first.
       changed; reading is free, acting is judged and asked. (BRW-1 to BRW-15)
 - [x] A page's pop-ups (alert, confirm, prompt) told to navi and answered
       Cancel unless the action answers them, which always asks. (BRW-21)
+- [x] Hover, for menus and tooltips shown only on hover, asked about never. (BRW-22)
+- [x] A page gone back to could not be clicked (Chrome's back-forward cache);
+      found by the hover eval task. (BRW-23)
+- [ ] browser_look once answered from a picture what the picture could not
+      show (a closed hover menu: "12:00 to 6:00", which is on no page). Have
+      it say what it cannot see rather than guess; mark elements that open
+      a menu in the page text, so hovering is thought of first.
 - [ ] The browser in Raycast: approval is ready, but Raycast's bundler
       cannot pack Playwright. (`jackins/raycast/spec.md` Open)
 - [x] The browser over MCP: `navi mcp --browser` serves the browser tools,

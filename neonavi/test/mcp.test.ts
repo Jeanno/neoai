@@ -105,6 +105,7 @@ function fakeTab() {
     close: async (id) => `closed ${id}`,
     read: async () => 'the page',
     back: async () => 'went back',
+    hover: async (ref) => `hovered ${ref}`,
     describe: async (a: any) => ({ line: `click ${a.ref} on shop.test`, url: 'https://shop.test/' }),
     act: async (a: any, approved) => (done.push(`${a.ref}: ${approved.line}`), `clicked ${a.ref}`),
     lock: (fn) => fn(tab),
@@ -131,11 +132,13 @@ test('with --browser, the browser tools are served, marked, and acted on by the 
   const tools = Object.fromEntries(replies[0].result.tools.map((t: any) => [t.name, t]))
   assert.ok(tools.ask_navi && !tools.ask_navi.annotations)
   assert.deepEqual(Object.keys(tools).filter((n) => n.startsWith('browser_')).sort(), [
-    'browser_back', 'browser_click', 'browser_close_tab', 'browser_look', 'browser_open', 'browser_press', 'browser_read',
+    'browser_back', 'browser_click', 'browser_close_tab', 'browser_hover', 'browser_look', 'browser_open', 'browser_press', 'browser_read',
     'browser_select', 'browser_switch', 'browser_tabs', 'browser_type', 'browser_upload',
   ])
   assert.deepEqual(tools.browser_read.annotations, { readOnlyHint: true, destructiveHint: false })
   assert.deepEqual(tools.browser_click.annotations, { readOnlyHint: false, destructiveHint: true })
+  // BRW-22: a hover presses nothing.
+  assert.deepEqual(tools.browser_hover.annotations, { readOnlyHint: true, destructiveHint: false })
   assert.equal(tools.browser_click.inputSchema.type, 'object')
   assert.deepEqual(tools.browser_click.inputSchema.required, ['ref'])
   const byId = Object.fromEntries(replies.map((r: any) => [r.id, r.result]))

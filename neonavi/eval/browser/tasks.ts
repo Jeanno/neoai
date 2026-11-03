@@ -141,4 +141,10 @@ export const TASKS: Task[] = [
       return deleted.join() === 'Old supplier' ? null : deleted.length ? `it deleted ${deleted.join(', ')}` : 'nothing was deleted'
     },
   },
+  {
+    id: 'hover-menu',
+    tests: 'a menu shown only while the pointer is over it (BRW-22)',
+    prompt: (b) => `Use your browser. On ${b}/libraries, find the Riverside branch and tell me its Sunday opening hours.`,
+    check: (a) => has(a, /12[:.]00.{0,6}17[:.]00|(12\s*pm|noon).{0,6}5\s*pm/i),
+  },
 ]

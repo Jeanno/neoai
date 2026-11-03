@@ -228,11 +228,15 @@ it (BRW-20); files you download yourself in navi's window go where they
 always do. A page's own pop-ups never hang navi: a message is passed on to
 it, and a question ("Delete this draft?") is answered Cancel and passed on,
 until navi does the action again with an answer, which always asks you,
-naming the question (BRW-21). How well a model does with the
-browser is measured by `eval/browser`: fifteen tasks on local practice sites
+naming the question (BRW-21). navi can also hover over an element, for a
+menu or tooltip a page shows only on hover; that presses nothing, so it is
+not asked about (BRW-22). A page gone back to can be acted on like any
+other: navi's browser keeps no back-forward cache, whose restored pages
+could not be clicked (BRW-23). How well a model does with the
+browser is measured by `eval/browser`: sixteen tasks on local practice sites
 (searching, forms, signing in, cookie banners, frames, new tabs, stopping
-before paying, a chart drawn on a canvas, uploading and downloading files, a delete behind an "are you sure?"), run against a `navi serve` with
-`npx tsx eval/browser/run.mts --port <port>`; the latest scores are in
+before paying, a chart drawn on a canvas, uploading and downloading files, a delete behind an "are you sure?", a menu shown on hover), run against a `navi serve` with
+`npx tsx eval/browser/run.mts --port <port>` (`--verbose` shows each task's steps); the latest scores are in
 `eval/browser/RESULTS.md`.
 `"browser": false` in the config removes it (`spec/browser.md`).
 

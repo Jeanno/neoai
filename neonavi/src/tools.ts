@@ -406,6 +406,14 @@ export function makeTools(
             : { type: 'text' as const, value: out.problem },
     }),
 
+    browser_hover: tool({
+      description:
+        'Move the pointer over an element on the browser page by its ref, for a menu or tooltip shown only on hover. ' +
+        'It presses nothing, so it is not asked about. Returns what changed.',
+      inputSchema: z.object({ ref: z.string() }),
+      execute: async ({ ref }) => browser!().hover(ref),
+    }),
+
     browser_back: tool({
       description: 'Go back one page in the browser.',
       inputSchema: z.object({}),
@@ -459,7 +467,7 @@ export function makeTools(
   if (!browser || !look) delete (tools as Partial<typeof tools>).browser_look
   if (!browser)
     for (const name of [
-      'browser_open', 'browser_tabs', 'browser_switch', 'browser_close_tab', 'browser_read', 'browser_back',
+      'browser_open', 'browser_tabs', 'browser_switch', 'browser_close_tab', 'browser_read', 'browser_back', 'browser_hover',
       'browser_click', 'browser_type', 'browser_select', 'browser_press', 'browser_upload',
     ] as const)
       delete (tools as Partial<typeof tools>)[name]

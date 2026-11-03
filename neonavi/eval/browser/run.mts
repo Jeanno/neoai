@@ -4,7 +4,7 @@
  * checked. Writes eval/browser/RESULTS.md.
  *
  *   HOME=<home> navi serve --port 8495 &
- *   HOME=<home> npx tsx eval/browser/run.mts --port 8495 [--only form,frame] [--headless]
+ *   HOME=<home> npx tsx eval/browser/run.mts --port 8495 [--only form,frame] [--headless] [--verbose]
  */
 import { writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -69,13 +69,11 @@ for (const task of TASKS.filter((t) => !only || only.includes(t.id))) {
   const cell = (s: string) => s.replace(/\|/g, '\\|').replace(/\s+/g, ' ').slice(0, 140)
   rows.push(`| ${task.id} | ${task.tests} | ${why ? '✗' : '✓'} | ${secs} s | ${job.log.length} (${browsed}) | ${asked.length} | ${cell(why ?? answer)} |`)
   console.log(`${why ? 'FAIL' : 'PASS'} ${task.id} ${secs}s ${why ?? ''}`)
-  // What it did and said, to see why.
-  if (why) {
-    const told = `  ${(job.log as string[]).join('\n  ')}\n  answer: ${answer.replace(/\s+/g, ' ').slice(0, 400)}`
-    console.log(told)
-    // Kept whole, to read a rare miss after the run.
-    await writeFile(join(import.meta.dirname, `failed-${task.id}.log`), `${(job.log as string[]).join('\n')}\n\nanswer: ${answer}\n`)
-  }
+  // What it did and said, to see why; with --verbose, for a pass too.
+  if (why || process.argv.includes('--verbose'))
+    console.log(`  ${(job.log as string[]).join('\n  ')}\n  answer: ${answer.replace(/\s+/g, ' ').slice(0, 400)}`)
+  // Kept whole, to read a rare miss after the run.
+  if (why) await writeFile(join(import.meta.dirname, `failed-${task.id}.log`), `${(job.log as string[]).join('\n')}\n\nanswer: ${answer}\n`)
   await api(`/jobs/${job.id}/delete`, {}).catch(() => {})
 }
 server.close()

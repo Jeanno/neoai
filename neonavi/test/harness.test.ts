@@ -624,6 +624,7 @@ function fakeTab(o: { moves?: boolean } = {}) {
     close: async (id: string) => `closed ${id}`,
     read: async () => 'the page',
     back: async () => 'went back',
+    hover: async (ref: string) => `hovered ${ref}`,
     describe: async (a: any) => {
       looks++
       // A page that moves on: the second look, after approval, differs.
@@ -719,7 +720,7 @@ test('browser tools come only with a browser, on, and one tab per session', asyn
   assert.deepEqual(await names({ config: { browser: false }, browser: () => tab }), [])
   assert.deepEqual(await names({ config: { web_search: false }, browser: () => tab }), [])
   assert.deepEqual((await names({ config: {}, browser: () => tab })).sort(), [
-    'browser_back', 'browser_click', 'browser_close_tab', 'browser_look', 'browser_open', 'browser_press', 'browser_read',
+    'browser_back', 'browser_click', 'browser_close_tab', 'browser_hover', 'browser_look', 'browser_open', 'browser_press', 'browser_read',
     'browser_select', 'browser_switch', 'browser_tabs', 'browser_type', 'browser_upload',
   ])
   // BRW-18: for a model that cannot take images.
@@ -958,6 +959,17 @@ test('an upload is always asked, even when the judge would let it through, and o
   const results = Object.fromEntries(events.filter((e) => e.type === 'tool-result').map((e: any) => [e.id, String(e.output)]))
   assert.match(results.c2, /gone\.pdf is not a file/)
   assert.match(results.c3, /is not a file/)
+})
+
+// BRW-22
+test('a hover runs without asking, as reading does', async () => {
+  const { tab } = fakeTab()
+  const asked: string[] = []
+  const model = fake([[call('c1', 'browser_hover', { ref: 'Account' }), finish('tool-calls')], [...text('t', 'ok'), finish('stop')]])
+  const h = await harness(model, { config: {}, browser: () => tab, approve: async (c) => (asked.push(c), true) })
+  const events = await collect(h.session().turn('open the account menu'))
+  assert.deepEqual(asked, [])
+  assert.equal((events.find((e: any) => e.type === 'tool-result' && e.id === 'c1') as any)?.output, 'hovered Account')
 })
 
 // BRW-21

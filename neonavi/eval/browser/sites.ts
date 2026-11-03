@@ -74,6 +74,9 @@ function multipart(body: string, boundary: string): Record<string, string> {
   return out
 }
 
+/** The branches on /libraries (task 16): name, page, Sunday hours. */
+export const BRANCHES = [['Northgate', 'k7q2', 'closed'], ['Riverside', 'm3x9', '12:00–17:00'], ['Old Town', 'p5z1', '10:00–14:00']]
+
 /** The drafts on /drafts (task 15). */
 export const DRAFTS = ['Ana Ruiz', 'Old supplier', 'Kettle Co']
 
@@ -202,6 +205,16 @@ months.forEach((m, i) => { const h = v[i] * 3; c.fillStyle = '#3b6fd1'; c.fillRe
       res.writeHead(200, { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="${p.split('/').at(-1)}"` })
       return res.end(`product,sales\n${rows.map(([n, v]) => `${n},${v}`).join('\n')}\n`)
     }
+
+    // 16. A branch's page reached only through a menu shown on hover.
+    if (p === '/libraries')
+      return html(page('City libraries', `<nav id=menu><a href=/libraries/news aria-haspopup=menu>Branches</a><ul id=list hidden>${BRANCHES.map(([name, id]) => `<li><a href="/libraries/b/${id}">${name}</a></li>`).join('')}</ul></nav>
+<h1>City libraries</h1><p>Find a branch in the Branches menu.</p>
+<script>menu.onmouseenter=()=>list.hidden=false;menu.onmouseleave=()=>list.hidden=true;addEventListener('pageshow',()=>list.hidden=true)</script>`))
+    // Clicked rather than hovered, the menu's head leads away, as on many sites.
+    if (p === '/libraries/news') return html(page('Library news', '<h1>Library news</h1><p>The summer reading list is out.</p>'))
+    const branch = BRANCHES.find(([, id]) => p === `/libraries/b/${id}`)
+    if (branch) return html(page(`${branch[0]} library`, `<h1>${branch[0]} library</h1><p>Open on Sunday: ${branch[2]}</p>`))
 
     // 15. Drafts deleted only once the page's "are you sure?" is answered OK.
     if (p === '/drafts' || p === '/drafts/delete') {

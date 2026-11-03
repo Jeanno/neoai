@@ -103,7 +103,17 @@ has to look at the whole page again to see what happened.
   `dialog`: "ok" to answer OK, or the text a prompt asks for ("cancel" or
   "no" answers Cancel). An action carrying an answer always asks the user,
   naming the question the page last asked, since a page asks to be sure
-  of what matters. The answer is kept for that action only.
+  of what matters. The answer is kept for that action only. A pop-up in a
+  tab that is not the session's, another navi's or the user's own, is left
+  to it: no navi answers it.
+- BRW-22: `browser_hover(ref)` moves the pointer over an element, for a
+  menu, a tooltip or anything else a page shows only on hover, and answers
+  with what changed, as an action does (BRW-10). It presses nothing, so it
+  runs without asking, as reading does; a ref not on the page says so.
+- BRW-23: A page gone back to can be acted on like any other. The browser
+  navi starts keeps no back-forward cache, whose restored pages Playwright
+  cannot act on; on a browser started without that, a page gone back to
+  whose refs cannot be acted on is opened again.
 - BRW-10: An action answers with what changed: a new page answers as
   browser_open; on the same page, the lines that appeared, at most 40, and
   how many went; or that nothing on the page changed.

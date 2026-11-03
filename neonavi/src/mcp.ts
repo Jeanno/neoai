@@ -27,7 +27,7 @@ const TOOL = {
 }
 
 /** Browser tools that only look, which a client may run unasked (MCP-6). */
-const READ_ONLY = new Set(['browser_open', 'browser_read', 'browser_tabs', 'browser_switch', 'browser_back', 'browser_look'])
+const READ_ONLY = new Set(['browser_open', 'browser_read', 'browser_tabs', 'browser_switch', 'browser_back', 'browser_look', 'browser_hover'])
 
 interface Served {
   name: string

@@ -27,6 +27,8 @@ export interface Tab {
   close: (id: string) => Promise<string>
   read: (o: { offset?: number; find?: string }) => Promise<string>
   back: () => Promise<string>
+  /** The pointer over an element, and what that showed (BRW-22); presses nothing, so is not approved. */
+  hover: (ref: string) => Promise<string>
   /** The one line approval shows (BRW-11), or why the action cannot be done. */
   describe: (action: Action) => Promise<{ line: string; url: string } | { problem: string }>
   /**
@@ -134,6 +136,8 @@ async function launch(exe: string, profile: string, headless: boolean): Promise<
     '--remote-debugging-address=127.0.0.1',
     '--no-first-run',
     '--no-default-browser-check',
+    // BRW-23: a page brought back from the back-forward cache is a frame Playwright no longer knows, and nothing on it can be acted on.
+    '--disable-features=BackForwardCache',
     // A test's browser leaves the keychain alone: under a home of its own, Chrome waits on it and loads nothing.
     ...(headless ? ['--headless=new', '--use-mock-keychain'] : []),
     'about:blank',
@@ -232,7 +236,13 @@ export async function connect(o: BrowserOptions): Promise<Browser> {
   }
   const made = (async () => {
     const chromium = await playwright()
-    const attach = (port: number, ms = ATTACH_MS) => chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: ms })
+    const attach = (port: number, ms = ATTACH_MS) =>
+      chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: ms }).then((b) => {
+        // BRW-21: a connection with no dialog listener has Playwright dismiss every pop-up in the browser, in any
+        // navi's tab or the user's own; heard here, each is left to the tab's owner, or to the user.
+        for (const c of b.contexts()) c.on('dialog', () => {})
+        return b
+      })
     return locked(profile, async () => {
       // Read under the lock: another navi may have just started it.
       const port = await debugPort(profile)
@@ -332,6 +342,13 @@ async function deepen(page: Page, text: string, left: { parts: number; until: nu
 /** Whatever a page runs, given up on after `ms`: one that never loaded never runs it (BRW-17). */
 const within = <T>(ms: number, run: Promise<T>) =>
   Promise.race([run, new Promise<never>((_, no) => setTimeout(() => no(new Error(`Timeout ${ms}ms: the page did not answer`)), ms).unref())])
+
+/** Whether the refs the page is read with can be acted on: not on a page restored from the back-forward cache (BRW-23). */
+async function actable(page: Page): Promise<boolean> {
+  const ref = (await linesOf(page).catch(() => [])).map((l) => /\[ref=([\w-]+)\]/.exec(l)?.[1]).find(Boolean)
+  if (!ref) return true
+  return page.locator(`aria-ref=${ref}`).count().then(() => true, (e) => !/Invalid frame/.test(reason(e)))
+}
 
 /** Pages found too complex, by the URL they were found at: read as text until they move on, not waited on again. */
 const complex = new WeakMap<Page, string>()
@@ -651,9 +668,28 @@ export function makeTab(o: BrowserOptions): Tab {
         await p.goBack({ waitUntil: 'commit', timeout: o.loadMs ?? 30_000 })
         if (p.url() === from) return 'There is no page to go back to.'
         await settle(p)
+        // BRW-23: a browser started without the flag above may still restore the page from its cache; loaded again, it can be acted on.
+        if (!(await actable(p))) await p.goto(p.url(), { waitUntil: 'domcontentloaded', timeout: o.loadMs ?? 30_000 }).then(() => settle(p))
         return await answer(p)
       } catch (e) {
         return `could not go back: ${reason(e)}`
+      }
+    },
+    hover: async (ref) => {
+      try {
+        const p = await tab()
+        // Found before the page is read again: a ref is looked up in the latest reading only.
+        const target = await p.locator(`aria-ref=${ref}`).elementHandle({ timeout: 2000 }).catch(() => null)
+        if (!target) return `No element [ref=${ref}] is on the page now; read the page again.`
+        const before = await linesOf(p)
+        // From off the element first: a pointer already resting there (after a click and back) moves nowhere, and the page sees no entering.
+        const size = p.viewportSize() ?? (await p.evaluate(() => { const w = globalThis as unknown as { innerWidth: number; innerHeight: number }; return { width: w.innerWidth, height: w.innerHeight } }).catch(() => ({ width: 800, height: 600 })))
+        await p.mouse.move(size.width - 1, size.height - 1)
+        await target.hover({ timeout: ACT_MS }).finally(() => target.dispose().catch(() => {}))
+        await settle(p)
+        return changes(before, await linesOf(p))
+      } catch (e) {
+        return `could not hover: ${reason(e)}`
       }
     },
     describe: async (action) => {
@@ -731,6 +767,7 @@ export function makeTab(o: BrowserOptions): Tab {
   unlocked.switchTo = (id) => bare.switchTo(id).then(told)
   unlocked.read = (o) => bare.read(o).then(told)
   unlocked.back = () => bare.back().then(told)
+  unlocked.hover = (ref) => bare.hover(ref).then(told)
   unlocked.act = (a, approved, saveIn) => bare.act(a, approved, saveIn).then(told)
 
   // One thing at a time in the tab: the model may ask for several at once.
@@ -748,6 +785,7 @@ export function makeTab(o: BrowserOptions): Tab {
     read: (o) => serial(() => unlocked.read(o)),
     look: () => serial(() => unlocked.look()),
     back: () => serial(() => unlocked.back()),
+    hover: (ref) => serial(() => unlocked.hover(ref)),
     describe: (a) => serial(() => unlocked.describe(a)),
     act: (a, approved, saveIn) => serial(() => unlocked.act(a, approved, saveIn)),
     lock: (fn) => serial(() => fn(unlocked)),
