@@ -182,8 +182,8 @@ add the requirement there first.
       changed; reading is free, acting is judged and asked. (BRW-1 to BRW-15)
 - [ ] The browser in Raycast: approval is ready, but Raycast's bundler
       cannot pack Playwright. (`jackins/raycast/spec.md` Open)
-- [ ] The browser over MCP, with the client's own approval for actions.
-      (`spec/browser.md` Open)
+- [x] The browser over MCP: `navi mcp --browser` serves the browser tools,
+      actions marked destructive so the client asks. (MCP-6, MCP-7)
 
 ## Done
 

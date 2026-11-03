@@ -104,7 +104,7 @@ const USAGE = [
   '       navi setup [--check]',
   '       navi sessions [show [<directory>] | clear [<directory> | --all]]',
   '       navi serve [--port N] [--install | --uninstall]',
-  '       navi mcp',
+  '       navi mcp [--browser]',
   '       navi browser [--install]',
   '       navi stats [--days N]',
   '       navi job "<what you want done>" [-a <file>]… [-C <directory>]',
@@ -130,7 +130,8 @@ const ABOUT = [
   'navi sessions        list saved conversations; show one as Markdown; clear one or --all',
   'navi serve           an OpenAI-compatible server on 127.0.0.1 for other apps, and jobs;',
   '                     --tailnet lets your phone reach it over Tailscale',
-  'navi mcp             navi as a tool for MCP clients such as Claude Code',
+  'navi mcp             navi as a tool for MCP clients such as Claude Code;',
+  '                     --browser also offers its browser tools',
   "navi browser         open navi's browser to sign in to sites; --install gets Chromium for it",
   'navi stats           how each model has done, from the ledger; --days N (default 30)',
   'navi job "…"         hand navi serve a job to do in the background; -a sends a file, -C sets where',
@@ -151,9 +152,11 @@ function failedLines(failures: Failure[]): string[] {
 
 /** `navi mcp`: navi as an MCP server over stdio (mcp.md). */
 async function mcp(argv: string[]) {
-  if (argv.length) {
+  // MCP-6: the user's signed-in browser, only when asked for.
+  const browsing = argv[0] === '--browser'
+  if (argv.length > (browsing ? 1 : 0)) {
     console.error(`unexpected: ${argv.join(' ')}`)
-    console.error('usage: navi mcp')
+    console.error('usage: navi mcp [--browser]')
     return 1
   }
   process.env.NEOROUTER_QUIET = '1'
@@ -180,7 +183,7 @@ async function mcp(argv: string[]) {
     if (!done || done.empty) throw new Error(errors[0] ?? 'the model returned no answer')
     return { text: done.text, model: modelLabel(chosen) }
   }
-  await serveMcp(ask, { input: process.stdin, output: process.stdout })
+  await serveMcp(ask, { input: process.stdin, output: process.stdout, ...(browsing && { browser: () => makeTab({ home: homedir() }) }) })
   // A pipe's writes are asynchronous: exiting now could cut off the last replies.
   await new Promise<void>((r) => process.stdout.write('', () => r()))
   return 0

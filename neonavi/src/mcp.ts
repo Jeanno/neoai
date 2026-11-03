@@ -1,7 +1,10 @@
 import { createInterface } from 'node:readline'
 import { isAbsolute } from 'node:path'
 import type { Readable, Writable } from 'node:stream'
+import { z } from 'zod'
 import { attach, type Attachment } from './attach.ts'
+import type { Tab } from './browser.ts'
+import { makeTools } from './tools.ts'
 
 /** What answering one `ask_navi` call takes; the real harness by default, a fake in tests. */
 export type Ask = (o: { prompt: string; directory: string; attachments: Attachment[] }) => Promise<{ text: string; model: string }>
@@ -23,12 +26,58 @@ const TOOL = {
   },
 }
 
+/** Browser tools that only look, which a client may run unasked (MCP-6). */
+const READ_ONLY = new Set(['browser_open', 'browser_read', 'browser_tabs', 'browser_switch', 'browser_back', 'browser_look'])
+
+interface Served {
+  name: string
+  description: string
+  inputSchema: object
+  annotations: { readOnlyHint: boolean; destructiveHint: boolean }
+  run: (args: Record<string, unknown>) => Promise<object>
+}
+
+/**
+ * navi's browser tools as MCP tools (MCP-6): one session's tabs for every
+ * call, and the client's approval as the only one.
+ */
+export function browserTools(tab: () => Tab, cwd: string): Served[] {
+  let held: Tab | undefined
+  const browser = () => (held ??= tab())
+  // The client asked its user before calling: that is the yes.
+  // Only the browser tools are served: nothing else is run, so nothing else is approved.
+  const tools = makeTools({ approve: async () => false, act: async () => true }, { browser, cwd, write: false, fetch: false })
+  return Object.entries(tools)
+    .filter(([name]) => name.startsWith('browser_'))
+    .map(([name, t]: [string, any]) => ({
+      name,
+      description: t.description,
+      inputSchema: z.toJSONSchema(t.inputSchema),
+      annotations: { readOnlyHint: READ_ONLY.has(name), destructiveHint: !READ_ONLY.has(name) },
+      run: async (args) => {
+        const out = await t.execute(args, { toolCallId: name, messages: [] })
+        if (typeof out === 'string') return text(out)
+        // MCP-7: the picture itself, for the client's model to see.
+        if (out?.jpeg) return { content: [{ type: 'text', text: `The page as it looks now: ${out.url}` }, { type: 'image', data: out.jpeg, mimeType: 'image/jpeg' }] }
+        return text(String(out?.problem ?? out), true)
+      },
+    }))
+}
+
 type Message = { jsonrpc: '2.0'; id?: string | number | null; method?: string; params?: any }
 
 const text = (t: string, isError = false) => ({ content: [{ type: 'text', text: t }], ...(isError && { isError: true }) })
 
 /** One `tools/call`: never throws, so a failure is a tool result the client can read (MCP-3). */
-async function call(params: any, ask: Ask, cwd: string) {
+async function call(params: any, ask: Ask, cwd: string, served: Served[]) {
+  const browsing = served.find((t) => t.name === params?.name)
+  if (browsing) {
+    try {
+      return await browsing.run(params.arguments ?? {})
+    } catch (e) {
+      return text(e instanceof Error ? e.message : String(e), true)
+    }
+  }
   if (params?.name !== TOOL.name) return text(`Unknown tool: ${params?.name}`, true)
   const args = params.arguments ?? {}
   if (typeof args.prompt !== 'string' || !args.prompt.trim()) return text('prompt is required.', true)
@@ -45,7 +94,11 @@ async function call(params: any, ask: Ask, cwd: string) {
 }
 
 /** Serves MCP over a pair of streams until input ends (MCP-1). Resolves when it does. */
-export function serveMcp(ask: Ask, { input, output, cwd = process.cwd() }: { input: Readable; output: Writable; cwd?: string }) {
+export function serveMcp(
+  ask: Ask,
+  { input, output, cwd = process.cwd(), browser }: { input: Readable; output: Writable; cwd?: string; browser?: () => Tab },
+) {
+  const served = browser ? browserTools(browser, cwd) : []
   const send = (m: object) => output.write(`${JSON.stringify({ jsonrpc: '2.0', ...m })}\n`)
   const lines = createInterface({ input })
   const inflight = new Set<Promise<unknown>>()
@@ -66,9 +119,9 @@ export function serveMcp(ask: Ask, { input, output, cwd = process.cwd() }: { inp
       case 'ping':
         return result({})
       case 'tools/list':
-        return result({ tools: [TOOL] })
+        return result({ tools: [TOOL, ...served.map(({ run: _, ...t }) => t)] })
       case 'tools/call':
-        return result(await call(m.params, ask, cwd))
+        return result(await call(m.params, ask, cwd, served))
       default:
         if (reply) send({ id: m.id, error: { code: -32601, message: `Method not found: ${m.method}` } })
     }

@@ -23,3 +23,16 @@ its model.
   other than a new file in the directory (TL-38). The model is told, as with
   any decline, not to retry.
 - MCP-5: Calls may overlap; each runs on its own.
+- MCP-6: `navi mcp --browser` also offers navi's browser tools themselves
+  (`browser.md`), under the same names and inputs, for the client's own
+  model to drive navi's browser, where the user is signed in. They are
+  offered only when asked for this way. The server holds one session's
+  tabs for every call. Opening, reading, listing, switching, going back and
+  looking are marked `readOnlyHint`; acting, uploading and closing a tab
+  are marked `destructiveHint`, so the client's own approval asks: the
+  client's yes is the approval, and navi's judge and asking (BRW-11) are not
+  used, though an action is still not done on a page that changed since it
+  was described. Uploads are taken from, and downloads kept in, the
+  server's working directory.
+- MCP-7: Over MCP, `browser_look` answers with the picture itself, as MCP
+  image content beside the page's URL, for the client's model to see.

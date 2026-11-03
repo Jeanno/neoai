@@ -190,6 +190,15 @@ MCP, so anything that would ask is declined (`spec/mcp.md`). To add it:
 
 or, in a client's JSON config, `{"command": "navi", "args": ["mcp"]}`.
 
+`navi mcp --browser` also hands the client navi's browser tools, so its own
+model can read and act in navi's browser, where you are signed in. Reading
+tools are marked read-only and acting ones destructive, so the client asks
+you before each click, typing or upload; its yes is the approval. A look
+comes back as a picture. Downloads land in the directory the server runs in
+(MCP-6, MCP-7):
+
+    claude mcp add navi-browser -- navi mcp --browser
+
 navi has a browser of its own for pages `fetch_url` cannot read: ones behind
 your logins, or drawn by scripts. Run `navi browser` once to open it (it
 installs Chromium the first time) and sign in to the sites you want navi to

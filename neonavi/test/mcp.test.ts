@@ -5,14 +5,15 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { serveMcp, type Ask } from '../src/mcp.ts'
+import type { Tab } from '../src/browser.ts'
 
 /** Sends lines to a server and collects every reply once input ends. */
-async function exchange(lines: unknown[], ask: Ask = async ({ prompt }) => ({ text: `did: ${prompt}`, model: 'm on Box' })) {
+async function exchange(lines: unknown[], ask: Ask = async ({ prompt }) => ({ text: `did: ${prompt}`, model: 'm on Box' }), browser?: () => Tab) {
   const input = new PassThrough()
   const output = new PassThrough()
   const out: string[] = []
   output.on('data', (c) => out.push(String(c)))
-  const done = serveMcp(ask, { input, output, cwd: '/work' })
+  const done = serveMcp(ask, { input, output, cwd: '/work', ...(browser && { browser }) })
   for (const l of lines) input.write(typeof l === 'string' ? `${l}\n` : `${JSON.stringify(l)}\n`)
   input.end()
   await done
@@ -92,3 +93,59 @@ test('a slow call does not hold up a ping', async () => {
   )
   assert.deepEqual(replies.map((r) => r.id), [2, 1])
 })
+
+/** A browser tab that answers in words and records what was done. */
+function fakeTab() {
+  const done: string[] = []
+  let made = 0
+  const tab: Tab = {
+    open: async (url) => `opened ${url}`,
+    tabs: async () => '* t1',
+    switchTo: async (id) => `switched to ${id}`,
+    close: async (id) => `closed ${id}`,
+    read: async () => 'the page',
+    back: async () => 'went back',
+    describe: async (a: any) => ({ line: `click ${a.ref} on shop.test`, url: 'https://shop.test/' }),
+    act: async (a: any, approved) => (done.push(`${a.ref}: ${approved.line}`), `clicked ${a.ref}`),
+    lock: (fn) => fn(tab),
+    shot: async () => Buffer.from('a jpeg'),
+    look: async () => ({ url: 'https://shop.test/', jpeg: Buffer.from('a jpeg') }),
+  }
+  return { tab, done, made: () => made, make: () => (made++, tab) }
+}
+
+// MCP-6, MCP-7
+test('with --browser, the browser tools are served, marked, and acted on by the client\'s say-so', async () => {
+  const f = fakeTab()
+  const browse = (id: number, name: string, args: unknown = {}) => ({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } })
+  const replies = await exchange(
+    [
+      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      browse(2, 'browser_open', { url: 'https://shop.test/' }),
+      browse(3, 'browser_click', { ref: 'Buy' }),
+      browse(4, 'browser_look'),
+    ],
+    undefined,
+    f.make,
+  )
+  const tools = Object.fromEntries(replies[0].result.tools.map((t: any) => [t.name, t]))
+  assert.ok(tools.ask_navi && !tools.ask_navi.annotations)
+  assert.deepEqual(Object.keys(tools).filter((n) => n.startsWith('browser_')).sort(), [
+    'browser_back', 'browser_click', 'browser_close_tab', 'browser_look', 'browser_open', 'browser_press', 'browser_read',
+    'browser_select', 'browser_switch', 'browser_tabs', 'browser_type', 'browser_upload',
+  ])
+  assert.deepEqual(tools.browser_read.annotations, { readOnlyHint: true, destructiveHint: false })
+  assert.deepEqual(tools.browser_click.annotations, { readOnlyHint: false, destructiveHint: true })
+  assert.equal(tools.browser_click.inputSchema.type, 'object')
+  assert.deepEqual(tools.browser_click.inputSchema.required, ['ref'])
+  const byId = Object.fromEntries(replies.map((r: any) => [r.id, r.result]))
+  assert.deepEqual(byId[2], { content: [{ type: 'text', text: 'opened https://shop.test/' }] })
+  assert.deepEqual(byId[3], { content: [{ type: 'text', text: 'clicked Buy' }] })
+  assert.deepEqual(f.done, ['Buy: click Buy on shop.test'])
+  assert.deepEqual(byId[4].content, [
+    { type: 'text', text: 'The page as it looks now: https://shop.test/' },
+    { type: 'image', data: Buffer.from('a jpeg').toString('base64'), mimeType: 'image/jpeg' },
+  ])
+  assert.equal(f.made(), 1, 'one session for every call')
+})
+

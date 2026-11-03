@@ -146,5 +146,3 @@ has to look at the whole page again to see what happened.
 
 ## Open
 
-- MCP: offer the browser tools to other agents directly, with the client's
-  own approval for actions.
