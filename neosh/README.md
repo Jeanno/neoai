@@ -28,7 +28,8 @@ What neosh adds is specified in [spec.md](spec.md).
 
 The prompt shows where you are, the git branch, and the status of a command
 that failed, in red (`~/proj main 1 $`); set `PS1` in `~/.neoshrc` for your
-own, and `NO_COLOR` for none.
+own, and `NO_COLOR` for none. History is kept in `~/.neosh_history`
+(or the file `HISTFILE` names), so ↑ and ^R reach earlier sessions.
 
 ## Try it
 

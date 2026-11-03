@@ -49,6 +49,9 @@ hands a line to another shell. What neosh adds is below.
 - NSH-7: One shell session is one conversation with navi, whichever
   directory it is asked from (CLI-39); a new neosh starts a new one.
 - NSH-8: A line sent to navi is kept in the shell's history as typed.
+- NSH-13: History is kept between sessions in `~/.neosh_history`, or in the
+  file `HISTFILE` names when it comes with the environment; ↑ and ^R find
+  lines from earlier sessions, and `history` lists them as bash's does.
 - NSH-9: `?` alone says how to ask navi. With no `navi` on `$PATH`, a line
   for navi says so and how to install it, and runs nothing.
 

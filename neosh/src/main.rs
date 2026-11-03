@@ -91,7 +91,7 @@ fn main() {
 async fn run(args: Args) -> Result<u8, ShellError> {
     let interactive = args.command.is_none() && args.rest.is_empty() && std::io::stdin().is_terminal();
     let from_stdin = args.command.is_none() && args.rest.is_empty();
-    let shell = brush_core::Shell::builder()
+    let mut builder = brush_core::Shell::builder()
         .login(args.login)
         .interactive(interactive)
         .command_string_mode(args.command.is_some())
@@ -102,9 +102,11 @@ async fn run(args: Args) -> Result<u8, ShellError> {
         .maybe_shell_name(Some(if args.command.is_some() { args.rest.first().cloned().unwrap_or_else(|| "neosh".into()) } else { "neosh".into() }))
         .shell_product_display_str(format!("neosh {}", env!("CARGO_PKG_VERSION")))
         .shell_version(env!("CARGO_PKG_VERSION").to_string())
-        .default_builtins(brush_builtins::BuiltinSet::BashMode)
-        .build()
-        .await?;
+        .default_builtins(brush_builtins::BuiltinSet::BashMode);
+    if let Some(histfile) = history_file(std::env::var_os("HISTFILE"), std::env::var_os("HOME")) {
+        builder = builder.var("HISTFILE", brush_core::ShellVariable::new(histfile.to_string_lossy().into_owned()));
+    }
+    let shell = builder.build().await?;
     let shell: ShellRef = std::sync::Arc::new(tokio::sync::Mutex::new(shell));
 
     // NSH-1: ~/.profile for a login shell, ~/.neoshrc for an interactive one.
@@ -233,6 +235,14 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
     }
 }
 
+/// NSH-13: neosh's own history file, unless the environment names one.
+fn history_file(inherited: Option<std::ffi::OsString>, home: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    match inherited {
+        Some(_) => None,
+        None => home.map(|h| PathBuf::from(h).join(".neosh_history")),
+    }
+}
+
 /// NSH-4: whether a word runs something: a keyword, alias, function, builtin or program.
 fn is_command<SE: brush_core::ShellExtensions>(shell: &mut brush_core::Shell<SE>, word: &str) -> bool {
     shell.is_keyword(word)
@@ -248,6 +258,14 @@ mod tests {
 
     fn argv(s: &[&str]) -> Vec<String> {
         s.iter().map(|a| a.to_string()).collect()
+    }
+
+    // NSH-13
+    #[test]
+    fn history_is_kept_in_neosh_s_own_file() {
+        assert_eq!(history_file(None, Some("/home/u".into())), Some(PathBuf::from("/home/u/.neosh_history")));
+        assert_eq!(history_file(Some("/tmp/h".into()), Some("/home/u".into())), None);
+        assert_eq!(history_file(None, None), None);
     }
 
     // NSH-1
