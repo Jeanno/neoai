@@ -9,7 +9,7 @@ mod prompt;
 
 use std::io::IsTerminal as _;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use brush_builtins::ShellBuilderExt as _;
 use brush_interactive::{InputBackend, InteractivePrompt, ReadResult, ShellError, ShellRef};
@@ -143,7 +143,9 @@ struct WithNavi<IB: InputBackend> {
     inner: IB,
     recent: navi::Recent,
     /// The line handed to the shell last, and where, to learn how it ended (NSH-6).
-    handed: Option<(String, PathBuf)>,
+    handed: Option<(String, PathBuf, Instant)>,
+    /// How long the last command took, for the prompt (NSH-15).
+    took: Option<Duration>,
     /// What navi suggested running, for the next prompt (NSH-11).
     suggested: Option<String>,
     session: String,
@@ -152,7 +154,7 @@ struct WithNavi<IB: InputBackend> {
 impl<IB: InputBackend> WithNavi<IB> {
     fn new(inner: IB) -> Self {
         let started = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        Self { inner, recent: navi::Recent::default(), handed: None, suggested: None, session: format!("neosh-{started}-{}", std::process::id()) }
+        Self { inner, recent: navi::Recent::default(), handed: None, took: None, suggested: None, session: format!("neosh-{started}-{}", std::process::id()) }
     }
 }
 
@@ -161,8 +163,12 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
         loop {
             // The shell is not running anything while it waits for a line.
             let mut guard = shell.try_lock().ok();
-            if let (Some((line, dir)), Some(s)) = (self.handed.take(), guard.as_ref()) {
-                self.recent.push(navi::Ran { line, dir, status: s.last_exit_status() });
+            // Only the command just run: an empty line or a question shows none.
+            self.took = None;
+            if let (Some((line, dir, at)), Some(s)) = (self.handed.take(), guard.as_ref()) {
+                let took = at.elapsed();
+                self.took = Some(took);
+                self.recent.push(navi::Ran { line, dir, status: s.last_exit_status(), took });
             }
             // NSH-12: drawn by neosh while PS1 is still its own.
             let ours = guard.as_ref().filter(|s| s.env_str("PS1").as_deref() == Some(prompt::DEFAULT_PS1)).map(|s| {
@@ -173,6 +179,7 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                     home: home.as_deref(),
                     branch: prompt::branch(&dir),
                     status: s.last_exit_status(),
+                    took: self.took,
                     root: s.env_str("EUID").as_deref() == Some("0"),
                     color: s.env_str("NO_COLOR").is_none(),
                 })
@@ -192,7 +199,7 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             match what {
                 navi::Line::Shell => {
                     if !line.trim().is_empty() {
-                        self.handed = Some((line.trim().to_string(), dir));
+                        self.handed = Some((line.trim().to_string(), dir, Instant::now()));
                     }
                     return Ok(ReadResult::Input(line));
                 }

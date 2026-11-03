@@ -62,6 +62,7 @@ pub struct Ran {
     pub line: String,
     pub dir: PathBuf,
     pub status: u8,
+    pub took: std::time::Duration,
 }
 
 /// The commands since navi last answered, oldest first, kept to RECENT_KEPT.
@@ -88,7 +89,11 @@ impl Recent {
             .iter()
             .map(|r| {
                 let dir = crate::prompt::tilde(&r.dir, home);
-                let how = if r.status == 0 { "ok".to_string() } else { format!("exit {}", r.status) };
+                let mut how = if r.status == 0 { "ok".to_string() } else { format!("exit {}", r.status) };
+                // NSH-15
+                if let Some(took) = crate::prompt::long(r.took) {
+                    how += &format!(", took {took}");
+                }
                 format!("{dir} $ {} ({how})", r.line.replace('\n', " "))
             })
             .collect::<Vec<_>>()
@@ -193,7 +198,7 @@ mod tests {
     fn recent_keeps_the_last_ten_and_says_where_and_how_each_ended() {
         let mut r = Recent::default();
         for i in 0..12 {
-            r.push(Ran { line: format!("cmd {i}"), dir: PathBuf::from("/home/u/proj"), status: (i % 2) as u8 });
+            r.push(Ran { line: format!("cmd {i}"), dir: PathBuf::from("/home/u/proj"), status: (i % 2) as u8, took: Default::default() });
         }
         let said = r.describe(Some(Path::new("/home/u")));
         let lines: Vec<&str> = said.lines().collect();
@@ -202,7 +207,11 @@ mod tests {
         assert_eq!(lines[9], "~/proj $ cmd 11 (exit 1)");
         r.clear();
         assert_eq!(r.describe(None), "");
-        r.push(Ran { line: "ls\n-l".into(), dir: PathBuf::from("/home/u"), status: 0 });
+        r.push(Ran { line: "ls\n-l".into(), dir: PathBuf::from("/home/u"), status: 0, took: Default::default() });
         assert_eq!(r.describe(Some(Path::new("/home/u"))), "~ $ ls -l (ok)");
+        // NSH-15
+        r.clear();
+        r.push(Ran { line: "cargo build".into(), dir: PathBuf::from("/home/u"), status: 101, took: std::time::Duration::from_secs(64) });
+        assert_eq!(r.describe(Some(Path::new("/home/u"))), "~ $ cargo build (exit 101, took 1m 4s)");
     }
 }

@@ -26,8 +26,9 @@ bash-compatible shell in Rust: pipelines, redirections, here-documents,
 functions, arrays, `[[ … ]]`, aliases, job control and bash's builtins.
 What neosh adds is specified in [spec.md](spec.md).
 
-The prompt shows where you are, the git branch, and the status of a command
-that failed, in red (`~/proj main 1 $`); set `PS1` in `~/.neoshrc` for your
+The prompt shows where you are, the git branch, how long a command took when
+it was 5 seconds or more, and the status of one that failed, in red
+(`~/proj main 1m 4s 1 $`); navi is told the time too. set `PS1` in `~/.neoshrc` for your
 own, and `NO_COLOR` for none. History is kept in `~/.neosh_history`
 (or the file `HISTFILE` names), so ↑ and ^R reach earlier sessions.
 

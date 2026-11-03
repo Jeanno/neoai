@@ -12,6 +12,8 @@ pub struct Parts<'a> {
     pub home: Option<&'a Path>,
     pub branch: Option<String>,
     pub status: u8,
+    /// How long the last command took, when long enough to show (NSH-15).
+    pub took: Option<std::time::Duration>,
     pub root: bool,
     pub color: bool,
 }
@@ -24,12 +26,27 @@ pub fn render(p: &Parts) -> String {
         out += " ";
         out += &paint("35", branch);
     }
+    if let Some(took) = p.took.and_then(long) {
+        out += " ";
+        out += &paint("33", &took);
+    }
     if p.status != 0 {
         out += " ";
         out += &paint("31", &p.status.to_string());
     }
     out += if p.root { " # " } else { " $ " };
     out
+}
+
+/// NSH-15: a duration worth showing, `12s`, `1m 4s` or `2h 5m`; none under 5 seconds.
+pub fn long(took: std::time::Duration) -> Option<String> {
+    let s = took.as_secs();
+    match s {
+        0..5 => None,
+        5..60 => Some(format!("{s}s")),
+        60..3600 => Some(format!("{}m {}s", s / 60, s % 60)),
+        _ => Some(format!("{}h {}m", s / 3600, s % 3600 / 60)),
+    }
 }
 
 /// The directory with `~` for home.
@@ -67,7 +84,7 @@ mod tests {
     use super::*;
 
     fn parts(dir: &Path) -> Parts<'_> {
-        Parts { dir, home: Some(Path::new("/home/u")), branch: None, status: 0, root: false, color: false }
+        Parts { dir, home: Some(Path::new("/home/u")), branch: None, status: 0, took: None, root: false, color: false }
     }
 
     // NSH-10, NSH-12
@@ -78,8 +95,21 @@ mod tests {
         assert_eq!(render(&Parts { branch: Some("main".into()), status: 1, ..parts(dir) }), "~/proj main 1 $ ");
         assert_eq!(render(&Parts { root: true, ..parts(Path::new("/etc")) }), "/etc # ");
         assert_eq!(render(&parts(Path::new("/home/u"))), "~ $ ");
+        let slow = Parts { took: Some(std::time::Duration::from_secs(64)), status: 1, ..parts(dir) };
+        assert_eq!(render(&slow), "~/proj 1m 4s 1 $ ");
         let red = render(&Parts { status: 2, color: true, ..parts(dir) });
         assert!(red.contains("\x1b[31m2\x1b[0m"), "{red:?}");
+    }
+
+    // NSH-15
+    #[test]
+    fn only_a_slow_command_s_time_is_shown() {
+        let d = std::time::Duration::from_millis;
+        assert_eq!(long(d(4999)), None);
+        assert_eq!(long(d(5000)).as_deref(), Some("5s"));
+        assert_eq!(long(d(59_900)).as_deref(), Some("59s"));
+        assert_eq!(long(d(3_599_000)).as_deref(), Some("59m 59s"));
+        assert_eq!(long(d(7_500_000)).as_deref(), Some("2h 5m"));
     }
 
     // NSH-12

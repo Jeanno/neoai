@@ -76,6 +76,9 @@ hands a line to another shell. What neosh adds is below.
   `.git` without running git. After a command that failed, it shows the
   status before the `$` (`~/proj main 1 $`), in red. Colour is left out
   when `NO_COLOR` is set.
+- NSH-15: A command that took 5 seconds or more shows how long, in the next
+  prompt before any status (`~/proj main 1m 4s 1 $`), and in what navi is
+  told of it (`~/proj $ cargo build (exit 101, took 1m 4s)`).
 
 ## Open
 

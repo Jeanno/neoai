@@ -58,6 +58,7 @@ add the requirement there first.
 - [x] neosh's prompt: the directory, the git branch and a failed status.
       (NSH-10, NSH-12)
 - [x] neosh keeps history between sessions in its own file. (NSH-13)
+- [x] neosh shows how long a slow command took, and tells navi. (NSH-15)
 - [x] `neosh/install.sh`, local or through curl, never touching the login
       shell. (NSH-14)
 - [x] Image and PDF input: `-a`, `/attach`, and Raycast's Ask About Selected
