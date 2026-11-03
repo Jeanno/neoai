@@ -4,6 +4,10 @@ The Raycast jack-in, specified in `spec.md` (RAY-1 to RAY-9). It is a front
 end to navi's harness (`neonavi/harness`) and to setup's core
 (`neonavi/setup`); it adds only Raycast's views.
 
+**Navi Jobs** (`src/jobs.tsx`) is a window on navi serve's jobs: it talks to
+the jobs API on `127.0.0.1:8484` with the token navi serve keeps
+(`src/lib/jobs.ts`), and runs nothing itself (RAY-15 to RAY-17).
+
 **Ask Navi**, **Navi Chat** and **Summarize** answer through the harness
 (`src/lib/use-navi.ts`), working in `~/.navi-raycast` (created on first use),
 so they get navi's prompt, tools, judge and limits. Each tool call shows as a

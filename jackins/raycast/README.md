@@ -72,6 +72,11 @@ LM Studio's settings you can have it start when you log in.
   **Return**.
 - **Navi Chat** — a conversation you can come back to. Open Raycast, type
   **Navi Chat**, choose **New Chat**, type, and press **Return**.
+- **Navi Jobs** — the jobs navi serve is running for you, the ones waiting
+  on you first. Select one to see what it asks or what it answered; **⌥Y**
+  allows what it waits on and **⌥N** denies it. Type a new job in the search
+  bar and press **⌘ Return** to start it. Needs `navi serve` running (the
+  command says how if it is not).
 - **Fix Spelling and Grammar** — select some text in any app, open Raycast,
   type **Fix Spelling and Grammar**, and press **Return**. Navi fixes the
   mistakes and puts the corrected text in place of what you selected.

@@ -62,6 +62,22 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
 - RAY-14: The undo's toast offers Redo (UND-14), which brings the changes back
   and offers the undo again.
 
+## Jobs
+
+- RAY-15: A Navi Jobs command lists navi serve's jobs on this computer
+  (JOB-7), through `127.0.0.1:8484` with the token in `~/.neoai/serve-token`:
+  those waiting on you first, then those working, then the rest, newest
+  first, each with its status and how long ago, and beside it the job: what
+  it asks to do (with the diff or page), its answer, or why it failed. The
+  list follows the jobs as they change while it is open.
+- RAY-16: From the list: Allow or Deny what a job waits on (⌥Y, ⌥N), Copy
+  Answer, Try Again a failed or interrupted job (JOB-42), Stop one working,
+  and Start Job with what is typed in the search bar, in navi serve's first
+  folder (JOB-8). What navi serve refuses is shown as it says it.
+- RAY-17: With no navi serve answering, or no token (navi serve has never
+  run), the command says navi serve is not running and offers to copy
+  `navi serve --install`. The token is only read, never made or shown.
+
 ## Open
 
 - navi's browser (`neonavi/spec/browser.md`) in Raycast. Approval for a
