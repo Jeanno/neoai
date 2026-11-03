@@ -113,6 +113,12 @@ hands a line to another shell. What neosh adds is below.
   A line matching one of `HISTIGNORE`'s `:`-separated patterns (`*`, `?`,
   `[…]`, and `&` for the line before) is not kept either. A line not kept
   still runs, and is never written to the history file.
+- NSH-27: History is as long as bash's: `HISTSIZE` lines in the shell
+  (↑, `history`, `!n`) and `HISTFILESIZE` in the history file, oldest
+  dropped first, both 500 when neither the environment nor `~/.neoshrc`
+  sets them, as bash's are. A value below zero, or not a number, keeps
+  everything; `HISTFILESIZE` is applied when the shell exits, a timestamp
+  line (`HISTTIMEFORMAT`) going with its command.
 - NSH-9: `?` alone says how to ask navi, unless the command just run
   failed: then it asks navi why, and how to fix it (NSH-20). With no `navi` on `$PATH`, a line
   for navi says so and how to install it, and runs nothing.

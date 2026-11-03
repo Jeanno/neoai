@@ -7,12 +7,13 @@
 mod bang;
 mod cd;
 mod histctl;
+mod histsize;
 mod navi;
 mod prompt;
 mod term;
 
 use std::io::{IsTerminal as _, Write as _};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use brush_builtins::ShellBuilderExt as _;
@@ -130,6 +131,15 @@ async fn run(args: Args) -> Result<u8, ShellError> {
     if interactive && std::env::var_os("PS1").is_none() {
         shell.lock().await.env_mut().set_global("PS1", brush_core::ShellVariable::new(prompt::DEFAULT_PS1))?;
     }
+    // NSH-27: as long as bash's history, unless the environment says otherwise.
+    if interactive {
+        let mut s = shell.lock().await;
+        for name in ["HISTSIZE", "HISTFILESIZE"] {
+            if std::env::var_os(name).is_none() {
+                s.env_mut().set_global(name, brush_core::ShellVariable::new(histsize::DEFAULT))?;
+            }
+        }
+    }
     shell.lock().await.load_config(&profile, &rc).await?;
 
     if let Some(command) = args.command {
@@ -141,6 +151,11 @@ async fn run(args: Args) -> Result<u8, ShellError> {
         let ui = brush_interactive::UIOptions { terminal_shell_integration: true, ..Default::default() };
         let mut input = WithNavi::new(brush_interactive::ReedlineInputBackend::new(&ui, &shell)?);
         brush_interactive::InteractiveShell::new(&shell, &mut input, &(&ui).into())?.run_interactively().await?;
+        // NSH-27: the file as long as HISTFILESIZE says, now history is written.
+        let s = shell.lock().await;
+        if let (Some(file), Some(keep)) = (s.env_str("HISTFILE"), histsize::limit(s.env_str("HISTFILESIZE").as_deref())) {
+            let _ = histsize::trim_file(Path::new(file.as_ref()), keep);
+        }
     } else {
         let ui = brush_interactive::UIOptions::default();
         let mut input = brush_interactive::MinimalInputBackend;
@@ -202,6 +217,12 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                 }
                 self.recent.clear();
                 self.suggested = navi::take_suggestion(&navi::command_file(&self.session));
+            }
+            // NSH-27: no more than HISTSIZE lines.
+            if let Some(keep) = guard.as_ref().and_then(|s| histsize::limit(s.env_str("HISTSIZE").as_deref())) {
+                if let Some(history) = guard.as_mut().and_then(|s| s.history_mut()) {
+                    histsize::trim_list(history, keep);
+                }
             }
             // NSH-26: brush keeps every line; drop what bash would not have kept.
             if let Some((line, keep)) = self.settle.take() {
@@ -285,10 +306,20 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             let ask = navi::Ask::from_setting(guard.as_ref().and_then(|s| s.env_str("NEOSH_ASK")).as_deref());
             let dir = guard.as_ref().map(|s| s.working_dir().to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
             // NSH-26: decided on the line as typed, its leading space and all.
-            let keep = guard.as_ref().is_none_or(|s| {
+            let mut keep = guard.as_ref().is_none_or(|s| {
                 let previous = s.history().and_then(|h| h.iter().last().map(|i| i.command_line.clone()));
                 histctl::keeps(line.trim_end_matches('\n'), previous.as_deref(), s.env_str("HISTCONTROL").as_deref(), s.env_str("HISTIGNORE").as_deref())
             });
+            // NSH-27: room made for it, so history never holds more than HISTSIZE.
+            match guard.as_ref().and_then(|s| histsize::limit(s.env_str("HISTSIZE").as_deref())) {
+                Some(0) => keep = false,
+                Some(size) if keep => {
+                    if let Some(history) = guard.as_mut().and_then(|s| s.history_mut()) {
+                        histsize::trim_list(history, size - 1);
+                    }
+                }
+                _ => {}
+            }
             let what = navi::classify_in(&line, ask, |word| guard.as_mut().is_none_or(|s| is_command(s, word)), |word| navi::globs_a_file(word, &dir));
             match what {
                 navi::Line::Shell => {
@@ -377,7 +408,6 @@ fn history_file(inherited: Option<std::ffi::OsString>, home: Option<std::ffi::Os
     }
 }
 
-/// NSH-4: whether a word runs something: a keyword, alias, function, builtin or program.
 /// NSH-26: history put right once `line` is in it: dropped if not kept,
 /// and with `erase` its earlier copies dropped.
 fn settle(history: &mut brush_core::history::History, line: &str, keep: bool, erase: bool) {
@@ -392,6 +422,7 @@ fn settle(history: &mut brush_core::history::History, line: &str, keep: bool, er
     }
 }
 
+/// NSH-4: whether a word runs something: a keyword, alias, function, builtin or program.
 fn is_command<SE: brush_core::ShellExtensions>(shell: &mut brush_core::Shell<SE>, word: &str) -> bool {
     shell.is_keyword(word)
         || shell.aliases().contains_key(word)

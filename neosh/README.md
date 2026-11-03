@@ -47,7 +47,9 @@ it was 5 seconds or more, and the status of one that failed, in red
 own, and `NO_COLOR` for none. History is kept in `~/.neosh_history`
 (or the file `HISTFILE` names), so ↑ and ^R reach earlier sessions;
 `HISTCONTROL=ignoreboth` and `HISTIGNORE` work as in bash, so a line typed
-with a space first stays out of it. The
+with a space first stays out of it. Like bash's, it holds the last 500
+lines unless `HISTSIZE` and `HISTFILESIZE` say otherwise (`-1` keeps
+everything). The
 window title shows the directory, or the command running; Terminal and iTerm
 open a new tab in the same directory; and VS Code's terminal marks each
 command.

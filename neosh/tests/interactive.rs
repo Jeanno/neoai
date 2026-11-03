@@ -205,3 +205,21 @@ fn history_keeps_what_bash_would() {
     let lines: Vec<&str> = saved.lines().filter(|l| !l.starts_with('#')).collect();
     assert_eq!(lines, ["HISTCONTROL=ignoreboth", "echo a", "HISTIGNORE='ls*'", "history", "exit"], "{saved}");
 }
+
+// NSH-27
+#[test]
+fn history_is_as_long_as_histsize_and_histfilesize_say() {
+    let home = Home::new("histsize");
+    let earlier: String = (1..=20).map(|n| format!("echo {n}\n")).collect();
+    std::fs::write(home.0.join(".neosh_history"), &earlier).unwrap();
+    let screen = home.run(&["echo sizes $HISTSIZE $HISTFILESIZE", "exit"], &[]);
+    assert!(screen.lines().any(|l| l.trim() == "sizes 500 500"), "bash's defaults: {screen}");
+    std::fs::write(home.0.join(".neosh_history"), &earlier).unwrap();
+    let screen = home.run(&["history | wc -l", "exit"], &[("HISTSIZE", "5"), ("HISTFILESIZE", "3")]);
+    assert!(screen.lines().any(|l| l.trim() == "5"), "{screen}");
+    let saved = std::fs::read_to_string(home.0.join(".neosh_history")).unwrap();
+    assert_eq!(saved, "echo 20\nhistory | wc -l\nexit\n");
+    std::fs::write(home.0.join(".neosh_history"), &earlier).unwrap();
+    home.run(&["exit"], &[("HISTFILESIZE", "-1")]);
+    assert_eq!(std::fs::read_to_string(home.0.join(".neosh_history")).unwrap().lines().count(), 21, "below zero keeps all");
+}
