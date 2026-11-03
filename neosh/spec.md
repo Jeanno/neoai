@@ -50,6 +50,12 @@ hands a line to another shell. What neosh adds is below.
 - NSH-5: navi answers in the terminal as the `navi` CLI does (`navi -p`), in
   the shell's directory, with its approvals, and gives the prompt back when
   it has answered (CLI-38). ^C stops it.
+- NSH-16: A command line ending in `| ?`, with a question or without
+  (`npm test | ? why does this fail`), runs the command and hands navi what
+  it printed, its errors too, with the question (or, alone, a request to
+  explain it). The `|` and `?` count only outside quotes; `a || ? b` is no
+  such line. navi answers as for any question (NSH-5 to NSH-7, NSH-11), and
+  the line is kept in history as typed.
 - NSH-6: navi is told the commands run in this shell since its last answer,
   up to the last 10, each with its directory and exit status (CLI-40), so
   "why did that fail" is about the right command.
@@ -83,6 +89,6 @@ hands a line to another shell. What neosh adds is below.
 ## Open
 
 - Whether the git tree has changes, which needs reading the index.
-- Telling navi a failed command's output: commands write straight to the
-  terminal, so neosh sees only the status today.
+- Telling navi a failed command's output without `| ?`: commands write
+  straight to the terminal, so neosh sees only the status.
 - A prebuilt binary, so installing needs no Rust.

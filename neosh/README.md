@@ -12,7 +12,14 @@ goes to navi instead, which knows what you have just been running.
 
 navi is told the commands you ran since it last answered, with where they ran
 and how they ended, and answers in your terminal, in the shell's directory,
-asking before it changes anything. When the answer is a command to run,
+asking before it changes anything. To show navi what a command printed, its errors too, pipe it to `?`:
+
+```
+~/proj $ npm test | ? why does this fail
+~/proj $ git log -5 | ?
+```
+
+When the answer is a command to run,
 the next prompt starts with it typed out: press Enter to run it, change it
 first, or clear it with ^C. Start a line with `?` to make sure it goes
 to navi (`? ls or exa`); `?` alone says how. A typo such as `gti status`

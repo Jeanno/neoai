@@ -146,6 +146,8 @@ struct WithNavi<IB: InputBackend> {
     handed: Option<(String, PathBuf, Instant)>,
     /// How long the last command took, for the prompt (NSH-15).
     took: Option<Duration>,
+    /// The line run for `… | ?`, and as typed, to put right in history (NSH-16).
+    piped: Option<(String, String)>,
     /// What navi suggested running, for the next prompt (NSH-11).
     suggested: Option<String>,
     session: String,
@@ -154,7 +156,7 @@ struct WithNavi<IB: InputBackend> {
 impl<IB: InputBackend> WithNavi<IB> {
     fn new(inner: IB) -> Self {
         let started = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        Self { inner, recent: navi::Recent::default(), handed: None, took: None, suggested: None, session: format!("neosh-{started}-{}", std::process::id()) }
+        Self { inner, recent: navi::Recent::default(), handed: None, piped: None, took: None, suggested: None, session: format!("neosh-{started}-{}", std::process::id()) }
     }
 }
 
@@ -165,6 +167,17 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             let mut guard = shell.try_lock().ok();
             // Only the command just run: an empty line or a question shows none.
             self.took = None;
+            // NSH-16: navi has answered; history keeps the line as typed.
+            if let Some((ran, typed)) = self.piped.take() {
+                if let Some(history) = guard.as_mut().and_then(|s| s.history_mut()) {
+                    let found = history.iter().filter(|i| i.command_line == ran).last().cloned();
+                    if let Some(item) = found {
+                        let _ = history.update_by_id(item.id, brush_core::history::Item { command_line: typed, ..item });
+                    }
+                }
+                self.recent.clear();
+                self.suggested = navi::take_suggestion(&navi::command_file(&self.session));
+            }
             if let (Some((line, dir, at)), Some(s)) = (self.handed.take(), guard.as_ref()) {
                 let took = at.elapsed();
                 self.took = Some(took);
@@ -202,6 +215,21 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                         self.handed = Some((line.trim().to_string(), dir, Instant::now()));
                     }
                     return Ok(ReadResult::Input(line));
+                }
+                navi::Line::Piped { command, question } => {
+                    let Some(found) = guard.as_ref().and_then(|s| s.find_first_executable_in_path("navi")) else {
+                        if let Some(s) = guard.as_mut() {
+                            let _ = s.add_to_history(line.trim_end_matches('\n'));
+                        }
+                        eprintln!("{}", navi::NOT_INSTALLED);
+                        continue;
+                    };
+                    let home = std::env::var_os("HOME").map(PathBuf::from);
+                    let file = navi::command_file(&self.session);
+                    let _ = std::fs::remove_file(&file);
+                    let ran = navi::piped_line(&command, &question, &found, &self.session, &self.recent.describe(home.as_deref()), &file);
+                    self.piped = Some((ran.clone(), line.trim_end_matches('\n').to_string()));
+                    return Ok(ReadResult::Input(ran));
                 }
                 navi::Line::Navi(ask) => {
                     // NSH-8: kept as typed.

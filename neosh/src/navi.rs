@@ -24,8 +24,43 @@ const QUESTION_NEXT: &[&str] = &[
 pub enum Line {
     /// For navi, with its prompt (empty for `?` alone).
     Navi(String),
+    /// A command whose output goes to navi, with the question (NSH-16).
+    Piped { command: String, question: String },
     /// For the shell to run.
     Shell,
+}
+
+/// What navi is asked of piped output that came with no question (NSH-16).
+pub const PIPED_ASK: &str = "explain this output";
+
+/// NSH-16: `<command> | ? [question]`, with the `|` and `?` outside quotes.
+fn piped(line: &str) -> Option<(String, String)> {
+    let chars: Vec<(usize, char)> = line.char_indices().collect();
+    let (mut single, mut double, mut escaped) = (false, false, false);
+    let mut last = None;
+    for (i, &(at, c)) in chars.iter().enumerate() {
+        match c {
+            _ if escaped => escaped = false,
+            '\\' if !single => escaped = true,
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            '|' if !single && !double => {
+                let pair = chars.get(i + 1).is_some_and(|n| n.1 == '|') || (i > 0 && chars[i - 1].1 == '|');
+                if !pair {
+                    last = Some(at);
+                }
+            }
+            _ => {}
+        }
+    }
+    let at = last?;
+    let rest = line[at + 1..].trim_start();
+    let question = rest.strip_prefix('?')?;
+    if !(question.is_empty() || question.starts_with(char::is_whitespace)) {
+        return None;
+    }
+    let command = line[..at].trim();
+    (!command.is_empty()).then(|| (command.to_string(), question.trim().to_string()))
 }
 
 /// NSH-4: a `?` line, or a sentence whose first word is no command; `is_command`
@@ -37,6 +72,9 @@ pub fn classify(line: &str, mut is_command: impl FnMut(&str) -> bool) -> Line {
         if rest.is_empty() || rest.starts_with(char::is_whitespace) {
             return Line::Navi(rest.trim().to_string());
         }
+    }
+    if let Some((command, question)) = piped(line) {
+        return Line::Piped { command, question };
     }
     let words: Vec<&str> = line.split_whitespace().collect();
     if words.len() < 3 || line.contains(SHELL_CHARS) {
@@ -116,7 +154,7 @@ Install it: curl -fsSL https://raw.githubusercontent.com/Jeanno/neoai/master/neo
 /// session's conversation, and the command it suggests, if any.
 /// `navi` is the program the shell found on its own `$PATH`, which is passed on too.
 pub fn ask(navi: &Path, path: Option<&str>, prompt: &str, dir: &Path, session: &str, recent: &str) -> Result<Option<String>, std::io::Error> {
-    let handed = std::env::temp_dir().join(format!("{session}-command"));
+    let handed = command_file(session);
     let _ = std::fs::remove_file(&handed);
     let mut command = Command::new(navi);
     command.args(["--once", "--session", session, "-p", prompt]).current_dir(dir).env("NAVI_COMMAND_FILE", &handed);
@@ -129,9 +167,38 @@ pub fn ask(navi: &Path, path: Option<&str>, prompt: &str, dir: &Path, session: &
         command.env_remove("NAVI_RECENT");
     }
     command.status()?;
-    let suggested = std::fs::read_to_string(&handed).ok();
-    let _ = std::fs::remove_file(&handed);
-    Ok(suggested.and_then(|s| suggestion(&s)))
+    Ok(take_suggestion(&handed))
+}
+
+/// Where navi hands this session's suggested command back (CLI-41).
+pub fn command_file(session: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("{session}-command"))
+}
+
+/// The suggestion navi left in `file`, which is gone after.
+pub fn take_suggestion(file: &Path) -> Option<String> {
+    let suggested = std::fs::read_to_string(file).ok();
+    let _ = std::fs::remove_file(file);
+    suggested.and_then(|s| suggestion(&s))
+}
+
+/// NSH-16: the line the shell runs for `<command> | ? [question]`: the
+/// command's output and errors into navi, with what navi is told.
+pub fn piped_line(command: &str, question: &str, navi: &Path, session: &str, recent: &str, file: &Path) -> String {
+    let ask = if question.is_empty() { PIPED_ASK } else { question };
+    let recent = if recent.is_empty() { String::new() } else { format!("NAVI_RECENT={} ", quote(recent)) };
+    format!(
+        "{{ {command}\n}} 2>&1 | {recent}NAVI_COMMAND_FILE={} {} --session {} -a - -p {}",
+        quote(&file.to_string_lossy()),
+        quote(&navi.to_string_lossy()),
+        quote(session),
+        quote(ask)
+    )
+}
+
+/// `s` as one single-quoted shell word.
+fn quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
 }
 
 /// NSH-11: what navi handed back, as one line to put at the prompt; or nothing.
@@ -183,6 +250,29 @@ mod tests {
         // Not a word first.
         assert_eq!(classify("./run the tests now", known), Line::Shell);
         assert_eq!(classify("-x is a flag here", known), Line::Shell);
+    }
+
+    // NSH-16
+    #[test]
+    fn output_piped_to_a_question_mark_goes_to_navi() {
+        let piped = |c: &str, q: &str| Line::Piped { command: c.into(), question: q.into() };
+        assert_eq!(classify("npm test | ? why does this fail", known), piped("npm test", "why does this fail"));
+        assert_eq!(classify("git log -3 | grep fix |?", known), piped("git log -3 | grep fix", ""));
+        // Quoted, an or-list, a glob or no command: not piped to navi.
+        assert_eq!(classify("echo 'a | ? b'", known), Line::Shell);
+        assert_eq!(classify("echo \"a | ? b\"", known), Line::Shell);
+        assert_eq!(classify("make || ? why", known), Line::Shell);
+        assert_eq!(classify("ls | ?.txt", known), Line::Shell);
+        assert_eq!(classify("echo a \\| ? b", known), Line::Shell);
+        assert_eq!(classify("| ? hi", known), Line::Shell);
+    }
+
+    // NSH-16
+    #[test]
+    fn the_piped_line_quotes_what_it_hands_navi() {
+        let line = piped_line("npm test", "why's it red", Path::new("/bin/navi"), "neosh-1", "~ $ ls (ok)", Path::new("/tmp/c"));
+        assert_eq!(line, "{ npm test\n} 2>&1 | NAVI_RECENT='~ $ ls (ok)' NAVI_COMMAND_FILE='/tmp/c' '/bin/navi' --session 'neosh-1' -a - -p 'why'\\''s it red'");
+        assert!(piped_line("ls", "", Path::new("navi"), "s", "", Path::new("f")).ends_with(&format!("-p '{PIPED_ASK}'")));
     }
 
     // NSH-11
