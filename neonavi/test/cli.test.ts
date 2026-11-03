@@ -532,3 +532,27 @@ test('/retry after a turn that changed files asks for /undo first', { skip: proc
   // UND-7 does not tell the second try about a turn it never saw.
   assert.doesNotMatch(JSON.stringify(fake.bodies[2].messages), /undid|undone/i)
 })
+
+// CLI-35, CLI-2: a question apart from the directory's conversation, which is left as it was.
+test('--new asks without the saved conversation and leaves it as it is', async () => {
+  const fake = await fakeModel()
+  const home = await mkdtemp(join(tmpdir(), 'navi-cli-'))
+  assert.equal((await navi(['-p', 'what is here'], { config: fake.config, home })).code, 0)
+  const [file] = await readdir(join(home, '.neoai', 'sessions'))
+  const before = await readFile(join(home, '.neoai', 'sessions', file), 'utf8')
+  const r = await navi(['-n', '-p', 'what is here'], { config: fake.config, home, quiet: false })
+  assert.equal(r.code, 0, r.stderr)
+  assert.equal(r.stdout, 'It holds .neoai.\n')
+  assert.doesNotMatch(r.stderr, /continuing/)
+  // Sent only the new question: nothing of the saved conversation.
+  assert.deepEqual(fake.bodies.at(-1).messages.filter((m: any) => m.role === 'user').length, 1)
+  assert.equal(await readFile(join(home, '.neoai', 'sessions', file), 'utf8'), before)
+  assert.deepEqual(await readdir(join(home, '.neoai', 'sessions')), [file])
+  // And the next plain -p still continues the saved one.
+  const next = await navi(['-p', 'what is here'], { config: fake.config, home, quiet: false })
+  assert.match(next.stderr, /· continuing \(4 messages\)/)
+  const both = await navi(['--new', '-r', '-p', 'hi'], { config: fake.config, home })
+  fake.close()
+  assert.equal(both.code, 1)
+  assert.match(both.stderr, /--new and --resume: pick one\n.*usage: navi/s)
+})

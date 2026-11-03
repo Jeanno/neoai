@@ -380,6 +380,8 @@ submit the form."). When a turn that used tools ends that way, navi tells
 the model to go on and do it, once per turn (HAR-12).
 
 Other flags: `-r` / `--resume` (open the loop with this directory's history),
+`-n` / `--new` (a conversation of its own, neither reading nor saving this
+directory's, so scripts can `navi -n -p "…"` without joining yours),
 `--max-steps N` (default 32).
 
 Prompts leave the machine only for a provider or custom link; the backend that

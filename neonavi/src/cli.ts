@@ -103,7 +103,7 @@ const HELP = [
 ].join('\n')
 
 const USAGE = [
-  'usage: navi [-p "what you want done"] [-a file]... [-r|--resume] [--model local|best|<provider>:<model>[,...]] [--max-steps N]',
+  'usage: navi [-p "what you want done"] [-a file]... [-r|--resume | -n|--new] [--model local|best|<provider>:<model>[,...]] [--max-steps N]',
   '       navi setup [--check]',
   '       navi sessions [show [<directory>] | clear [<directory> | --all]]',
   '       navi serve [--port N] [--install | --uninstall]',
@@ -128,6 +128,7 @@ const ABOUT = [
   '                     answer and exit with only the answer on stdout',
   '  -a, --attach FILE  send an image, PDF or text file with the prompt; - sends what is piped in',
   '  -r, --resume       bare navi continues the saved conversation too',
+  '  -n, --new          start with no conversation and save none; the saved one is left as it is',
   '  --model SPEC       use another model chain for this run',
   '  --max-steps N      model responses per turn (default 32)',
   'navi setup           choose models and keys; --check only reports',
@@ -913,6 +914,12 @@ async function main() {
   const r = takeFlag(argv, '-r', false)
   argv = r.rest
   const resuming = resume.value !== undefined || r.value !== undefined
+  // CLI-35: a conversation of its own, read from and saved to nowhere.
+  const fresh = takeFlag(argv, '--new', false)
+  argv = fresh.rest
+  const n = takeFlag(argv, '-n', false)
+  argv = n.rest
+  const apart = fresh.value !== undefined || n.value !== undefined
   const model = takeFlag(argv, '--model', true)
   argv = model.rest
   const attaching = takeAll(argv, ['-a', '--attach'])
@@ -924,8 +931,9 @@ async function main() {
   const maxSteps = steps.value === undefined ? DEFAULT_STEPS : Number(steps.value)
   const { prompt: first, stray } = promptFrom(argv)
   const badSteps = !Number.isInteger(maxSteps) || maxSteps < 1
-  if (stray.length || badSteps || (!first && !interactive)) {
+  if (stray.length || badSteps || (!first && !interactive) || (apart && resuming)) {
     if (stray.length) console.error(`unexpected: ${stray.join(' ')}`)
+    else if (apart && resuming) console.error('--new and --resume: pick one')
     else if (badSteps) console.error(`not a step count: ${steps.value}`)
     console.error(USAGE)
     return 1
@@ -960,7 +968,7 @@ async function main() {
 
   const cwd = process.cwd()
   const file = sessionFile(cwd, homedir())
-  const anew = startsFresh({ prompt: first, resume: resuming })
+  const anew = apart || startsFresh({ prompt: first, resume: resuming })
   const stored = anew ? [] : await loadSession(file)
   if (stored.length) console.error(dim(`· continuing (${stored.length} messages)`))
 
@@ -1134,7 +1142,7 @@ async function main() {
     lastTurn = { prompt, attachments, before, model: session.answered, ...(changed !== kept && { changed }) }
     // Saved even when the answer came out empty: the tool results are the part
     // worth carrying forward, and a follow-up is how you recover from a bad turn.
-    await saveSession(file, done!.history, cwd)
+    if (!apart) await saveSession(file, done!.history, cwd)
     if (done!.stopped) {
       if (!done!.empty) lastAnswer = done!.text
       if (!streaming && !done!.empty) console.log(done!.text)

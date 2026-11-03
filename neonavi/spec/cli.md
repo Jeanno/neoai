@@ -1,6 +1,6 @@
 # CLI
 
-    navi [-p <prompt>] [-a <file>]... [-r|--resume] [--model <spec>] [--max-steps N]
+    navi [-p <prompt>] [-a <file>]... [-r|--resume | -n|--new] [--model <spec>] [--max-steps N]
     navi setup [--check]
     navi sessions [clear [<directory> | --all]]
 
@@ -11,8 +11,8 @@
   The exceptions are `setup` as the first argument, which runs setup
   (`setup.md`), and `sessions`, which manages saved histories (SES-13,
   SES-14), each instead of a session.
-- CLI-2: Flags may appear anywhere in argv. `--resume` and its short form `-r`
-  are bare; `-p`, `--model`, `--max-steps` and `-a`/`--attach` take the next
+- CLI-2: Flags may appear anywhere in argv. `--resume` and its short form `-r`,
+  and `--new` and its short form `-n`, are bare; `-p`, `--model`, `--max-steps` and `-a`/`--attach` take the next
   argument.
 - CLI-22: `-a <file>` or `--attach <file>`, repeatable, attaches files
   (HAR-7) to the `-p` prompt, or to the first prompt typed when there is
@@ -82,7 +82,13 @@
   tool echo, hints, errors — goes to stderr, so stdout can be piped.
 - CLI-12: An empty answer prints a dim hint on stderr. In one-shot mode this
   exits 1; in interactive mode the loop continues.
-- CLI-13: History is saved after every turn, empty answer or not.
+- CLI-13: History is saved after every turn, empty answer or not, except
+  under `--new` (CLI-35).
+- CLI-35: `-n` or `--new` starts with no conversation and saves none: the
+  directory's saved conversation is neither read nor changed, so a script's
+  `navi -n -p "…"` never joins or alters the one you are having there. Undo
+  (UND-1) and the ledger (LED-1) keep its turns as any other. With `--resume`
+  it is an error, reported with the usage.
 
 ## Commands
 
