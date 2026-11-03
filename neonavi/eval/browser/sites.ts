@@ -74,6 +74,9 @@ function multipart(body: string, boundary: string): Record<string, string> {
   return out
 }
 
+/** The drafts on /drafts (task 15). */
+export const DRAFTS = ['Ana Ruiz', 'Old supplier', 'Kettle Co']
+
 export async function startSites(): Promise<{ base: string; recorded: Recorded; server: Server }> {
   const recorded: Recorded = { posts: [], orders: 0 }
   const sessions = new Set<string>()
@@ -198,6 +201,15 @@ months.forEach((m, i) => { const h = v[i] * 3; c.fillStyle = '#3b6fd1'; c.fillRe
       const rows = p.includes('october') ? OCTOBER : [['Kettles', 2100], ['Mugs', 640]]
       res.writeHead(200, { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="${p.split('/').at(-1)}"` })
       return res.end(`product,sales\n${rows.map(([n, v]) => `${n},${v}`).join('\n')}\n`)
+    }
+
+    // 15. Drafts deleted only once the page's "are you sure?" is answered OK.
+    if (p === '/drafts' || p === '/drafts/delete') {
+      const gone = new Set(recorded.posts.filter((x) => x.path === '/drafts/delete').map((x) => x.fields.to))
+      const left = DRAFTS.filter((d) => !gone.has(d))
+      return html(page('Drafts', `<h1>Drafts</h1>${p === '/drafts/delete' ? `<p>Deleted the draft to ${fields.to}.</p>` : ''}<ul>${left
+        .map((d) => `<li>To ${d} <form method=post action=/drafts/delete style=display:inline onsubmit="return confirm('Delete the draft to ${d}? This cannot be undone.')"><input type=hidden name=to value="${d}"><button>Delete</button></form></li>`)
+        .join('')}</ul>`))
     }
 
     // 13. A job application with a CV to upload.

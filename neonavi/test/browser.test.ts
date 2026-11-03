@@ -46,6 +46,10 @@ before(async () => {
       res.end('month,sales\nApr,91\n')
       return
     } else if (url.pathname === '/files') res.end('<title>Files</title><a href="/report.csv">Monthly report</a>')
+    else if (url.pathname === '/dialogs')
+      res.end(`<title>Invoices</title><script>alert('Welcome back')</script><ul><li id=inv>Invoice 7</li></ul>
+<button onclick="if (confirm('Delete invoice 7?')) inv.remove()">Delete</button>
+<button onclick="out.textContent = 'Renamed to ' + prompt('New name?')">Rename</button><p id=out></p>`)
     else if (url.pathname === '/never') return // answered only when the server closes
     else if (url.pathname === '/found') res.end(`<title>Found</title><p>Results for ${url.searchParams.get('q')}</p>`)
     else res.end(SHOP)
@@ -290,3 +294,25 @@ test('a download is kept in the working directory, never over a file there', { s
   }
 })
 
+
+// BRW-21
+test('a pop-up never hangs the tab: a message is told, a question answered Cancel unless the action answers it', { skip }, async () => {
+  const tab = makeTab({ home, headless: true })
+  const page = await tab.open(`${base}/dialogs`)
+  assert.match(page, /^The page showed a message: "Welcome back"\n/)
+  const del = refOf(page, 'button "Delete"')
+  const cancelled = await done(tab, { kind: 'click', ref: del })
+  assert.match(cancelled, /The page asked "Delete invoice 7\?" and it was answered Cancel, so .* again with dialog "ok"/)
+  assert.match(await tab.read({}), /Invoice 7/)
+  // Approval names the question the page asked last.
+  const d = await tab.describe({ kind: 'click', ref: del, dialog: 'ok' })
+  assert.ok('line' in d)
+  assert.match(d.line, /^click button "Delete" on 127\.0\.0\.1:\d+, answering OK to the page's question "Delete invoice 7\?"$/)
+  const deleted = await tab.act({ kind: 'click', ref: del, dialog: 'ok' }, d)
+  assert.match(deleted, /^The page asked "Delete invoice 7\?"; it was answered OK\./)
+  assert.doesNotMatch(await tab.read({}), /Invoice 7/)
+  // A prompt takes the text; the answer is for that action only.
+  const rename = refOf(page, 'button "Rename"')
+  assert.match(await done(tab, { kind: 'click', ref: rename, dialog: 'Invoice 8' }), /answered "Invoice 8"\.[\s\S]*Renamed to Invoice 8/)
+  assert.match(await done(tab, { kind: 'click', ref: rename }), /answered Cancel[\s\S]*Renamed to null/)
+})

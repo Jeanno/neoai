@@ -225,10 +225,13 @@ always asks you first, naming the file and its size (BRW-19). A file a page
 downloads is kept in the working directory under the site's name for it,
 never over a file already there (`report (2).csv`), and navi can then read
 it (BRW-20); files you download yourself in navi's window go where they
-always do. How well a model does with the
-browser is measured by `eval/browser`: fourteen tasks on local practice sites
+always do. A page's own pop-ups never hang navi: a message is passed on to
+it, and a question ("Delete this draft?") is answered Cancel and passed on,
+until navi does the action again with an answer, which always asks you,
+naming the question (BRW-21). How well a model does with the
+browser is measured by `eval/browser`: fifteen tasks on local practice sites
 (searching, forms, signing in, cookie banners, frames, new tabs, stopping
-before paying, a chart drawn on a canvas, uploading and downloading files), run against a `navi serve` with
+before paying, a chart drawn on a canvas, uploading and downloading files, a delete behind an "are you sure?"), run against a `navi serve` with
 `npx tsx eval/browser/run.mts --port <port>`; the latest scores are in
 `eval/browser/RESULTS.md`.
 `"browser": false` in the config removes it (`spec/browser.md`).

@@ -96,6 +96,14 @@ has to look at the whole page again to see what happened.
   where it went. A download over 200 MB, or not done in 60s, is not kept,
   and the answer says why. Downloads are new files outside what navi
   wrote, so `navi undo` leaves them.
+- BRW-21: A page's own pop-ups (alert, confirm, prompt, leave this page?)
+  never hang the tab and are never answered unseen. A message is closed
+  and its words told with the result. A question is answered Cancel and
+  its words told, with how to answer it, unless the action carries
+  `dialog`: "ok" to answer OK, or the text a prompt asks for ("cancel" or
+  "no" answers Cancel). An action carrying an answer always asks the user,
+  naming the question the page last asked, since a page asks to be sure
+  of what matters. The answer is kept for that action only.
 - BRW-10: An action answers with what changed: a new page answers as
   browser_open; on the same page, the lines that appeared, at most 40, and
   how many went; or that nothing on the page changed.

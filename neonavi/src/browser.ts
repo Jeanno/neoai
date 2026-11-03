@@ -2,9 +2,9 @@ import { execFile, spawn } from 'node:child_process'
 import { access, copyFile, lstat, mkdir, readFile, readlink, rm, stat } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { basename, dirname, extname, join } from 'node:path'
-import type { Browser, Locator, Page } from 'playwright-core'
+import type { Browser, Dialog, Locator, Page } from 'playwright-core'
 import { configDir, readConfig } from 'neorouter'
-import { changes, cutOff, describeAction, find, focused, pageAnswer, pageLines, textLines, window, type Action } from './page.ts'
+import { cancels, changes, cutOff, describeAction, find, focused, pageAnswer, pageLines, textLines, window, type Action } from './page.ts'
 
 export type { Action } from './page.ts'
 
@@ -491,6 +491,10 @@ export function makeTab(o: BrowserOptions): Tab {
   let count = 0
   /** Tabs pages opened themselves since the last action began (BRW-15). */
   let popped: Page[] = []
+  /** BRW-21: the answer the action being done gives a pop-up, what pop-ups said since the last result, and each page's last question. */
+  let reply: string | undefined
+  let said: string[] = []
+  const asked = new WeakMap<Page, string>()
   // BRW-20: where downloads wait before they are kept.
   const stage = join(o.home, '.neoai', 'browser', 'downloads')
   const catching = async <T>(fn: (began: (ms: number) => Promise<void>) => Promise<T>) => catchingDownloads(await connect(o), stage, fn)
@@ -504,7 +508,34 @@ export function makeTab(o: BrowserOptions): Tab {
       adopt(opened)
       popped.push(opened)
     })
+    page.on('dialog', (d) => void popUp(page, d))
     return page
+  }
+
+  /** BRW-21: a pop-up answered at once, so the tab never hangs on it, and told with the next result. */
+  const popUp = async (page: Page, d: Dialog) => {
+    const words = d.type() === 'beforeunload' ? 'Leave this page? Changes on it may not be saved.' : d.message()
+    const quoted = JSON.stringify(words.replace(/\s+/g, ' ').trim().slice(0, 300))
+    if (d.type() === 'alert') {
+      said.push(`The page showed a message: ${quoted}`)
+      return d.accept().catch(() => {})
+    }
+    if (reply === undefined || cancels(reply)) {
+      asked.set(page, words.replace(/\s+/g, ' ').trim().slice(0, 300))
+      const how = d.type() === 'prompt' ? 'with dialog set to the text to give' : 'with dialog "ok"'
+      said.push(`The page asked ${quoted} and it was answered Cancel${reply === undefined ? `, so what it asked about was likely not done. If it should be, do the same action again ${how}.` : ', as asked.'}`)
+      return d.dismiss().catch(() => {})
+    }
+    asked.delete(page)
+    const given = d.type() === 'prompt' ? reply : undefined
+    said.push(`The page asked ${quoted}; it was answered ${given === undefined ? 'OK' : JSON.stringify(given)}.`)
+    return d.accept(given).catch(() => {})
+  }
+  /** A result, after what pop-ups said on the way to it. */
+  const told = (result: string) => {
+    const before = said
+    said = []
+    return before.length ? `${before.join('\n')}\n${result}` : result
   }
   const idOf = (p: Page) => owned.find((t) => t.page === p)?.id ?? '?'
   const live = () => owned.filter((t) => alive(t.page))
@@ -548,7 +579,7 @@ export function makeTab(o: BrowserOptions): Tab {
       if (goes && goes !== (extra.frame ?? host)) extra.goes = goes
       await handle?.dispose()
     }
-    const line = describeAction(action, pageLines(raw), { host, focus: focused(raw), ...extra })
+    const line = describeAction(action, pageLines(raw), { host, focus: focused(raw), asked: asked.get(p), ...extra })
     return line ? { line, url: p.url() } : null
   }
 
@@ -650,6 +681,7 @@ export function makeTab(o: BrowserOptions): Tab {
         const mayOpen = action.kind === 'click' || action.kind === 'press' || (action.kind === 'type' && action.submit)
         const opening = mayOpen ? p.waitForEvent('popup', { timeout: 600 }).catch(() => null) : null
         const target = 'ref' in action ? p.locator(`aria-ref=${action.ref}`) : null
+        reply = 'dialog' in action ? action.dialog : undefined
         const { begun } = await catching(async () => {
           if (action.kind === 'click') await target!.click({ timeout: ACT_MS })
           else if (action.kind === 'type') {
@@ -670,7 +702,7 @@ export function makeTab(o: BrowserOptions): Tab {
           }
           else await p.keyboard.press(action.key)
           await Promise.all([settle(p), opening])
-        })
+        }).finally(() => (reply = undefined))
         const got = begun.length ? `\n${await keepDownloads(begun, stage, saveIn)}` : ''
         // A tab the page opened becomes current: it is what the action led to (BRW-15).
         const opened = popped.filter(alive).at(-1)
@@ -692,6 +724,14 @@ export function makeTab(o: BrowserOptions): Tab {
       return { url: p.url(), jpeg: await p.screenshot({ type: 'jpeg', quality: 60, timeout: 10_000 }) }
     },
   }
+
+  // BRW-21: each result that reads the page carries what its pop-ups said on the way, lock or not.
+  const bare = { ...unlocked }
+  unlocked.open = (url, o) => bare.open(url, o).then(told)
+  unlocked.switchTo = (id) => bare.switchTo(id).then(told)
+  unlocked.read = (o) => bare.read(o).then(told)
+  unlocked.back = () => bare.back().then(told)
+  unlocked.act = (a, approved, saveIn) => bare.act(a, approved, saveIn).then(told)
 
   // One thing at a time in the tab: the model may ask for several at once.
   let queue: Promise<unknown> = Promise.resolve()

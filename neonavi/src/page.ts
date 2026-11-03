@@ -212,10 +212,11 @@ export function element(lines: string[], ref: string): string | null {
 
 /** Something to do on a page (BRW-9). */
 export type Action =
-  | { kind: 'click'; ref: string }
-  | { kind: 'type'; ref: string; text: string; submit?: boolean }
+  /** `dialog`: the answer to a pop-up the page asks while it is done (BRW-21). */
+  | { kind: 'click'; ref: string; dialog?: string }
+  | { kind: 'type'; ref: string; text: string; submit?: boolean; dialog?: string }
   | { kind: 'select'; ref: string; option: string }
-  | { kind: 'press'; key: string }
+  | { kind: 'press'; key: string; dialog?: string }
   /** `path` absolute, `size` in bytes, both as the file was found (BRW-19). */
   | { kind: 'upload'; ref: string; path: string; size: number }
 
@@ -244,6 +245,18 @@ export interface Where {
   frame?: string
   /** For a link, the host it goes to, when it is not the page's. */
   goes?: string
+  /** The words of the question a pop-up on the page last asked (BRW-21). */
+  asked?: string
+}
+
+/** Whether a pop-up's answer is Cancel (BRW-21). */
+export const cancels = (answer: string) => /^\s*(cancel|no)\s*$/i.test(answer)
+
+/** How approval words an action's answer to a pop-up (BRW-21). */
+function answering(action: Action, where: Where): string {
+  if (!('dialog' in action) || action.dialog === undefined) return ''
+  const reply = cancels(action.dialog) ? 'Cancel' : /^\s*(ok|yes)\s*$/i.test(action.dialog) ? 'OK' : JSON.stringify(action.dialog)
+  return where.asked ? `, answering ${reply} to the page's question ${JSON.stringify(where.asked)}` : `, answering ${reply} if the page asks`
 }
 
 const bytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
@@ -255,11 +268,11 @@ export function describeAction(action: Action, lines: string[], where: Where): s
     : where.host
       ? ` on ${where.host}`
       : ''
-  if (action.kind === 'press') return `press ${action.key}${where.focus ? ` in ${where.focus}` : ''}${on}`
+  if (action.kind === 'press') return `press ${action.key}${where.focus ? ` in ${where.focus}` : ''}${on}${answering(action, where)}`
   const what = element(lines, action.ref)
   if (!what) return null
-  if (action.kind === 'click') return `click ${what}${where.goes ? ` (goes to ${where.goes})` : ''}${on}`
+  if (action.kind === 'click') return `click ${what}${where.goes ? ` (goes to ${where.goes})` : ''}${on}${answering(action, where)}`
   if (action.kind === 'select') return `choose ${JSON.stringify(action.option)} in ${what}${on}`
   if (action.kind === 'upload') return `upload ${action.path} (${bytes(action.size)}) into ${what}${on}`
-  return `type ${JSON.stringify(action.text)} into ${what}${on}${action.submit ? ', then press Enter' : ''}`
+  return `type ${JSON.stringify(action.text)} into ${what}${on}${action.submit ? ', then press Enter' : ''}${answering(action, where)}`
 }

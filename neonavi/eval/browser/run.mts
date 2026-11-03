@@ -70,10 +70,17 @@ for (const task of TASKS.filter((t) => !only || only.includes(t.id))) {
   rows.push(`| ${task.id} | ${task.tests} | ${why ? '✗' : '✓'} | ${secs} s | ${job.log.length} (${browsed}) | ${asked.length} | ${cell(why ?? answer)} |`)
   console.log(`${why ? 'FAIL' : 'PASS'} ${task.id} ${secs}s ${why ?? ''}`)
   // What it did and said, to see why.
-  if (why) console.log(`  ${(job.log as string[]).join('\n  ')}\n  answer: ${answer.replace(/\s+/g, ' ').slice(0, 400)}`)
+  if (why) {
+    const told = `  ${(job.log as string[]).join('\n  ')}\n  answer: ${answer.replace(/\s+/g, ' ').slice(0, 400)}`
+    console.log(told)
+    // Kept whole, to read a rare miss after the run.
+    await writeFile(join(import.meta.dirname, `failed-${task.id}.log`), `${(job.log as string[]).join('\n')}\n\nanswer: ${answer}\n`)
+  }
   await api(`/jobs/${job.id}/delete`, {}).catch(() => {})
 }
 server.close()
+// Held only to keep the headless browser for serve; it stays up when this goes.
+await disconnect(home)
 
 const report = `# Browser eval
 

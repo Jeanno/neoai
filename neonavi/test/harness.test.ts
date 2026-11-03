@@ -960,6 +960,21 @@ test('an upload is always asked, even when the judge would let it through, and o
   assert.match(results.c3, /is not a file/)
 })
 
+// BRW-21
+test('an action that answers a pop-up is always asked; one that cancels it is judged as usual', async () => {
+  const { tab, done } = fakeTab()
+  const asked: string[] = []
+  const model = fake([
+    [call('c1', 'browser_click', { ref: 'safe-cmd', dialog: 'ok' }), call('c2', 'browser_click', { ref: 'safe-cmd', dialog: 'cancel' }), finish('tool-calls')],
+    [...text('t', 'ok'), finish('stop')],
+  ])
+  const h = await harness(model, { config: {}, browser: () => tab, approve: async (c) => (asked.push(c), true) })
+  const events = await collect(h.session().turn('delete it'))
+  assert.equal(asked.length, 1)
+  assert.equal(events.filter((e) => e.type === 'auto-approved').length, 1)
+  assert.deepEqual(done, ['safe-cmd', 'safe-cmd'])
+})
+
 // HAR-12
 test('an answer is read as ending on a next step only when it says one it has not done', () => {
   for (const said of [

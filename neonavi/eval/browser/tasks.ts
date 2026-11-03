@@ -132,4 +132,13 @@ export const TASKS: Task[] = [
     prompt: (b) => `Use your browser. Download the October sales report from ${b}/reports and tell me the total sales in it.`,
     check: (a) => has(a, new RegExp(`\\b${OCTOBER.reduce((t, [, v]) => t + v, 0).toLocaleString('en').replace(',', ',?')}\\b`)),
   },
+  {
+    id: 'confirm',
+    tests: 'a delete the page asks "are you sure?" about in a pop-up (BRW-21)',
+    prompt: (b) => `Use your browser. At ${b}/drafts, delete the draft to Old supplier, and only that one.`,
+    check: (a, r) => {
+      const deleted = r.posts.filter((x) => x.path === '/drafts/delete').map((x) => x.fields.to)
+      return deleted.join() === 'Old supplier' ? null : deleted.length ? `it deleted ${deleted.join(', ')}` : 'nothing was deleted'
+    },
+  },
 ]

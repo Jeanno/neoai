@@ -10,6 +10,7 @@ import { diffLines, hasUnseen, summarize, type FileChange } from './diff.ts'
 import { addFact, checkFact, readMemory } from './memory.ts'
 import { CONTEXT_FILE } from './context.ts'
 import type { Action, Tab } from './browser.ts'
+import { cancels } from './page.ts'
 
 /** Files agents read into their instructions: navi's own, and Claude Code's and others'. */
 const CONTEXT_NAMES = new Set([CONTEXT_FILE, 'CLAUDE.md', 'AGENTS.md', 'GEMINI.md'])
@@ -77,6 +78,12 @@ export interface ToolOptions {
 
 /** What browser_look got (BRW-18). */
 type Looked = { url: string; seen: string } | { url: string; jpeg: string } | { problem: string }
+
+/** BRW-21: the answer an action gives a pop-up the page asks, such as "Are you sure?". */
+const DIALOG = z
+  .string()
+  .optional()
+  .describe('the answer if the page asks in a pop-up: "ok", or the text a pop-up asks for. Without it a pop-up is answered Cancel and you are told what it asked')
 
 /** The largest file browser_upload sends (BRW-19). */
 const UPLOAD_MAX = 50 * 1024 * 1024
@@ -151,7 +158,8 @@ export function makeTools(
       if ('problem' in asked) return asked.problem
       // PSH-17: the page as it looks, for a front end that can show it while asking.
       // BRW-19: a file sent away is always the user's to say.
-      const always = action.kind === 'upload'
+      // BRW-21: so is answering a page that asks to be sure.
+      const always = action.kind === 'upload' || ('dialog' in action && action.dialog !== undefined && !cancels(action.dialog))
       if (!gate.act || !(await gate.act({ ...asked, shot: () => tab.shot(), ...(always && { always }) }, signal, id)))
         return `The user declined to ${asked.line}. Do not retry it; try another approach.`
       // Approval can take minutes: an action is not done on a page that moved on meanwhile.
@@ -406,17 +414,17 @@ export function makeTools(
 
     browser_click: tool({
       description: 'Click an element on the browser page by its ref. The user may be asked first. Returns what changed.',
-      inputSchema: z.object({ ref: z.string() }),
-      execute: async ({ ref }, { abortSignal, toolCallId }) => act({ kind: 'click', ref }, abortSignal, toolCallId),
+      inputSchema: z.object({ ref: z.string(), dialog: DIALOG }),
+      execute: async ({ ref, dialog }, { abortSignal, toolCallId }) => act({ kind: 'click', ref, dialog }, abortSignal, toolCallId),
     }),
 
     browser_type: tool({
       description:
         'Type into a field on the browser page by its ref, replacing what it holds; submit presses Enter after. ' +
         'The user may be asked first. Never type passwords: the user signs in themselves.',
-      inputSchema: z.object({ ref: z.string(), text: z.string(), submit: z.boolean().optional() }),
-      execute: async ({ ref, text, submit }, { abortSignal, toolCallId }) =>
-        act({ kind: 'type', ref, text, submit }, abortSignal, toolCallId),
+      inputSchema: z.object({ ref: z.string(), text: z.string(), submit: z.boolean().optional(), dialog: DIALOG }),
+      execute: async ({ ref, text, submit, dialog }, { abortSignal, toolCallId }) =>
+        act({ kind: 'type', ref, text, submit, dialog }, abortSignal, toolCallId),
     }),
 
     browser_select: tool({
@@ -441,8 +449,8 @@ export function makeTools(
 
     browser_press: tool({
       description: 'Press a key on the browser page, such as Enter, Escape or PageDown. The user may be asked first.',
-      inputSchema: z.object({ key: z.string() }),
-      execute: async ({ key }, { abortSignal, toolCallId }) => act({ kind: 'press', key }, abortSignal, toolCallId),
+      inputSchema: z.object({ key: z.string(), dialog: DIALOG }),
+      execute: async ({ key, dialog }, { abortSignal, toolCallId }) => act({ kind: 'press', key, dialog }, abortSignal, toolCallId),
     }),
   }
   // Removed rather than typed optional, so callers keep exact tool types.
