@@ -4,6 +4,7 @@
 //! starting it follows brush-shell's entry. What neosh adds is the line
 //! reader around brush's own, which sends lines for navi to navi (NSH-4).
 
+mod bang;
 mod navi;
 mod prompt;
 mod term;
@@ -250,8 +251,23 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                 self.inner.set_read_buffer(command, end);
             }
             let read = self.inner.read_line(shell, again)?;
-            let ReadResult::Input(line) = read else { return Ok(read) };
+            let ReadResult::Input(mut line) = read else { return Ok(read) };
             let mut guard = shell.try_lock().ok();
+            // NSH-24: `!!` and the rest, before anything reads the line.
+            if let Some(s) = guard.as_ref().filter(|s| s.options().enable_bang_style_history_substitution) {
+                let history: Vec<String> = s.history().map(|h| h.iter().map(|i| i.command_line.clone()).collect()).unwrap_or_default();
+                match bang::expand(line.trim_end_matches('\n'), &history) {
+                    Ok(Some(expanded)) => {
+                        println!("{expanded}");
+                        line = if line.ends_with('\n') { format!("{expanded}\n") } else { expanded };
+                    }
+                    Ok(None) => {}
+                    Err(said) => {
+                        eprintln!("neosh: {said}");
+                        continue;
+                    }
+                }
+            }
             // NSH-17: read each line, so `NEOSH_ASK=marked` at the prompt counts at once.
             let ask = navi::Ask::from_setting(guard.as_ref().and_then(|s| s.env_str("NEOSH_ASK")).as_deref());
             let dir = guard.as_ref().map(|s| s.working_dir().to_path_buf()).unwrap_or_else(|| PathBuf::from("."));

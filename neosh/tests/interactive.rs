@@ -171,3 +171,21 @@ fn a_question_mark_alone_after_a_failure_asks_why() {
     // Before the failure, and after a command that worked: how to ask.
     assert_eq!(screen.matches("Ask navi: start a line with ?").count(), 2, "{screen}");
 }
+
+// NSH-24
+#[test]
+fn history_expands_as_in_bash() {
+    let home = Home::new("bang");
+    let screen = home.run(&["echo one two", "echo !$", "!!", "^two^three", "!nope", "set +H", "echo !!", "history", "exit"], &[]);
+    let lines: Vec<&str> = screen.lines().map(str::trim).collect();
+    // Printed, then run.
+    assert!(lines.contains(&"echo two"), "{screen}");
+    assert_eq!(lines.iter().filter(|l| **l == "two").count(), 2, "{screen}");
+    assert!(lines.contains(&"echo three") && lines.contains(&"three"), "{screen}");
+    assert!(screen.contains("neosh: !nope: event not found"), "{screen}");
+    // Off with `set +H`.
+    assert!(lines.contains(&"!!"), "{screen}");
+    // History keeps what ran.
+    assert!(lines.iter().any(|l| l.ends_with("echo two") && l.starts_with(char::is_numeric)), "{screen}");
+    assert!(!lines.iter().any(|l| l.ends_with("echo !$") && l.starts_with(char::is_numeric)), "{screen}");
+}

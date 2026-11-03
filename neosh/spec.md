@@ -36,6 +36,18 @@ hands a line to another shell. What neosh adds is below.
   (^Z, `jobs`, `fg`, `bg`), and bash's builtins. Where brush and bash differ,
   bash is right, and the difference is brush's to fix.
 
+- NSH-24: An interactive neosh expands history as bash does, before
+  anything else reads the line, while `set -H` (`histexpand`, on by
+  default) is: `!!` the last command, `!n` the n-th in `history`, `!-n` the
+  n-th from last, `!text` the last starting with text, `!?text?` the last
+  holding it; after one, `:0`, `:n`, `:n-m`, `:n*`, `:^`, `:$` or `:*`
+  picks its words, and `!$`, `!^` and `!*` are the last command's.
+  `^old^new` runs the last command with the first `old` made `new`. A `!`
+  is left alone in single quotes, after `\`, before a space, `=`, `(` or a
+  closing `"`, and in `$!` and `${!…}`. The expanded line is printed, then
+  run, and is what history keeps; one naming no command says `event not
+  found` (or `bad word specifier`, `substitution failed`) and runs nothing.
+
 ## navi
 
 - NSH-4: A line starting with `?` goes to navi with the rest as its prompt
@@ -126,3 +138,4 @@ hands a line to another shell. What neosh adds is below.
 - Telling navi a failed command's output without `| ?`: commands write
   straight to the terminal, so neosh sees only the status.
 - A prebuilt binary, so installing needs no Rust.
+- History modifiers after a `:` (`:h`, `:t`, `:s/a/b/`, `:p`).
