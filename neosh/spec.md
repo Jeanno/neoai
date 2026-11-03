@@ -66,13 +66,15 @@ hands a line to another shell. What neosh adds is below.
 
 ## navi
 
-- NSH-4: A line starting with `?` goes to navi with the rest as its prompt
-  (`? why did that fail`); `?` with anything but a space after it (`?*`,
-  `?.txt`) is a glob, as in bash. Every other line is the shell's and runs
+- NSH-4: A line starting with `?` goes to navi with the rest as its prompt,
+  the question right after the `?` or after a space (`?why did that fail`,
+  `? why did that fail`). A first word that is a glob stays the shell's, as
+  in bash: one holding `*` or `[` (`?*`), or one whose `?` names a file
+  there (`?.txt` beside `a.txt`). Every other line is the shell's and runs
   as bash would run it: neosh never guesses that a command was meant for
   navi, so Enter always does what it does in bash.
 - NSH-23: When a line typed as a command is not found (status 127) and reads
-  as a sentence (NSH-17), the next prompt starts with `? ` and the line,
+  as a sentence (NSH-17), the next prompt starts with `?` and the line,
   so Enter asks navi instead, and ^C clears it. A suggestion from navi
   comes first. Nothing goes to navi without Enter.
 - NSH-17: `NEOSH_ASK` says which lines go to navi, read for every line so
@@ -96,7 +98,7 @@ hands a line to another shell. What neosh adds is below.
   it has answered (CLI-38). ^C stops it and never the shell, from the
   first line of a session on.
 - NSH-16: A command line ending in `| ?`, with a question or without
-  (`npm test | ? why does this fail`), runs the command and hands navi what
+  (`npm test |?why does this fail`, `npm test | ? why`), runs the command and hands navi what
   it printed, its errors too, with the question (or, alone, a request to
   explain it). The `|` and `?` count only outside quotes; `a || ? b` is no
   such line. navi answers as for any question (NSH-5 to NSH-7, NSH-11), and

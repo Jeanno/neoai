@@ -71,6 +71,9 @@ add the requirement there first.
 - [x] A command over several lines reaches navi with its breaks (` ↵ `),
       not run together; job control checked end to end. (NSH-6, NSH-3)
 - [x] `?` alone right after a failure asks navi why. (NSH-9)
+- [x] `?question` asks navi with no space after the `?`, as `|?question`
+      does; a glob first word (`?*`, `?.txt` naming a file) stays the
+      shell's. (NSH-4, NSH-16, NSH-23)
 - [x] `shopt -s autocd` and `cdspell`, which brush took and ignored, and
       `COLUMNS`/`LINES` set from the terminal; a directory on `PATH` (`bin/..`)
       is no longer taken for a program. (NSH-29, NSH-30, NSH-31)

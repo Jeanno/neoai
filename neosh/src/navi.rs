@@ -33,8 +33,9 @@ pub enum Line {
 /// What navi is asked of piped output that came with no question (NSH-16).
 pub const PIPED_ASK: &str = "explain this output";
 
-/// NSH-16: `<command> | ? [question]`, with the `|` and `?` outside quotes.
-fn piped(line: &str) -> Option<(String, String)> {
+/// NSH-16: `<command> | ? [question]` or `| ?question`, with the `|` and `?`
+/// outside quotes.
+fn piped(line: &str, globs: &impl Fn(&str) -> bool) -> Option<(String, String)> {
     let chars: Vec<(usize, char)> = line.char_indices().collect();
     let (mut single, mut double, mut escaped) = (false, false, false);
     let mut last = None;
@@ -55,10 +56,10 @@ fn piped(line: &str) -> Option<(String, String)> {
     }
     let at = last?;
     let rest = line[at + 1..].trim_start();
-    let question = rest.strip_prefix('?')?;
-    if !(question.is_empty() || question.starts_with(char::is_whitespace)) {
+    if !asks(rest, globs) {
         return None;
     }
+    let question = &rest[1..];
     let command = line[..at].trim();
     (!command.is_empty()).then(|| (command.to_string(), question.trim().to_string()))
 }
@@ -99,13 +100,10 @@ pub fn classify_in(line: &str, ask: Ask, mut is_command: impl FnMut(&str) -> boo
     if ask == Ask::Off {
         return Line::Shell;
     }
-    if let Some(rest) = line.strip_prefix('?') {
-        // `?*` and `?.txt` are globs, not questions.
-        if rest.is_empty() || rest.starts_with(char::is_whitespace) {
-            return Line::Navi(rest.trim().to_string());
-        }
+    if asks(line, &globs) {
+        return Line::Navi(line[1..].trim().to_string());
     }
-    if let Some((command, question)) = piped(line) {
+    if let Some((command, question)) = piped(line, &globs) {
         return Line::Piped { command, question };
     }
     if ask == Ask::Marked {
@@ -128,6 +126,18 @@ pub fn classify_in(line: &str, ask: Ask, mut is_command: impl FnMut(&str) -> boo
         return Line::Navi(line.to_string());
     }
     Line::Shell
+}
+
+/// NSH-4: whether `text` starts with a `?` for navi, the question right after
+/// it or after a space (`?why`, `? why`), and not with a glob: a first word
+/// holding `*` or `[`, or naming a file there (`?.txt`).
+fn asks(text: &str, globs: &impl Fn(&str) -> bool) -> bool {
+    let Some(rest) = text.strip_prefix('?') else { return false };
+    if rest.is_empty() || rest.starts_with(char::is_whitespace) {
+        return true;
+    }
+    let first = text.split_whitespace().next().unwrap_or(text);
+    !first.contains(['*', '[']) && !globs(first)
 }
 
 /// NSH-23: whether a line run as a command reads as a sentence for navi.
@@ -205,10 +215,10 @@ pub const WHY_FAILED: &str = "why did my last command fail, and how do I fix it?
 
 /// What `?` alone says (NSH-9).
 pub const HELP: &str = "\
-Ask navi: start a line with ? (? find the biggest files here), or type ?
+Ask navi: start a line with ? (?find the biggest files here), or type ?
 alone after a command fails. navi sees the commands you ran since it last
-answered and asks before it changes anything. Pipe output to it with | ?
-(npm test | ? why). A sentence typed as a command comes back as a question
+answered and asks before it changes anything. Pipe output to it with |?
+(npm test |?why). A sentence typed as a command comes back as a question
 for Enter to ask. NEOSH_ASK=sentences also sends sentences that are no
 command, and NEOSH_ASK=off nothing.";
 
@@ -312,8 +322,14 @@ mod tests {
         assert_eq!(classify("? why did that fail", Ask::Sentences, known), Line::Navi("why did that fail".into()));
         assert_eq!(classify("  ?  ", Ask::Sentences, known), Line::Navi(String::new()));
         // Globs stay globs.
-        assert_eq!(classify("?.txt", Ask::Sentences, known), Line::Shell);
-        assert_eq!(classify("?? x", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("?why did that fail", Ask::Marked, known), Line::Navi("why did that fail".into()));
+        assert_eq!(classify("?? x", Ask::Marked, known), Line::Navi("? x".into()));
+        // Globs stay globs: `*` or `[`, or a `?` naming a file there.
+        assert_eq!(classify("?*", Ask::Marked, known), Line::Shell);
+        assert_eq!(classify("?[ab].sh run", Ask::Marked, known), Line::Shell);
+        let here = |w: &str| w == "?.txt";
+        assert_eq!(classify_in("?.txt", Ask::Marked, known, here), Line::Shell);
+        assert_eq!(classify_in("?.txt is what", Ask::Marked, known, |_| false), Line::Navi(".txt is what".into()));
     }
 
     // NSH-4
@@ -396,11 +412,13 @@ mod tests {
         let piped = |c: &str, q: &str| Line::Piped { command: c.into(), question: q.into() };
         assert_eq!(classify("npm test | ? why does this fail", Ask::Sentences, known), piped("npm test", "why does this fail"));
         assert_eq!(classify("git log -3 | grep fix |?", Ask::Sentences, known), piped("git log -3 | grep fix", ""));
+        assert_eq!(classify("npm test |?why does this fail", Ask::Marked, known), piped("npm test", "why does this fail"));
         // Quoted, an or-list, a glob or no command: not piped to navi.
         assert_eq!(classify("echo 'a | ? b'", Ask::Sentences, known), Line::Shell);
         assert_eq!(classify("echo \"a | ? b\"", Ask::Sentences, known), Line::Shell);
         assert_eq!(classify("make || ? why", Ask::Sentences, known), Line::Shell);
-        assert_eq!(classify("ls | ?.txt", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("ls | ?*", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify_in("ls | ?.txt", Ask::Sentences, known, |w| w == "?.txt"), Line::Shell);
         assert_eq!(classify("echo a \\| ? b", Ask::Sentences, known), Line::Shell);
         assert_eq!(classify("| ? hi", Ask::Sentences, known), Line::Shell);
     }

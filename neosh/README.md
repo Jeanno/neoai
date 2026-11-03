@@ -2,12 +2,14 @@
 
 A shell, as bash, zsh and fish are, with navi inside it. Its language is
 bash's, so your commands and scripts keep working; a line starting with `?`
-goes to navi instead, which knows what you have just been running.
+goes to navi instead, which knows what you have just been running. A space
+after the `?` is up to you; a glob such as `?*`, or `?.txt` naming a file,
+stays a glob.
 
 ```
 ~/proj $ npm run build
 … error TS2304: Cannot find name 'Foo'.
-~/proj $ ? why did that fail
+~/proj $ ?why did that fail
 ```
 
 navi is told the commands you ran since it last answered, with where they ran
@@ -15,8 +17,8 @@ and how they ended, and answers in your terminal, in the shell's directory,
 asking before it changes anything. To show navi what a command printed, its errors too, pipe it to `?`:
 
 ```
-~/proj $ npm test | ? why does this fail
-~/proj $ git log -5 | ?
+~/proj $ npm test |?why does this fail
+~/proj $ git log -5 |?
 ```
 
 When the answer is a command to run,
@@ -26,7 +28,7 @@ navi why and how to fix it, and once navi has answered the prompt shows no
 failure: `$?` after a `?` line is navi's (130 if you stopped it with ^C); otherwise it says how to ask. Every line
 without a `?` is the shell's and runs as bash runs it, so Enter never does
 anything bash would not. If you forget the `?` and a sentence comes back
-`command not found`, the next prompt starts with `? ` and your sentence:
+`command not found`, the next prompt starts with `?` and your sentence:
 Enter asks navi, ^C clears it. All of a shell's conversation with navi is
 one session, whichever directory you ask from; which model answers is said
 with its first answer, and again only when it changes.

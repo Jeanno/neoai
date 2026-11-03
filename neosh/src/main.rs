@@ -262,7 +262,7 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             }
             if let Some(line) = self.missed.take() {
                 if navi::sentence(&line, |word| guard.as_mut().is_none_or(|s| is_command(s, word))) {
-                    self.suggested = Some(format!("? {line}"));
+                    self.suggested = Some(format!("?{line}"));
                 }
             }
             // NSH-12: drawn by neosh while PS1 is still its own.

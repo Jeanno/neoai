@@ -83,11 +83,12 @@ fn a_sentence_and_a_question_reach_navi_with_what_was_run() {
 #[test]
 fn a_sentence_runs_as_a_command_then_waits_as_a_question() {
     let home = Home::new("marked");
-    let screen = home.run(&["why did that fail", "", "exit"], &[]);
+    let screen = home.run(&["why did that fail", "", "?how about now", "exit"], &[]);
     assert!(screen.contains("command not found: why"), "{screen}");
-    assert!(screen.contains("$ ? why did that fail"), "{screen}");
+    assert!(screen.contains("$ ?why did that fail"), "{screen}");
     let log = home.log();
-    assert_eq!(log.matches("ARGS:").count(), 1, "{log}");
+    assert_eq!(log.matches("ARGS:").count(), 2, "{log}");
+    assert!(log.contains("-p how about now"), "{log}");
     assert!(log.contains("-p why did that fail"), "{log}");
     assert!(log.contains("RECENT: ~/work $ why did that fail (exit 127)"), "{log}");
     assert!(!screen.contains("a sentence goes to navi"), "{screen}");
