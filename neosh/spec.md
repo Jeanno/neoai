@@ -21,6 +21,13 @@ hands a line to another shell. What neosh adds is below.
 - NSH-2: The exit status is the last command's, and `exit [n]` leaves with
   n. `--version` and `--help` say what neosh is and how to start it.
 
+- NSH-14: `neosh/install.sh` builds neosh and puts it in `~/.local/bin`
+  (`NEOSH_BIN_DIR`), from the checkout it is in or, piped from curl, a clone
+  in `~/.local/share/neoai` shared with navi's installer. Run again, it
+  updates; `--uninstall` removes it. It replaces or removes only a neosh,
+  leaves history and `~/.neoshrc` alone, and never changes the login shell
+  or `/etc/shells`: it says how.
+
 ## The language
 
 - NSH-3: Everything bash's grammar has that brush runs: quoting, pipelines
@@ -75,5 +82,4 @@ hands a line to another shell. What neosh adds is below.
 - Whether the git tree has changes, which needs reading the index.
 - Telling navi a failed command's output: commands write straight to the
   terminal, so neosh sees only the status today.
-- neosh as a login shell: an installer that adds it to `/etc/shells`, asked
-  before it is.
+- A prebuilt binary, so installing needs no Rust.

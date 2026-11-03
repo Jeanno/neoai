@@ -55,6 +55,16 @@ navi -p "where is shell approval handled"
 git diff | navi -a - -p "write a commit message"
 ```
 
+### neosh, the shell
+
+Needs [Rust](https://rustup.rs) to build. One line:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Jeanno/neoai/master/neosh/install.sh | sh
+```
+
+Then type `neosh`. See [neosh/README.md](neosh/README.md).
+
 ### navi in Raycast
 
 Not a developer? Follow the [step-by-step guide](jackins/raycast/README.md) instead.

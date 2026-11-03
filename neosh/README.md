@@ -31,21 +31,24 @@ that failed, in red (`~/proj main 1 $`); set `PS1` in `~/.neoshrc` for your
 own, and `NO_COLOR` for none. History is kept in `~/.neosh_history`
 (or the file `HISTFILE` names), so ↑ and ^R reach earlier sessions.
 
-## Try it
+## Install
 
 You need [Rust](https://rustup.rs) to build it and [navi](../README.md#navi-in-the-terminal)
-on your `$PATH` to ask anything.
+on your `$PATH` to ask anything. One line, no checkout needed:
 
 ```bash
-cd neosh
-cargo build --release
-./target/release/neosh
+curl -fsSL https://raw.githubusercontent.com/Jeanno/neoai/master/neosh/install.sh | sh
 ```
+
+From a checkout, `./neosh/install.sh` builds the code you have. Either way
+you get `neosh` in `~/.local/bin`; run the installer again to update, or pass
+`--uninstall` to remove it (`… | sh -s -- --uninstall`). Then type `neosh`.
 
 `neosh -c '…'`, `neosh script.sh` and commands on stdin work as in bash.
 An interactive neosh reads `~/.neoshrc`; `-l` (or starting as `-neosh`)
 also reads `~/.profile`. neosh does not add itself to `/etc/shells` or
-change your login shell: try it from the shell you use now first.
+change your login shell: try it from the shell you use now first. The
+installer ends by saying how, for when you are ready.
 
 ```bash
 cargo test
