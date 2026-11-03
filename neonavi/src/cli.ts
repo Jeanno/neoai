@@ -16,10 +16,10 @@ import { attach, createHarness, CUT_NOTE, DEFAULT_STEPS, type Attachment, type H
 import { readConfig, reset } from 'neorouter'
 import { configuredBrowser, disconnect, findBrowser, installBrowser, makeTab, showBrowser } from './browser.ts'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
-import { describe, entryLabel, escalationFor, modelLabel } from './setup-core.ts'
+import { describe, entryLabel, escalationFor, modelLabel, updateConfig } from './setup-core.ts'
 import { readLedger, readUndoneEntries, recordUndone, ROUTE_DAYS, stats } from './ledger.ts'
 import { makeJobs, matches, serveToken, tailnetAddresses, titleOf, working, type JobDeps } from './jobs.ts'
-import { push, pushConfig } from './push.ts'
+import { LEVELS, notifyLevels, push, pushConfig, withLevels, type Level } from './push.ts'
 import { addFact, forgetFact, memoryFile, projectRoot, readMemory } from './memory.ts'
 import { SUGGEST_AFTER, suggestFacts } from './suggest.ts'
 import { listUndo, namer, redo, redoneLines, undo, undoneReport } from './undo.ts'
@@ -112,6 +112,7 @@ const USAGE = [
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
   '       navi schedules [<id> run | pause | resume | rm | edit [--prompt …] [--at …] [--days …] [--every …] [--only-changes | --every-run]]',
   '       navi push test',
+  '       navi notify [mac | phone] [all | waiting | off]',
   '       navi memory [add [--project] "<fact>" | forget <n | words>]',
   '       navi undo [--list] [-C <directory>]',
   '       navi redo [-C <directory>]',
@@ -140,6 +141,7 @@ const ABOUT = [
   '                     --only-changes makes it a watch that only speaks when something changed',
   'navi schedules       list schedules and their next run; <id> run starts one now, pause, resume, edit changes it, rm deletes it',
   'navi push test       send a test push to your phone (set "push" in the config first)',
+  'navi notify          what the Mac and the phone are told; all, waiting (only what needs you) or off sets both, mac or phone first one',
   'navi memory          what navi remembers about you and this project; add a fact, or forget one',
   "navi undo            put back the files navi's last turn here changed; --list shows what can be",
   'navi redo            bring back what the last undo here put back, unless changed since',
@@ -325,7 +327,7 @@ function makeNotify(page: string | undefined, log: (line: string) => void): JobD
         execFile('osascript', ['-e', `display notification ${quote(text)} with title ${quote(title)}`], () => {})
       }
       const p = pushConfig(config)
-      if (!p || (p.waiting && !needed)) return
+      if (!p || p.off || (p.waiting && !needed)) return
       const failed = await push(p, {
         title, job, detail: text, urgent,
         ...(page && { click: `${page}#job=${job}`, ...(key && { answer: `${page}answer/${job}/${key}` }) }),
@@ -638,6 +640,33 @@ async function pushCommand(argv: string[]) {
   const failed = await push(p, { title: 'navi can reach your phone', note: 'This is a test push from navi.' })
   if (failed) return console.error(`The push did not go through: ${failed}.`), 1
   console.log(`Sent a test push to ${p.server}. If it did not show up, check the phone is subscribed to the same topic.`)
+  // PSH-19: the test goes, but jobs' pushes do not.
+  if (p.off) console.log(dim('Pushes are off for jobs: navi notify phone all turns them back on.'))
+  return 0
+}
+
+/** `navi notify [mac | phone] [all | waiting | off]` (JOB-39). */
+async function notifyCommand(argv: string[]) {
+  const usage = () => (console.error('usage: navi notify [mac | phone] [all | waiting | off]'), 1)
+  const which = argv[0] === 'mac' || argv[0] === 'phone' ? argv[0] : undefined
+  const args = which ? argv.slice(1) : argv
+  const level = args[0]
+  if (args.length > 1 || (which && !args.length) || (level !== undefined && !LEVELS.includes(level as Level))) return usage()
+  const say = (l: { mac: Level; phone: Level | null }) => {
+    console.log(`mac    ${l.mac}`)
+    console.log(`phone  ${l.phone ?? 'not set up (navi push test says how)'}`)
+  }
+  if (level === undefined) return say(notifyLevels(await readConfig())), 0
+  const l = level as Level
+  const set = which === 'mac' ? { mac: l } : which === 'phone' ? { phone: l } : { mac: l, ...(notifyLevels(await readConfig()).phone && { phone: l }) }
+  let problem = ''
+  await updateConfig((config) => {
+    const next = withLevels(config, set)
+    if (typeof next === 'string') return (problem = next), config
+    return next
+  })
+  if (problem) return console.error(problem), 1
+  say(notifyLevels(await readConfig()))
   return 0
 }
 
@@ -867,6 +896,7 @@ async function main() {
   if (argv[0] === 'jobs') return jobsCommand(argv.slice(1))
   if (argv[0] === 'schedule') return scheduleCommand(argv.slice(1))
   if (argv[0] === 'push') return pushCommand(argv.slice(1))
+  if (argv[0] === 'notify') return notifyCommand(argv.slice(1))
   if (argv[0] === 'schedules') return schedulesCommand(argv.slice(1))
   if (argv[0] === 'memory') return memoryCommand(argv.slice(1))
   if (argv[0] === 'undo') return undoCommand(argv.slice(1))

@@ -445,3 +445,31 @@ test('SCH-27: navi schedules shows a schedule navi paused for failing', async ()
     server.close()
   }
 })
+
+// JOB-39
+test('navi notify says and sets what the Mac and the phone are told, leaving the rest of the config', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-cli-'))
+  const file = join(home, '.neoai', 'config.json')
+  const shown = await navi(['notify'], { home, config: { model: 'm' } })
+  assert.equal(shown.code, 0)
+  assert.match(shown.stdout, /mac +all/)
+  assert.match(shown.stdout, /phone +not set up/)
+  // No push: both means the Mac alone; the phone alone is refused.
+  const both = await navi(['notify', 'waiting'], { home, config: { model: 'm' } })
+  assert.equal(both.code, 0)
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { model: 'm', notify: 'waiting' })
+  const phone = await navi(['notify', 'phone', 'off'], { home, config: { model: 'm' } })
+  assert.equal(phone.code, 1)
+  assert.match(phone.stderr, /No push is set up/)
+  const config = { model: 'm', push: 'https://ntfy.sh/t' }
+  assert.equal((await navi(['notify', 'off'], { home, config })).code, 0)
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { model: 'm', notify: false, push: { url: 'https://ntfy.sh/t', notify: false } })
+  const mac = await navi(['notify', 'mac', 'all'], { home, config: { ...config, notify: false } })
+  assert.match(mac.stdout, /mac +all\nphone +all/)
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), config)
+  for (const bad of [['notify', 'loud'], ['notify', 'mac'], ['notify', 'off', 'now']]) {
+    const r = await navi(bad, { home, config })
+    assert.equal(r.code, 1, bad.join(' '))
+    assert.match(r.stderr, /usage: navi notify/)
+  }
+})

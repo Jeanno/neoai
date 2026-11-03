@@ -29,6 +29,9 @@ reaches you without the phone page open.
   needs the user, as `"notify": "waiting"` does on the Mac (JOB-38). The two
   are set apart: the Mac can say everything while the phone says only what
   waits.
+- PSH-19: `"push": { "url": …, "notify": false }` keeps the push set up
+  but sends nothing, until it is turned back on (JOB-39). `navi push test`
+  still sends its test, and says pushes are off.
 - PSH-6: `navi push test` sends a test push and says whether it arrived
   at the server; with no `push` in the config it says how to set one up.
 

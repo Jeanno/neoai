@@ -22,6 +22,9 @@ import { attachUploads } from './attach.ts'
 import { jobChanges, undo, undoneReport } from './undo.ts'
 import { recordUndone } from './ledger.ts'
 import { homedir } from 'node:os'
+import { configDir } from 'neorouter'
+import { loadConfig, updateConfig } from './setup-core.ts'
+import { LEVELS, notifyLevels, withLevels, type Level } from './push.ts'
 
 /** What the server needs from the world; the real ones by default, fakes in tests. */
 export interface ServeDeps {
@@ -158,6 +161,31 @@ async function memoryRoute(req: IncomingMessage, res: ServerResponse, path: stri
     return json(res, 200, await now())
   }
   error(res, 404, `Memory answers GET /memory, POST /memory and POST /memory/forget, not ${req.method} ${path}.`)
+}
+
+/** What the Mac and the phone are told (JOB-40); the token is already checked. */
+async function settingsRoute(req: IncomingMessage, res: ServerResponse, path: string, o: JobsOptions) {
+  const dir = configDir(o.home ?? homedir())
+  if (path !== '/settings/notify' || (req.method !== 'GET' && req.method !== 'POST'))
+    return error(res, 404, `Settings answer GET and POST /settings/notify, not ${req.method} ${path}.`)
+  if (req.method === 'POST') {
+    const body = await jsonBody(req)
+    if (typeof body === 'string') return error(res, 400, body)
+    const set: { mac?: Level; phone?: Level } = {}
+    for (const k of ['mac', 'phone'] as const) {
+      const v = body[k]
+      if (v === undefined) continue
+      if (!LEVELS.includes(v as Level)) return error(res, 400, `Give ${k} as all, waiting or off.`)
+      set[k] = v as Level
+    }
+    let problem = ''
+    await updateConfig((config) => {
+      const next = withLevels(config, set)
+      return typeof next === 'string' ? ((problem = next), config) : next
+    }, dir)
+    if (problem) return error(res, 400, problem)
+  }
+  json(res, 200, notifyLevels(await loadConfig(dir)))
 }
 
 /** The schedules API (SCH-7); the token is already checked. */
@@ -453,6 +481,14 @@ export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptio
           return error(res, 401, 'Memory needs the token in ~/.neoai/serve-token, as Authorization: Bearer <token>.', 'authentication_error')
         }
         return await memoryRoute(req, res, path, j)
+      }
+      // JOB-40: behind the same token.
+      if (j && (path === '/settings' || path.startsWith('/settings/'))) {
+        if (!bearer(req, j.token)) {
+          via = 'refused: no token'
+          return error(res, 401, 'Settings need the token in ~/.neoai/serve-token, as Authorization: Bearer <token>.', 'authentication_error')
+        }
+        return await settingsRoute(req, res, path, j)
       }
       // SCH-7: behind the same token.
       if (j?.schedules && (path === '/schedules' || path.startsWith('/schedules/'))) {

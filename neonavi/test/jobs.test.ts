@@ -576,6 +576,38 @@ test('the jobs allowed at once is 2 unless the config gives a whole number from 
   }
 })
 
+// JOB-40
+test('what the Mac and the phone are told can be read and set through the API, with the token', async () => {
+  const { jobs, home } = await setup()
+  const token = 's'.repeat(64)
+  const file = join(home, '.neoai', 'config.json')
+  await mkdir(join(home, '.neoai'), { recursive: true })
+  await writeFile(file, JSON.stringify({ model: 'm' }))
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const call = (body?: unknown, auth = true) =>
+    fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/settings/notify`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { ...(auth && { authorization: `Bearer ${token}` }), 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  try {
+    assert.equal((await call(undefined, false)).status, 401)
+    assert.equal((await call({ mac: 'off' }, false)).status, 401)
+    assert.deepEqual(await (await call()).json(), { mac: 'all', phone: null })
+    const noPush = await call({ mac: 'off', phone: 'waiting' })
+    assert.equal(noPush.status, 400)
+    assert.match((await noPush.json()).error.message, /No push is set up/)
+    assert.equal((await call({ mac: 'quiet' })).status, 400)
+    assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { model: 'm' })
+    assert.deepEqual(await (await call({ mac: 'waiting' })).json(), { mac: 'waiting', phone: null })
+    await writeFile(file, JSON.stringify({ model: 'm', notify: 'waiting', push: 'https://ntfy.sh/t' }))
+    assert.deepEqual(await (await call({ phone: 'off' })).json(), { mac: 'waiting', phone: 'off' })
+    assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { model: 'm', notify: 'waiting', push: { url: 'https://ntfy.sh/t', notify: false } })
+  } finally {
+    server.close()
+  }
+})
+
 // MEM-12
 test('memory can be read, added to and forgotten through the API, with the token, by exact text', async () => {
   const { jobs, home } = await setup()

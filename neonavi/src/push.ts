@@ -10,6 +10,8 @@ export interface PushConfig {
   detail: boolean
   /** Only what needs the user is pushed (PSH-18). */
   waiting: boolean
+  /** Set up, but nothing is pushed (PSH-19). */
+  off: boolean
 }
 
 /** The push config, or nothing when there is none or it does not read (PSH-1). */
@@ -26,7 +28,44 @@ export function pushConfig(config: { push?: unknown }): PushConfig | undefined {
   const parts = url.pathname.split('/').filter(Boolean)
   if (!['http:', 'https:'].includes(url.protocol) || !parts.length) return
   const topic = parts.pop()!
-  return { server: `${url.origin}${parts.length ? `/${parts.join('/')}` : ''}`, topic, detail: o.detail === true, waiting: o.notify === 'waiting' }
+  return { server: `${url.origin}${parts.length ? `/${parts.join('/')}` : ''}`, topic, detail: o.detail === true, waiting: o.notify === 'waiting', off: o.notify === false }
+}
+
+/** How much the Mac or the phone is told (JOB-39). */
+export type Level = 'all' | 'waiting' | 'off'
+export const LEVELS: readonly Level[] = ['all', 'waiting', 'off']
+
+const levelOf = (v: unknown): Level => (v === false ? 'off' : v === 'waiting' ? 'waiting' : 'all')
+const valueOf = (l: Level) => (l === 'off' ? false : l === 'waiting' ? 'waiting' : undefined)
+
+/** What the Mac and the phone are told; the phone is null with no push (JOB-39). */
+export function notifyLevels(config: Record<string, any>): { mac: Level; phone: Level | null } {
+  const p = pushConfig(config)
+  return { mac: levelOf(config.notify), phone: p ? (p.off ? 'off' : p.waiting ? 'waiting' : 'all') : null }
+}
+
+/**
+ * The config with the Mac's and the phone's levels set, and nothing else
+ * changed; `all` takes the setting out (JOB-39). A phone with no push is a
+ * problem, said as a string.
+ */
+export function withLevels(config: Record<string, any>, set: { mac?: Level; phone?: Level }): Record<string, any> | string {
+  if (set.phone !== undefined && !pushConfig(config)) return 'No push is set up for the phone; navi push test says how.'
+  const next = { ...config }
+  if (set.mac !== undefined) {
+    const v = valueOf(set.mac)
+    if (v === undefined) delete next.notify
+    else next.notify = v
+  }
+  if (set.phone !== undefined) {
+    const p = typeof next.push === 'string' ? { url: next.push } : { ...next.push }
+    const v = valueOf(set.phone)
+    if (v === undefined) delete p.notify
+    else p.notify = v
+    // A push given as its URL alone stays so when nothing is added to it.
+    next.push = typeof config.push === 'string' && Object.keys(p).length === 1 ? p.url : p
+  }
+  return next
 }
 
 export interface PushMessage {

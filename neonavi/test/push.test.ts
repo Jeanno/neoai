@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { push, pushConfig, type PushConfig } from '../src/push.ts'
+import { notifyLevels, push, pushConfig, withLevels, type PushConfig } from '../src/push.ts'
 
 /** A fetch that records what it was sent and answers with `status`. */
 function recorder(status = 200) {
@@ -15,12 +15,13 @@ function recorder(status = 200) {
 }
 
 test('PSH-1: a topic URL, or one with detail, is the push config; anything else is not', () => {
-  assert.deepEqual(pushConfig({ push: 'https://ntfy.sh/navi-abc' }), { server: 'https://ntfy.sh', topic: 'navi-abc', detail: false, waiting: false })
+  assert.deepEqual(pushConfig({ push: 'https://ntfy.sh/navi-abc' }), { server: 'https://ntfy.sh', topic: 'navi-abc', detail: false, waiting: false, off: false })
   assert.deepEqual(pushConfig({ push: { url: 'http://box.tail:2586/ntfy/mine', detail: true } }), {
     server: 'http://box.tail:2586/ntfy',
     topic: 'mine',
     detail: true,
     waiting: false,
+    off: false,
   })
   // PSH-18
   assert.equal(pushConfig({ push: { url: 'https://ntfy.sh/t', notify: 'waiting' } })?.waiting, true)
@@ -32,7 +33,7 @@ test('PSH-1: a topic URL, or one with detail, is the push config; anything else 
   assert.equal(pushConfig({ push: 42 }), undefined)
 })
 
-const plain: PushConfig = { server: 'https://ntfy.sh', topic: 't', detail: false, waiting: false }
+const plain: PushConfig = { server: 'https://ntfy.sh', topic: 't', detail: false, waiting: false, off: false }
 
 test('PSH-2: a push says what happened and the job id, and the prompt only with detail', async () => {
   const { sent, f } = recorder()
@@ -88,4 +89,21 @@ test('PSH-5: the phone page opens the job its link names', async () => {
   const { PHONE_PAGE } = await import('../src/phone.ts')
   assert.match(PHONE_PAGE, /job=\(\[0-9a-f\]\{8\}\)/)
   assert.match(PHONE_PAGE, /open = linked/)
+})
+
+// JOB-39, PSH-19
+test('the Mac and the phone each say all, waiting or off, and setting one changes only its key', () => {
+  assert.deepEqual(notifyLevels({}), { mac: 'all', phone: null })
+  assert.deepEqual(notifyLevels({ notify: false, push: 'https://ntfy.sh/t' }), { mac: 'off', phone: 'all' })
+  assert.deepEqual(notifyLevels({ notify: 'waiting', push: { url: 'https://ntfy.sh/t', notify: false } }), { mac: 'waiting', phone: 'off' })
+  assert.equal(pushConfig({ push: { url: 'https://ntfy.sh/t', notify: false } })?.off, true)
+
+  const config = { model: 'm', notify: false, push: 'https://ntfy.sh/t' }
+  assert.deepEqual(withLevels(config, { mac: 'all' }), { model: 'm', push: 'https://ntfy.sh/t' })
+  assert.deepEqual(withLevels(config, { mac: 'waiting', phone: 'off' }), { model: 'm', notify: 'waiting', push: { url: 'https://ntfy.sh/t', notify: false } })
+  // Back to all, a push given as its URL alone stays so.
+  assert.deepEqual(withLevels(config, { phone: 'all' }), config)
+  assert.deepEqual(withLevels({ push: { url: 'https://ntfy.sh/t', detail: true, notify: 'waiting' } }, { phone: 'all' }), { push: { url: 'https://ntfy.sh/t', detail: true } })
+  assert.match(withLevels({ notify: false }, { phone: 'off' }) as string, /No push is set up/)
+  assert.deepEqual(config, { model: 'm', notify: false, push: 'https://ntfy.sh/t' })
 })

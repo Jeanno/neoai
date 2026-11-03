@@ -127,7 +127,14 @@ also has Yes and No buttons that answer it right from the notification; each
 carries a key good for that one question only, and your phone sends the
 answer straight to navi over the tailnet. The token never leaves this
 computer. `"notify": "waiting"` in `push` pushes only what needs you, apart
-from what the Mac shows (`spec/push.md`).
+from what the Mac shows, and `"notify": false` there pauses pushes without
+losing the topic (`spec/push.md`).
+
+`navi notify` says what the Mac and the phone are told, and changes it
+without opening the config: `navi notify waiting` (or `all`, or `off`) sets
+both, `navi notify phone off` just the phone. The phone page's bell sets the
+same, so a meeting is two taps away from quiet. It takes effect from the
+next notification; navi serve needs no restart.
 
 A job waiting on a file change shows the changed lines in its notification
 (the first six, cut short), and one waiting on a browser action the page it

@@ -32,6 +32,18 @@ terminal that started them closes.
   paused (SCH-26). A job done or stopped says nothing. A quiet hours summary
   (PSH-12) is sent only when it holds one of those. The config is read for
   each notification, so a change needs no restart.
+- JOB-39: `navi notify` says what the Mac and the phone (PSH-1) are told:
+  `all`, `waiting` (JOB-38, PSH-18) or `off` (JOB-5, PSH-19), and the phone
+  as not set up when there is no push. `navi notify <all|waiting|off>` sets
+  both, `navi notify mac|phone <level>` one; the phone is set only when a
+  push is set up, and is otherwise said not to be. Only those keys change:
+  `all` takes the setting out, and the rest of the config stays as it was.
+- JOB-40: `GET /settings/notify` (behind the token) answers
+  `{ "mac": <level>, "phone": <level> | null }`; `POST /settings/notify`
+  with `{ "mac"?: <level>, "phone"?: <level> }` sets them as JOB-39 does and
+  answers the same; any other level, or a phone with no push, is refused
+  with 400 and nothing changes. The phone page has a Notifications screen
+  that shows and sets both.
 - JOB-6: Jobs are kept in `~/.neoai/jobs/<id>.json` (0600, in a 0700
   directory) as they change, with their conversation, so they survive navi
   serve restarting: one that was running or waiting is then `interrupted`,

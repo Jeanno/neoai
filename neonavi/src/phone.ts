@@ -169,6 +169,10 @@ export const PHONE_PAGE = `<!doctype html>
   .fact span { flex: 1; overflow-wrap: anywhere; }
   .fact button { padding: 6px 10px; color: var(--muted); font-size: 20px; line-height: 1; }
   .group .empty { padding: 14px; color: var(--muted); font-size: 14px; }
+  .pick { display: flex; width: 100%; align-items: center; gap: 8px; padding: 12px 14px; background: transparent; color: var(--text); border: 0; border-top: 1px solid var(--line); border-radius: 0; text-align: left; font: inherit; }
+  .pick:first-child { border-top: 0; }
+  .pick span { flex: 1; } .pick small { display: block; color: var(--muted); font-size: 13px; }
+  .pick b { color: var(--accent); font-weight: 600; }
   .sched { padding: 14px; border-top: 1px solid var(--line); }
   .sched:first-child { border-top: 0; }
   .sched .status { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
@@ -210,7 +214,7 @@ ${MARKDOWN_JS}
     return e
   }
   // Lists flattened; nothing, false and empty strings left out.
-  const shown = (kids) => kids.flat(Infinity).filter((k) => k != null && k !== false && k !== '')
+  const shown = (kids) => kids.flat(Infinity).filter((k) => k != null && k !== false && k !== '' && k !== 0)
   const put = (...kids) => app.replaceChildren(...shown(kids))
   // The last two parts of a path say enough on a phone.
   const short = (d) => { const p = d.split('/').filter(Boolean); return p.length > 2 ? '…/' + p.slice(-2).join('/') : d }
@@ -251,6 +255,8 @@ ${MARKDOWN_JS}
   let repeat = 'now', time = '08:00', quiet = false
   // MEM-13: what navi remembers, on a page of its own.
   let remembering = false, memory = { facts: [], off: false, projects: [] }, fact = '', about = ''
+  // JOB-40: what the Mac and this phone are told, on a page of their own.
+  let notifying = false, levels = null
   // Whether a job's steps are unfolded, kept across refreshes; which screen; the thread last scrolled to.
   let stepsOpen = false, scheduling = false, seen = '', from = ''
   // MEM-23: what the model found worth remembering from the open job, and which were kept.
@@ -359,6 +365,7 @@ ${MARKDOWN_JS}
       // A job that is gone (pruned, or a stale link) goes back to the list.
       job = open ? await api('/jobs/' + open).catch((e) => { open = null; throw e }) : null
       if (remembering) memory = await api('/memory')
+      if (notifying) levels = await api('/settings/notify')
       problem = ''
     } catch (e) { problem = e.message }
     render()
@@ -380,6 +387,7 @@ ${MARKDOWN_JS}
     stop: '<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     memory: '<path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1z"/>',
+    bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
     clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
     folder: '<path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/>',
   }
@@ -393,7 +401,7 @@ ${MARKDOWN_JS}
   const back = () => el('button', { class: 'icon', 'aria-label': 'Back', onclick: () => {
     // A job opened from Schedules goes back there.
     const toSchedules = !!open && from === 'schedules'
-    open = null; job = null; reply = ''; more = []; remembering = false; scheduling = toSchedules; from = ''; failed = ''; repeating = null; suggested = null; seen = ''
+    open = null; job = null; reply = ''; more = []; remembering = false; notifying = false; scheduling = toSchedules; from = ''; failed = ''; repeating = null; suggested = null; seen = ''
     render(); refresh(); window.scrollTo(0, 0)
   } }, icon('back'))
   const STATUS = { queued: 'Queued', running: 'Working', waiting: 'Needs you', done: 'Done', failed: 'Failed', stopped: 'Stopped', interrupted: 'Interrupted' }
@@ -588,7 +596,22 @@ ${MARKDOWN_JS}
     const waiting = jobs.filter((j) => j.status === 'waiting').length
     const finished = jobs.filter((j) => !['queued', 'running', 'waiting'].includes(j.status)).length
     const err = (failed || problem) && el('p', { class: 'err' }, failed || problem)
-    if (remembering) {
+    if (notifying) {
+      const LEVELS = [['all', 'Everything', 'When a job needs you, and when one ends'], ['waiting', 'Only what needs me', 'An approval, a failed job, a paused schedule'], ['off', 'Nothing', '']]
+      const choose = (which, now) => el('div', { class: 'group', role: 'radiogroup', 'aria-label': which === 'mac' ? 'The Mac' : 'This phone' },
+        LEVELS.map(([v, t, about]) => el('button', { class: 'pick', role: 'radio', 'aria-checked': String(v === now), disabled: busy,
+          onclick: () => { if (v !== now) act(async () => { levels = await api('/settings/notify', { [which]: v }) }) } },
+          el('span', {}, t, about && el('small', {}, about)), v === now && el('b', { 'aria-hidden': 'true' }, '✓'))))
+      put(bar(back(), el('div', { class: 'title center' }, el('h1', {}, 'Notifications')), el('span', { class: 'icon' })),
+        el('main', { class: 'content' },
+          !levels ? el('p', { class: 'note' }, problem ? '' : 'Loading…') : [
+            el('h2', {}, 'On the Mac'), choose('mac', levels.mac),
+            el('h2', {}, 'On this phone'),
+            levels.phone ? choose('phone', levels.phone)
+              : el('div', { class: 'group' }, el('div', { class: 'empty' }, 'Pushes to a phone are not set up. Add "push" to the config on the Mac; navi push test says how.')),
+            el('p', { class: 'meta', style: 'margin:14px 4px' }, 'This changes the config on the Mac, and navi serve uses it from the next notification on.')],
+          err))
+    } else if (remembering) {
       // MEM-19: a project's facts too, for the directories navi serve offers.
       const projects = memory.projects || []
       if (about && !projects.some((p) => p.root === about)) about = ''
@@ -664,11 +687,12 @@ ${MARKDOWN_JS}
       put(bar(null, el('div', { class: 'title' }, el('h1', { class: 'big' }, 'navi')),
           [el('button', { class: 'icon', 'aria-label': 'Schedules', title: 'Schedules', onclick: () => { scheduling = true; failed = ''; render(); window.scrollTo(0, 0) } }, icon('clock'),
               schedules.length > 0 && el('span', { class: 'badge', style: 'background:var(--muted)' }, String(schedules.length))),
+            el('button', { class: 'icon', 'aria-label': 'Notifications', title: 'Notifications', onclick: () => { notifying = true; levels = null; failed = ''; render(); refresh(); window.scrollTo(0, 0) } }, icon('bell')),
             el('button', { class: 'icon', 'aria-label': 'What navi remembers', title: 'What navi remembers', onclick: () => { remembering = true; failed = ''; refresh(); window.scrollTo(0, 0) } }, icon('memory'))]),
         el('main', { class: 'content' },
           jobs.length > 3 && el('input', { id: 'find', type: 'search', class: 'find', placeholder: 'Search', 'aria-label': 'Find a job', value: find, autocomplete: 'off',
             oninput: (e) => { find = e.target.value; render() } }),
-          jobs.length && find.trim() && !shownJobs.length && el('p', { class: 'note' }, 'No job mentions ' + find.trim() + '.'),
+          jobs.length > 0 && find.trim() && !shownJobs.length && el('p', { class: 'note' }, 'No job mentions ' + find.trim() + '.'),
           jobs.length
             ? shownJobs.map((j) => el('button', { class: 'chat', onclick: () => { open = j.id; failed = ''; refresh() } },
                 el('span', { class: 'dot s-' + j.status, 'aria-hidden': 'true' }),

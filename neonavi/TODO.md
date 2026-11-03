@@ -194,6 +194,9 @@ add the requirement there first.
       user, never passed. (BRW-25)
 - [x] Notifications only when navi needs you: `"notify": "waiting"`, for the
       Mac and for push apart. (JOB-38, PSH-18)
+- [x] A quick switch for notifications: `navi notify [mac|phone]
+      [all|waiting|off]` and a Notifications screen on the phone page;
+      pushes can be paused without losing the topic. (JOB-39, JOB-40, PSH-19)
 - [ ] The browser in Raycast: approval is ready, but Raycast's bundler
       cannot pack Playwright. (`jackins/raycast/spec.md` Open)
 - [x] The browser over MCP: `navi mcp --browser` serves the browser tools,
