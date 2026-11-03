@@ -267,10 +267,15 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                     let found = guard.as_ref().and_then(|s| s.find_first_executable_in_path("navi"));
                     let path = guard.as_ref().and_then(|s| s.env_str("PATH").map(|p| p.into_owned()));
                     drop(guard);
-                    if ask.is_empty() {
-                        println!("{}", navi::HELP);
-                        continue;
-                    }
+                    // NSH-9: alone, it asks about a failure just seen, or says how to ask.
+                    let ask = match ask.is_empty() {
+                        true if self.recent.last_failed() => navi::WHY_FAILED.to_string(),
+                        true => {
+                            println!("{}", navi::HELP);
+                            continue;
+                        }
+                        false => ask,
+                    };
                     let home = std::env::var_os("HOME").map(PathBuf::from);
                     let Some(found) = found else {
                         eprintln!("{}", navi::NOT_INSTALLED);

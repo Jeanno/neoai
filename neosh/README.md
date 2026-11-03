@@ -22,7 +22,8 @@ asking before it changes anything. To show navi what a command printed, its erro
 When the answer is a command to run,
 the next prompt starts with it typed out: press Enter to run it, change it
 first, or clear it with ^C. Start a line with `?` to make sure it goes
-to navi (`? ls or exa`); `?` alone says how. A typo such as `gti status`
+to navi (`? ls or exa`). Right after a command fails, `?` alone asks navi
+why and how to fix it; otherwise it says how to ask. A typo such as `gti status`
 stays `command not found`: a line goes to navi only when it reads as a
 sentence and its first word is no command, or when it asks (`what is using
 port 3000`, `find the big files?`). All of a shell's conversation with navi

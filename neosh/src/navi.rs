@@ -145,6 +145,11 @@ impl Recent {
         }
     }
 
+    /// Whether the command run last failed (NSH-9).
+    pub fn last_failed(&self) -> bool {
+        self.ran.last().is_some_and(|r| r.status != 0)
+    }
+
     pub fn clear(&mut self) {
         self.ran.clear();
     }
@@ -169,13 +174,16 @@ impl Recent {
     }
 }
 
+/// What `?` alone asks right after a command failed (NSH-9).
+pub const WHY_FAILED: &str = "why did my last command fail, and how do I fix it?";
+
 /// What `?` alone says (NSH-9).
 pub const HELP: &str = "\
-Ask navi: start a line with ? (? why did that fail), or just write a
-sentence that is not a command (find the biggest files here). navi sees the
-commands you ran since it last answered and asks before it changes anything.
-Pipe output to it with | ? (npm test | ? why). NEOSH_ASK=marked asks only
-with ?, and NEOSH_ASK=off never.";
+Ask navi: start a line with ? (? why did that fail), type ? alone after a
+command fails, or just write a sentence that is not a command (find the
+biggest files here). navi sees the commands you ran since it last answered
+and asks before it changes anything. Pipe output to it with | ? (npm test
+| ? why). NEOSH_ASK=marked asks only with ?, and NEOSH_ASK=off never.";
 
 /// What the first sentence sent to navi in a session says first (NSH-19).
 pub const SENTENCE_NOTE: &str = "\x1b[2m· a sentence goes to navi; `command <line>` runs it instead, and NEOSH_ASK=marked asks only with ?\x1b[0m";
@@ -345,7 +353,10 @@ mod tests {
         assert_eq!(lines.len(), 10);
         assert_eq!(lines[0], "~/proj $ cmd 2 (ok)");
         assert_eq!(lines[9], "~/proj $ cmd 11 (exit 1)");
+        // NSH-9: cmd 11 ended with exit 1.
+        assert!(r.last_failed());
         r.clear();
+        assert!(!r.last_failed());
         assert_eq!(r.describe(None), "");
         r.push(Ran { line: "ls\n-l".into(), dir: PathBuf::from("/home/u"), status: 0, took: Default::default() });
         assert_eq!(r.describe(Some(Path::new("/home/u"))), "~ $ ls ↵ -l (ok)");

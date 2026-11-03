@@ -82,7 +82,7 @@ fn a_sentence_and_a_question_reach_navi_with_what_was_run() {
 #[test]
 fn neosh_ask_marked_keeps_sentences_commands() {
     let home = Home::new("marked");
-    let screen = home.run(&["NEOSH_ASK=marked", "why did that fail", "?", "exit"], &[]);
+    let screen = home.run(&["NEOSH_ASK=marked", "why did that fail", "true", "?", "exit"], &[]);
     assert!(screen.contains("command not found: why"), "{screen}");
     assert!(screen.contains("Ask navi: start a line with ?"), "{screen}");
     assert_eq!(home.log(), "");
@@ -143,4 +143,17 @@ fn job_control_and_a_command_of_several_lines_work_through_neosh() {
     assert!(screen.contains("got-a") && screen.contains("got-b"), "{screen}");
     let log = home.log();
     assert!(log.contains("~/work $ for f in a b; do ↵ echo got-$f ↵ done (ok)"), "{log}");
+}
+
+// NSH-9
+#[test]
+fn a_question_mark_alone_after_a_failure_asks_why() {
+    let home = Home::new("why");
+    let screen = home.run(&["?", "ls missing-folder", "?", "true", "?", "exit"], &[]);
+    let log = home.log();
+    assert_eq!(log.matches("ARGS:").count(), 1, "{log}");
+    assert!(log.contains("-p why did my last command fail"), "{log}");
+    assert!(log.contains("~/work $ ls missing-folder (exit 1)"), "{log}");
+    // Before the failure, and after a command that worked: how to ask.
+    assert_eq!(screen.matches("Ask navi: start a line with ?").count(), 2, "{screen}");
 }
