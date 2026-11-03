@@ -182,6 +182,8 @@ struct WithNavi<IB: InputBackend> {
     missed: Option<String>,
     /// A line run in place of the one typed, and that one, for history (NSH-29).
     retyped: Option<(String, String)>,
+    /// NSH-32: the last `:s` or `^old^new`, for `:&`.
+    substituted: bang::Memory,
     /// The line brush adds to history as it runs it, and whether bash would keep it (NSH-26).
     settle: Option<(String, bool)>,
     session: String,
@@ -190,7 +192,7 @@ struct WithNavi<IB: InputBackend> {
 impl<IB: InputBackend> WithNavi<IB> {
     fn new(inner: IB) -> Self {
         let started = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        Self { inner, recent: navi::Recent::default(), handed: None, piped: None, noted: false, took: None, suggested: None, missed: None, retyped: None, settle: None, session: format!("neosh-{started}-{}", std::process::id()) }
+        Self { inner, recent: navi::Recent::default(), handed: None, piped: None, noted: false, took: None, suggested: None, missed: None, retyped: None, substituted: bang::Memory::default(), settle: None, session: format!("neosh-{started}-{}", std::process::id()) }
     }
 }
 
@@ -306,10 +308,18 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             let ReadResult::Input(mut line) = read else { return Ok(read) };
             let mut guard = shell.try_lock().ok();
             // NSH-24: `!!` and the rest, before anything reads the line.
-            if let Some(s) = guard.as_ref().filter(|s| s.options().enable_bang_style_history_substitution) {
-                let history: Vec<String> = s.history().map(|h| h.iter().map(|i| i.command_line.clone()).collect()).unwrap_or_default();
-                match bang::expand(line.trim_end_matches('\n'), &history) {
-                    Ok(Some(expanded)) => {
+            let history = guard.as_ref().filter(|s| s.options().enable_bang_style_history_substitution).map(|s| -> Vec<String> { s.history().map(|h| h.iter().map(|i| i.command_line.clone()).collect()).unwrap_or_default() });
+            if let Some(history) = history {
+                match bang::expand_with(line.trim_end_matches('\n'), &history, &mut self.substituted) {
+                    // NSH-32: `:p` prints it and keeps it in history, and runs nothing.
+                    Ok(Some(bang::Expanded { line: expanded, print: true })) => {
+                        println!("{expanded}");
+                        if let Some(h) = guard.as_mut().and_then(|s| s.history_mut()) {
+                            let _ = h.add(brush_core::history::Item::new(expanded));
+                        }
+                        continue;
+                    }
+                    Ok(Some(bang::Expanded { line: expanded, .. })) => {
                         println!("{expanded}");
                         line = if line.ends_with('\n') { format!("{expanded}\n") } else { expanded };
                     }

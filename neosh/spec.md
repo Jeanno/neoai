@@ -64,6 +64,18 @@ hands a line to another shell. What neosh adds is below.
   run, and is what history keeps; one naming no command says `event not
   found` (or `bad word specifier`, `substitution failed`) and runs nothing.
 
+- NSH-32: After a history reference and its words, modifiers each after a
+  `:` change what it names, as bash's do and in the order written: `h`
+  drops the last `/` part, `t` keeps only it, `r` drops a `.suffix`, `e`
+  keeps only it; `q` single-quotes it, `x` quotes each word; `s/old/new/`
+  changes the first `old` (any delimiter, `\` quoting it, `&` in new
+  standing for old, the last delimiter optional at the end of the line, an
+  empty old the last one used or `!?text?`'s), `gs` or `as` every one; `&`
+  repeats the last substitution, `^old^new` too, and `g&` everywhere. `p`
+  prints the line and keeps it in history without running it. A
+  substitution that finds nothing says so (`:s/a/b/: substitution failed`),
+  an unknown modifier too, and runs nothing.
+
 ## navi
 
 - NSH-4: A line starting with `?` goes to navi with the rest as its prompt,
@@ -176,7 +188,6 @@ hands a line to another shell. What neosh adds is below.
 - Telling navi a failed command's output without `| ?`: commands write
   straight to the terminal, so neosh sees only the status.
 - A prebuilt binary, so installing needs no Rust.
-- History modifiers after a `:` (`:h`, `:t`, `:s/a/b/`, `:p`).
 - Where brush is not bash yet (NSH-3), found by running both: `select`
   does not parse; `shopt -s globstar` makes `**/x` name paths that are not
   there; `coproc` can stop neosh with a bad file descriptor; `dirs` shows

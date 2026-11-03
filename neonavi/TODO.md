@@ -71,6 +71,9 @@ add the requirement there first.
 - [x] A command over several lines reaches navi with its breaks (` ↵ `),
       not run together; job control checked end to end. (NSH-6, NSH-3)
 - [x] `?` alone right after a failure asks navi why. (NSH-9)
+- [x] History modifiers, as bash's: `:h`, `:t`, `:r`, `:e`, `:q`, `:x`,
+      `:s/old/new/`, `:gs`, `:&`, `:g&`, and `:p` to print and keep without
+      running. (NSH-32)
 - [x] `?question` asks navi with no space after the `?`, as `|?question`
       does; a glob first word (`?*`, `?.txt` naming a file) stays the
       shell's. (NSH-4, NSH-16, NSH-23)

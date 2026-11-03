@@ -192,6 +192,19 @@ fn history_expands_as_in_bash() {
     assert!(!lines.iter().any(|l| l.ends_with("echo !$") && l.starts_with(char::is_numeric)), "{screen}");
 }
 
+// NSH-32
+#[test]
+fn history_modifiers_work_as_in_bash() {
+    let home = Home::new("modifiers");
+    let screen = home.run(&["echo /usr/lib/x.tar.gz", "ls -d !$:h", "!echo:s/x/y/:p", "\x1b[A", "echo !!:t:r", "exit"], &[]);
+    let lines: Vec<&str> = screen.lines().map(str::trim).collect();
+    assert!(lines.contains(&"ls -d /usr/lib") && lines.contains(&"/usr/lib"), "{screen}");
+    // `:p` prints, runs nothing, and ↑ finds it.
+    assert!(lines.contains(&"echo /usr/lib/y.tar.gz"), "{screen}");
+    assert_eq!(lines.iter().filter(|l| **l == "/usr/lib/y.tar.gz").count(), 1, "{screen}");
+    assert!(lines.contains(&"echo y.tar") && lines.contains(&"y.tar"), "{screen}");
+}
+
 // NSH-26
 #[test]
 fn history_keeps_what_bash_would() {
