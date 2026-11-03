@@ -50,7 +50,12 @@ The prompt shows where you are, the git branch (with `*` when tracked files
 have changes), how long a command took when
 it was 5 seconds or more, and the status of one that failed, in red
 (`~/proj main* 1m 4s 1 $`); navi is told the time too. Set `PS1` in `~/.neoshrc` for your
-own, and `NO_COLOR` for none. History is kept in `~/.neosh_history`
+own, and `NO_COLOR` for none. zsh's hooks work too: a `precmd` or
+`preexec` function, or ones named in `precmd_functions` and
+`preexec_functions` (as `add-zsh-hook` and bash-preexec tools use), run before
+each prompt and each command and never change `$?`; `PROMPT_COMMAND`,
+`trap … DEBUG` and `bind -x` work as in bash, so tools such as starship,
+zoxide, fzf and direnv can use their bash setup. History is kept in `~/.neosh_history`
 (or the file `HISTFILE` names), so ↑ and ^R reach earlier sessions;
 `HISTCONTROL=ignoreboth` and `HISTIGNORE` work as in bash, so a line typed
 with a space first stays out of it. Like bash's, it holds the last 500

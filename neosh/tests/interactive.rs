@@ -205,6 +205,30 @@ fn history_modifiers_work_as_in_bash() {
     assert!(lines.contains(&"echo y.tar") && lines.contains(&"y.tar"), "{screen}");
 }
 
+// NSH-33
+#[test]
+fn precmd_and_preexec_run_as_in_zsh_and_leave_the_status() {
+    let home = Home::new("hooks");
+    let screen = home.run(
+        &[
+            "pc() { echo \"pc saw $?\"; return 0; }; pe() { echo \"pe: $1\"; return 3; }",
+            "precmd_functions=(pc missing); preexec_functions=(pe)",
+            "false",
+            "echo status $?",
+            "unset precmd_functions preexec_functions",
+            "precmd() { PS1='hooked $ '; }",
+            "exit",
+        ],
+        &[],
+    );
+    let lines: Vec<&str> = screen.lines().map(str::trim).collect();
+    assert!(lines.contains(&"pe: false") && lines.contains(&"pc saw 1"), "{screen}");
+    // The status is the command's, for the prompt and for `$?`.
+    assert!(screen.contains("~/work 1 $ echo status"), "{screen}");
+    assert!(lines.contains(&"status 1"), "{screen}");
+    assert!(screen.contains("hooked $ exit"), "{screen}");
+}
+
 // NSH-26
 #[test]
 fn history_keeps_what_bash_would() {

@@ -262,6 +262,15 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                 }
                 self.recent.push(navi::Ran { line, dir, status, took });
             }
+            // NSH-33: zsh's precmd, the status left for the prompt; a PS1 it set counts.
+            let mut composed = prompt.prompt.clone();
+            if let Some(s) = guard.as_mut() {
+                if hooks(s, "precmd", &[]) && s.env_str("PS1").as_deref() != Some(prompt::DEFAULT_PS1) {
+                    if let Ok(p) = tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(s.compose_prompt())) {
+                        composed = p;
+                    }
+                }
+            }
             if let Some(line) = self.missed.take() {
                 if navi::sentence(&line, |word| guard.as_mut().is_none_or(|s| is_command(s, word))) {
                     self.suggested = Some(format!("?{line}"));
@@ -292,7 +301,7 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                 let host = s.env_str("HOSTNAME").map(|h| h.into_owned()).unwrap_or_default();
                 format!("{}{}", term::title(&prompt::tilde(&dir, home.as_deref())), term::directory(&host, &dir))
             });
-            let again = InteractivePrompt { prompt: ours.unwrap_or_else(|| prompt.prompt.clone()), alt_side_prompt: prompt.alt_side_prompt.clone(), continuation_prompt: prompt.continuation_prompt.clone() };
+            let again = InteractivePrompt { prompt: ours.unwrap_or(composed), alt_side_prompt: prompt.alt_side_prompt.clone(), continuation_prompt: prompt.continuation_prompt.clone() };
             let titled = guard.as_ref().is_some_and(|s| term::wanted(s.env_str("TERM").as_deref()));
             drop(guard.take());
             if let Some(told) = told {
@@ -352,6 +361,11 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             match what {
                 navi::Line::Shell => {
                     if !line.trim().is_empty() {
+                        // NSH-33: zsh's preexec, told the line.
+                        if let Some(s) = guard.as_mut() {
+                            let typed = line.trim_end_matches('\n');
+                            hooks(s, "preexec", &[typed, typed, typed]);
+                        }
                         // NSH-18: the command, while it runs.
                         if titled {
                             print!("{}", term::title(line.trim()));
@@ -383,6 +397,10 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                         }
                         continue;
                     };
+                    if let Some(s) = guard.as_mut() {
+                        let typed = line.trim_end_matches('\n');
+                        hooks(s, "preexec", &[typed, typed, typed]);
+                    }
                     let home = std::env::var_os("HOME").map(PathBuf::from);
                     let file = navi::command_file(&self.session);
                     let _ = std::fs::remove_file(&file);
@@ -451,6 +469,24 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
     fn set_read_buffer(&mut self, buffer: String, cursor: usize) {
         self.inner.set_read_buffer(buffer, cursor);
     }
+}
+
+/// NSH-33: zsh's hooks, as zsh and bash-preexec run them: the `name`
+/// function, then each named in `name_functions`, with `args`, every one
+/// seeing `$?` as it was and leaving it so. Whether any ran.
+fn hooks<SE: brush_core::ShellExtensions>(shell: &mut brush_core::Shell<SE>, name: &str, args: &[&str]) -> bool {
+    let mut funcs: Vec<String> = shell.func_mut(name).map(|_| name.to_string()).into_iter().collect();
+    if let Some(brush_core::ShellValue::IndexedArray(listed)) = shell.env_var(&format!("{name}_functions")).map(|v| v.value().clone()) {
+        funcs.extend(listed.values().filter(|f| shell.func_mut(f).is_some()).cloned());
+    }
+    let status = shell.last_exit_status();
+    let params = shell.default_exec_params();
+    for func in &funcs {
+        shell.set_last_exit_status(status);
+        let _ = tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(shell.invoke_function(func, args, &params)));
+    }
+    shell.set_last_exit_status(status);
+    !funcs.is_empty()
 }
 
 /// NSH-13: neosh's own history file, unless the environment names one.

@@ -175,6 +175,14 @@ hands a line to another shell. What neosh adds is below.
   prompt before any status (`~/proj main 1m 4s 1 $`), and in what navi is
   told of it (`~/proj $ cargo build (exit 101, took 1m 4s)`).
 
+- NSH-33: zsh's hooks, as zsh and bash-preexec run them: before each prompt
+  the `precmd` function, then each function named in the `precmd_functions`
+  array; before each line the shell runs (a `| ?` line too, not a line for
+  navi), `preexec` and `preexec_functions`, given the line as typed. A name
+  with no function is skipped. Each sees `$?` as the command left it and
+  leaves it so, for the prompt, for navi (NSH-6) and for the next line; a
+  `PS1` that `precmd` sets shows in that prompt.
+
 ## The terminal
 
 - NSH-18: An interactive neosh tells the terminal, unless `TERM` is unset or

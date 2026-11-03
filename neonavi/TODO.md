@@ -71,6 +71,8 @@ add the requirement there first.
 - [x] A command over several lines reaches navi with its breaks (` ↵ `),
       not run together; job control checked end to end. (NSH-6, NSH-3)
 - [x] `?` alone right after a failure asks navi why. (NSH-9)
+- [x] zsh's `precmd`/`preexec` hooks and `*_functions` arrays, `$?` left
+      as the command set it for the prompt, navi and the next line. (NSH-33)
 - [x] History modifiers, as bash's: `:h`, `:t`, `:r`, `:e`, `:q`, `:x`,
       `:s/old/new/`, `:gs`, `:&`, `:g&`, and `:p` to print and keep without
       running. (NSH-32)
