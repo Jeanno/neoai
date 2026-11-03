@@ -11,7 +11,7 @@ import type { HarnessEvent, HarnessOptions, Session } from '../src/harness.ts'
 import { jobsDir, makeJobs, matches, serveToken, tailnetAddresses, type JobDeps, type Jobs } from '../src/jobs.ts'
 import { listen, type ServeDeps } from '../src/serve.ts'
 import { makeRecorder } from '../src/undo.ts'
-import { userContent } from '../src/attach.ts'
+import { userContent, type Attachment } from '../src/attach.ts'
 
 type Approve = NonNullable<HarnessOptions['approve']>
 
@@ -142,6 +142,66 @@ test('a job can be stopped, waiting or not, and fails when its model does', asyn
   const j = none.jobs.create('anything', '/tmp')
   await none.jobs.idle()
   assert.equal(none.jobs.get(j.id)!.status, 'failed')
+})
+
+// JOB-42
+test('a failed turn is tried again in the same job, with its files, never asked twice', async () => {
+  const seen: { prompt: string; files?: string[] }[] = []
+  let down = 1
+  const { jobs, deps } = await setup({
+    start: async ({ approve, history }) => {
+      const s = fakeSession(approve, history)
+      return {
+        model: 'small',
+        session: {
+          get history() {
+            return s.history
+          },
+          async *turn(prompt, o = {}) {
+            seen.push({ prompt, ...(o.attachments && { files: o.attachments.map((a) => a.name) }) })
+            if (down-- > 0) {
+              yield { type: 'error', error: new Error('the backend is unreachable') } as const
+              // As the harness does: what was asked is in the history it gives back.
+              yield { type: 'done', history: [...history, { role: 'user', content: prompt }], text: '', empty: true, stopped: false } as const
+              return
+            }
+            yield* s.turn(prompt, o)
+          },
+        } as Session,
+      }
+    },
+  })
+  const note: Attachment = { kind: 'text', name: 'notes.txt', text: 'buy milk' }
+  const job = jobs.create('read my notes', '/tmp', { attachments: [note] })
+  await jobs.idle()
+  assert.equal(jobs.get(job.id)!.status, 'failed')
+  assert.equal(jobs.retry(job.id), undefined)
+  await jobs.idle()
+  const got = jobs.get(job.id)!
+  assert.equal(got.status, 'done')
+  assert.equal(got.answer, 'Answer to read my notes.')
+  assert.deepEqual(seen.at(-1), { prompt: 'read my notes', files: ['notes.txt'] })
+  assert.deepEqual(got.history.filter((m) => m.role === 'user').length, 1)
+  assert.ok(got.log.includes('· trying again'))
+  // A follow-up that fails is tried again from after the turn before it.
+  down = 1
+  jobs.reply(job.id, 'and the date')
+  await jobs.idle()
+  assert.equal(jobs.get(job.id)!.status, 'failed')
+  jobs.retry(job.id)
+  await jobs.idle()
+  assert.equal(jobs.get(job.id)!.answer, 'Answer to and the date.')
+  assert.deepEqual(jobs.get(job.id)!.history.map((m) => m.content), ['read my notes', 'Answer to read my notes.', 'and the date', 'Answer to and the date.'])
+  // Done, it is followed up instead; a list never shows what was sent.
+  assert.match(jobs.retry(job.id)!, /follow it up/)
+  assert.equal('turn' in jobs.list()[0], false)
+  // Files went with a restart: refused, and said so.
+  down = 1
+  const again = jobs.create('read my notes again', '/tmp', { attachments: [note] })
+  await jobs.idle()
+  const after = await makeJobs({ ...deps })
+  assert.match(after.retry(again.id)!, /notes\.txt.*start it again with them/)
+  assert.match(after.retry('nope')!, /no such job/)
 })
 
 // JOB-6

@@ -371,6 +371,7 @@ function showJob(job: any) {
   if (job.error) console.error(`error: ${job.error}`)
   if (job.changes?.length) console.log(dim(`\nchanged ${job.changes.join(', ')}; \`navi jobs ${job.id} undo\` puts them back`))
   if (job.turns?.length > 1) console.log(dim(`earlier in this job: \`navi jobs ${job.id} show\``))
+  if (job.status === 'failed' || job.status === 'interrupted') console.log(dim(`try it again with \`navi jobs ${job.id} retry\``))
   if (!working(job.status)) console.log(dim(`follow up with \`navi jobs ${job.id} reply "<what next>"\` (-a <file> to add one)`))
 }
 
@@ -433,7 +434,7 @@ async function replyJobCommand(n: number, id: string, argv: string[]) {
   return 0
 }
 
-const JOBS_USAGE = 'usage: navi jobs [<id> [y | n | stop | undo | delete | show | repeat (--at HH:MM [--days …] | --every 30m) [--only-changes] | reply "<follow-up>" [-a <file>]…] | find <words> | clear | link] [--port N]'
+const JOBS_USAGE = 'usage: navi jobs [<id> [y | n | stop | retry | undo | delete | show | repeat (--at HH:MM [--days …] | --every 30m) [--only-changes] | reply "<follow-up>" [-a <file>]…] | find <words> | clear | link] [--port N]'
 
 /** `navi jobs [<id> [y | n | stop | undo | delete | reply …] | clear | link] [--port N]` (JOB-12, JOB-13, JOB-20, JOB-26). */
 async function jobsCommand(argv: string[]) {
@@ -453,7 +454,7 @@ async function jobsCommand(argv: string[]) {
     for (const j of found) console.log(`${bold(j.id)}  ${statusWord(j.status, j.unchanged).padEnd(10)}  ${ago(new Date(j.created)).padEnd(10)}  ${titleOf(j.prompt)}`)
     return 0
   }
-  if (extra.length || !Number.isInteger(n) || (what !== undefined && !['y', 'n', 'stop', 'undo', 'delete', 'show'].includes(what))) {
+  if (extra.length || !Number.isInteger(n) || (what !== undefined && !['y', 'n', 'stop', 'retry', 'undo', 'delete', 'show'].includes(what))) {
     console.error(JOBS_USAGE)
     return 1
   }
@@ -507,8 +508,9 @@ async function jobsCommand(argv: string[]) {
     for (const l of got.data.lines as string[]) console.log(l.startsWith('not undone') ? dim(l) : l)
     return 0
   }
-  const path = what === undefined ? `/jobs/${id}` : what === 'stop' ? `/jobs/${id}/stop` : `/jobs/${id}/answer`
-  const got = await jobsApi(n, path, what === undefined ? undefined : what === 'stop' ? {} : { yes: what === 'y' })
+  // JOB-42: retry, as stop, takes no answer.
+  const path = what === undefined ? `/jobs/${id}` : what === 'stop' || what === 'retry' ? `/jobs/${id}/${what}` : `/jobs/${id}/answer`
+  const got = await jobsApi(n, path, what === undefined ? undefined : what === 'stop' || what === 'retry' ? {} : { yes: what === 'y' })
   if (!got) return console.error(NOT_SERVING), 1
   if (got.status !== 200) return console.error(got.data.error?.message ?? `navi serve answered ${got.status}`), 1
   showJob(got.data)

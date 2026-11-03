@@ -62,6 +62,8 @@ export interface Job {
   asked?: string
   /** Its last answer reached the token cap (HAR-11), so the phone offers Go on (JOB-35). */
   cut?: true
+  /** Its last turn, to try again (JOB-42): what the model was sent, how long the conversation was before it, its files' names. */
+  turn?: { sent: string; before: number; files?: string[] }
 }
 
 /** How a job is started beyond its prompt and directory. */
@@ -81,7 +83,7 @@ export const NOTHING_NEW = 'NOTHING NEW'
 export const nothingNew = (answer: string | undefined) => /^\W*nothing new\W*$/i.test(answer ?? '')
 
 /** A job as listed: no conversation or log (JOB-7). */
-export type Listed = Omit<Job, 'history' | 'log' | 'asked'>
+export type Listed = Omit<Job, 'history' | 'log' | 'asked' | 'turn'>
 
 export interface JobDeps {
   home: string
@@ -113,6 +115,8 @@ export interface Jobs {
   answerByKey(id: string, key: string, yes: boolean): boolean
   /** False when the job is running or waiting (JOB-3). */
   reply(id: string, prompt: string, attachments?: Attachment[]): boolean
+  /** Runs a failed or interrupted job's last turn again (JOB-42); why not, when it cannot. */
+  retry(id: string): string | undefined
   stop(id: string): boolean
   /** Adds lines to a job's log (UND-12); false when there is no such job. */
   note(id: string, lines: string[]): Promise<boolean>
@@ -176,6 +180,8 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
   /** Pictures of the page a waiting browser action is on (PSH-17). */
   const shots = new Map<string, Buffer>()
   const stops = new Map<string, AbortController>()
+  /** The files of each job's last turn, to try it again (JOB-42); never saved. */
+  const turnFiles = new Map<string, Attachment[]>()
   const running = new Set<Promise<void>>()
 
   // Written whole and renamed into place, so a crash leaves the old one (JOB-6).
@@ -200,6 +206,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
   /** Gone from memory and disk, after any write of it still on its way. */
   const forget = (id: string) => {
     jobs.delete(id)
+    turnFiles.delete(id)
     writes = writes.then(() => rm(join(dir, `${id}.json`), { force: true }).catch(() => {}))
     return writes
   }
@@ -218,6 +225,10 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
     delete job.error
     delete job.unchanged
     delete job.cut
+    // JOB-42: enough to run this turn again; its files only while navi serve runs.
+    job.turn = { sent: prompt, before: job.history.length, ...(attachments?.length && { files: attachments.map((a) => a.name) }) }
+    if (attachments?.length) turnFiles.set(job.id, attachments)
+    else turnFiles.delete(job.id)
     await save(job)
     const approve = (command: string, o: Parameters<NonNullable<HarnessOptions['approve']>>[1]): Promise<Answer> =>
       new Promise<boolean>((resolve) => {
@@ -325,7 +336,7 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
     void save(job)
   }
 
-  const listed = ({ history: _h, log: _l, asked: _a, ...rest }: Job): Listed => rest
+  const listed = ({ history: _h, log: _l, asked: _a, turn: _t, ...rest }: Job): Listed => rest
 
   return {
     list: () => [...jobs.values()].sort((a, b) => b.created.localeCompare(a.created)).map(listed),
@@ -373,6 +384,21 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
       job.asked = prompt
       begin(job, prompt, attachments)
       return true
+    },
+    retry(id) {
+      const job = jobs.get(id)
+      if (!job) return 'There is no such job.'
+      if (job.status !== 'failed' && job.status !== 'interrupted')
+        return working(job.status) ? 'The job is still working; wait for it, or stop it.' : 'Only a job that failed or was interrupted can be tried again; follow it up instead.'
+      const turn = job.turn
+      if (!turn) return 'This job is from before navi kept what to try again; follow it up instead.'
+      const files = turnFiles.get(id)
+      if (turn.files?.length && !files) return `Its files (${turn.files.join(', ')}) went when navi serve restarted; start it again with them.`
+      // From the conversation as it was before the turn, so it is not asked twice.
+      job.history = job.history.slice(0, turn.before)
+      job.log.push('· trying again')
+      begin(job, turn.sent, files)
+      return undefined
     },
     stop(id) {
       // JOB-22: out of the queue, never having run.

@@ -816,3 +816,44 @@ test('JOB-41: Copy takes the answer as written, and a code block its code, with 
   await bare.getByRole('button', { name: 'Copy answer' }).click()
   await bare.getByText('Could not copy here: press and hold the answer to select it instead.').waitFor()
 })
+
+test('JOB-42: a failed job has Try again, which runs it again in place', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  let down = true
+  const jobs = await makeJobs({
+    home,
+    start: async () => ({
+      model: 'small',
+      session: {
+        history: [],
+        async *turn(prompt: string) {
+          if (down) {
+            down = false
+            yield { type: 'error', error: new Error('the backend is unreachable') } as const
+            yield { type: 'done', history: [], text: '', empty: true, stopped: false } as const
+            return
+          }
+          yield { type: 'done', history: [], text: `Answer to ${prompt}.`, empty: false, stopped: false } as const
+        },
+      },
+    }),
+    notify: () => {},
+  })
+  jobs.create('check the backups', home)
+  await jobs.idle()
+  const token = '5'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const page = await browser.newPage()
+  await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
+  await page.getByText('check the backups').click()
+  await page.getByText('the backend is unreachable').first().waitFor()
+  await page.getByRole('button', { name: 'Try again' }).click()
+  await page.getByText('Answer to check the backups.').waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Try again' }).count(), 0)
+  assert.equal(jobs.list().length, 1)
+})

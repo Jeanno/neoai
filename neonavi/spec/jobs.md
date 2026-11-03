@@ -44,6 +44,16 @@ terminal that started them closes.
   answers the same; any other level, or a phone with no push, is refused
   with 400 and nothing changes. The phone page has a Notifications screen
   that shows and sets both.
+- JOB-42: A job that failed or was interrupted (JOB-6) can be tried again:
+  `POST /jobs/<id>/retry`, `navi jobs <id> retry`, or Try again on the
+  phone page. Its last turn runs again in the same job: the same prompt (as
+  the model was sent it, for a schedule's) and the same files, from the
+  conversation as it was before that turn, so what was asked is never in it
+  twice. Its log says `· trying again`. Files are kept only in memory while
+  navi serve runs: a turn with files cut off by a restart is refused and
+  said to need starting again with them. A job done, stopped, still working,
+  or from before this was kept is refused with 400; a follow-up is the way
+  on from those.
 - JOB-6: Jobs are kept in `~/.neoai/jobs/<id>.json` (0600, in a 0700
   directory) as they change, with their conversation, so they survive navi
   serve restarting: one that was running or waiting is then `interrupted`,

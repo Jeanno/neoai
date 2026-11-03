@@ -565,6 +565,8 @@ ${MARKDOWN_JS}
       el('div', { class: 'actions' },
         // JOB-41: the answer as written.
         job.answer && chip(copied === job.id + ':answer' ? 'Copied' : 'Copy', () => copy(job.id + ':answer', job.answer), { 'aria-label': 'Copy answer' }),
+        // JOB-42: a turn that failed, or was cut off by a restart, runs again.
+        (job.status === 'failed' || job.status === 'interrupted') && chip('Try again', () => act(() => api('/jobs/' + job.id + '/retry', {}))),
         job.cut && chip('Go on', () => act(() => api('/jobs/' + job.id + '/reply', { prompt: 'Go on from where you stopped.' }))),
         job.changes && job.changes.length > 0 && chip('Undo changes', () => {
           if (confirm('Put back the files this job changed? Files edited since are left alone.')) act(() => api('/jobs/' + job.id + '/undo', {}))

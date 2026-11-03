@@ -247,7 +247,7 @@ async function schedulesRoute(req: IncomingMessage, res: ServerResponse, path: s
 }
 
 /** A job as the API shows it: never its conversation, which can hold whole photos (JOB-15). */
-const shownJob = ({ history: _h, ...rest }: Job) => rest
+const shownJob = ({ history: _h, turn: _t, ...rest }: Job) => rest
 
 /** The jobs API (JOB-7); the token is already checked. */
 async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string, o: JobsOptions) {
@@ -341,11 +341,16 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
       const made = await o.schedules.add(job.prompt, job.directory, when, body.quiet === true)
       return json(res, 201, o.schedules.list().find((s) => s.id === made.id))
     }
+    // JOB-42
+    if (parts[1] === 'retry') {
+      const why = jobs.retry(job.id)
+      return why ? error(res, 400, why) : json(res, 200, shownJob(jobs.get(job.id)!))
+    }
     if (parts[1] === 'stop') return jobs.stop(job.id) ? json(res, 200, shownJob(jobs.get(job.id)!)) : error(res, 400, 'The job is not running.')
     // JOB-24
     if (parts[1] === 'delete') return (await jobs.remove(job.id)) ? json(res, 200, { deleted: job.id }) : error(res, 400, 'The job is still working; stop it first.')
   }
-  error(res, 404, `Jobs answer GET /jobs, POST /jobs, POST /jobs/clear, GET /jobs/<id> and POST /jobs/<id>/answer, reply, stop, undo, suggest, schedule or delete, not ${req.method} ${path}.`)
+  error(res, 404, `Jobs answer GET /jobs, POST /jobs, POST /jobs/clear, GET /jobs/<id> and POST /jobs/<id>/answer, reply, retry, stop, undo, suggest, schedule or delete, not ${req.method} ${path}.`)
 }
 
 /**

@@ -149,6 +149,8 @@ add the requirement there first.
       `navi jobs <id> repeat`. (JOB-32 to JOB-34)
 - [x] Delete a finished job, or clear them all, from the phone page or
       `navi jobs`; never one still working. (JOB-24 to JOB-26)
+- [x] Try again a failed or interrupted job in place, its files with it while
+      navi serve runs. (JOB-42)
 - [x] Answers on the phone page formatted from their Markdown (lists,
       tables, code, links), built as elements so nothing in an answer runs;
       only http(s) links. (JOB-17, JOB-18)

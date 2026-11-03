@@ -94,6 +94,10 @@ holds no place (JOB-21 to JOB-23).
 A job you are done with can be deleted (`navi jobs <id> delete`, or Delete
 job on the phone page), and `navi jobs clear` or Clear finished jobs
 deletes every one not still working (JOB-24 to JOB-26).
+A job that failed (the model was down, say) or was cut off by a restart of
+navi serve can be tried again in place: `navi jobs <id> retry`, or Try
+again on the phone page. Its last turn runs again with the same files, and
+what was asked is never in the conversation twice (JOB-42).
 A job followed up keeps its earlier answers: on the phone page as one
 thread, as in a chat app, and all of it with `navi jobs <id> show`
 (JOB-27 to JOB-29, JOB-36). Photos sent with a job show in its thread, full
