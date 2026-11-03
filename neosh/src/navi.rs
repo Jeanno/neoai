@@ -63,10 +63,35 @@ fn piped(line: &str) -> Option<(String, String)> {
     (!command.is_empty()).then(|| (command.to_string(), question.trim().to_string()))
 }
 
+/// NSH-17: which lines go to navi, from `NEOSH_ASK`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ask {
+    /// `?` lines, `| ?` and sentences (the default).
+    Sentences,
+    /// Only `?` lines and `| ?`.
+    Marked,
+    /// None: every line is the shell's.
+    Off,
+}
+
+impl Ask {
+    /// `sentences`, `marked` or `off`; anything else is the default.
+    pub fn from_setting(value: Option<&str>) -> Ask {
+        match value.map(|v| v.trim().to_lowercase()).as_deref() {
+            Some("marked") => Ask::Marked,
+            Some("off") => Ask::Off,
+            _ => Ask::Sentences,
+        }
+    }
+}
+
 /// NSH-4: a `?` line, or a sentence whose first word is no command; `is_command`
 /// says whether a word is a command, alias, function, builtin or keyword.
-pub fn classify(line: &str, mut is_command: impl FnMut(&str) -> bool) -> Line {
+pub fn classify(line: &str, ask: Ask, mut is_command: impl FnMut(&str) -> bool) -> Line {
     let line = line.trim();
+    if ask == Ask::Off {
+        return Line::Shell;
+    }
     if let Some(rest) = line.strip_prefix('?') {
         // `?*` and `?.txt` are globs, not questions.
         if rest.is_empty() || rest.starts_with(char::is_whitespace) {
@@ -75,6 +100,9 @@ pub fn classify(line: &str, mut is_command: impl FnMut(&str) -> bool) -> Line {
     }
     if let Some((command, question)) = piped(line) {
         return Line::Piped { command, question };
+    }
+    if ask == Ask::Marked {
+        return Line::Shell;
     }
     let words: Vec<&str> = line.split_whitespace().collect();
     if words.len() < 3 || line.contains(SHELL_CHARS) {
@@ -143,7 +171,9 @@ impl Recent {
 pub const HELP: &str = "\
 Ask navi: start a line with ? (? why did that fail), or just write a
 sentence that is not a command (find the biggest files here). navi sees the
-commands you ran since it last answered and asks before it changes anything.";
+commands you ran since it last answered and asks before it changes anything.
+Pipe output to it with | ? (npm test | ? why). NEOSH_ASK=marked asks only
+with ?, and NEOSH_ASK=off never.";
 
 /// What a line for navi says when navi is not installed (NSH-9).
 pub const NOT_INSTALLED: &str = "\
@@ -219,52 +249,67 @@ mod tests {
     // NSH-4
     #[test]
     fn question_mark_lines_go_to_navi() {
-        assert_eq!(classify("? why did that fail", known), Line::Navi("why did that fail".into()));
-        assert_eq!(classify("  ?  ", known), Line::Navi(String::new()));
+        assert_eq!(classify("? why did that fail", Ask::Sentences, known), Line::Navi("why did that fail".into()));
+        assert_eq!(classify("  ?  ", Ask::Sentences, known), Line::Navi(String::new()));
         // Globs stay globs.
-        assert_eq!(classify("?.txt", known), Line::Shell);
-        assert_eq!(classify("?? x", known), Line::Shell);
+        assert_eq!(classify("?.txt", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("?? x", Ask::Sentences, known), Line::Shell);
     }
 
     // NSH-4
     #[test]
     fn sentences_that_are_no_command_go_to_navi() {
-        assert_eq!(classify("why did that fail", known), Line::Navi("why did that fail".into()));
-        assert_eq!(classify("what's using port 8080", known), Line::Navi("what's using port 8080".into()));
+        assert_eq!(classify("why did that fail", Ask::Sentences, known), Line::Navi("why did that fail".into()));
+        assert_eq!(classify("what's using port 8080", Ask::Sentences, known), Line::Navi("what's using port 8080".into()));
         // A command first, however English it reads.
-        assert_eq!(classify("find the biggest files", known), Line::Shell);
+        assert_eq!(classify("find the biggest files", Ask::Sentences, known), Line::Shell);
         // Unless it asks: a question word that is also a program, or a question mark.
         let with_what = |w: &str| known(w) || ["what", "which", "who"].contains(&w);
-        assert_eq!(classify("what is in this folder", with_what), Line::Navi("what is in this folder".into()));
-        assert_eq!(classify("Which process has port 3000", with_what), Line::Navi("Which process has port 3000".into()));
-        assert_eq!(classify("who am i", with_what), Line::Shell);
-        assert_eq!(classify("which node npm yarn", with_what), Line::Shell);
-        assert_eq!(classify("find the biggest files?", known), Line::Navi("find the biggest files?".into()));
+        assert_eq!(classify("what is in this folder", Ask::Sentences, with_what), Line::Navi("what is in this folder".into()));
+        assert_eq!(classify("Which process has port 3000", Ask::Sentences, with_what), Line::Navi("Which process has port 3000".into()));
+        assert_eq!(classify("who am i", Ask::Sentences, with_what), Line::Shell);
+        assert_eq!(classify("which node npm yarn", Ask::Sentences, with_what), Line::Shell);
+        assert_eq!(classify("find the biggest files?", Ask::Sentences, known), Line::Navi("find the biggest files?".into()));
         // Too short to be a sentence: a typo stays command not found.
-        assert_eq!(classify("gti status", known), Line::Shell);
+        assert_eq!(classify("gti status", Ask::Sentences, known), Line::Shell);
         // Shell in it.
-        assert_eq!(classify("show me $HOME please", known), Line::Shell);
-        assert_eq!(classify("list files in /tmp now", known), Line::Shell);
-        assert_eq!(classify("make it so | tee", known), Line::Shell);
-        assert_eq!(classify("FOO=1 run the thing", known), Line::Shell);
+        assert_eq!(classify("show me $HOME please", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("list files in /tmp now", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("make it so | tee", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("FOO=1 run the thing", Ask::Sentences, known), Line::Shell);
         // Not a word first.
-        assert_eq!(classify("./run the tests now", known), Line::Shell);
-        assert_eq!(classify("-x is a flag here", known), Line::Shell);
+        assert_eq!(classify("./run the tests now", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("-x is a flag here", Ask::Sentences, known), Line::Shell);
+    }
+
+    // NSH-17
+    #[test]
+    fn neosh_ask_says_which_lines_go_to_navi() {
+        assert_eq!(Ask::from_setting(None), Ask::Sentences);
+        assert_eq!(Ask::from_setting(Some(" Marked ")), Ask::Marked);
+        assert_eq!(Ask::from_setting(Some("off")), Ask::Off);
+        assert_eq!(Ask::from_setting(Some("nonsense")), Ask::Sentences);
+        let marked = Ask::Marked;
+        assert_eq!(classify("why did that fail", marked, known), Line::Shell);
+        assert_eq!(classify("? why did that fail", marked, known), Line::Navi("why did that fail".into()));
+        assert_eq!(classify("ls | ?", marked, known), Line::Piped { command: "ls".into(), question: String::new() });
+        assert_eq!(classify("? why", Ask::Off, known), Line::Shell);
+        assert_eq!(classify("ls | ? hi", Ask::Off, known), Line::Shell);
     }
 
     // NSH-16
     #[test]
     fn output_piped_to_a_question_mark_goes_to_navi() {
         let piped = |c: &str, q: &str| Line::Piped { command: c.into(), question: q.into() };
-        assert_eq!(classify("npm test | ? why does this fail", known), piped("npm test", "why does this fail"));
-        assert_eq!(classify("git log -3 | grep fix |?", known), piped("git log -3 | grep fix", ""));
+        assert_eq!(classify("npm test | ? why does this fail", Ask::Sentences, known), piped("npm test", "why does this fail"));
+        assert_eq!(classify("git log -3 | grep fix |?", Ask::Sentences, known), piped("git log -3 | grep fix", ""));
         // Quoted, an or-list, a glob or no command: not piped to navi.
-        assert_eq!(classify("echo 'a | ? b'", known), Line::Shell);
-        assert_eq!(classify("echo \"a | ? b\"", known), Line::Shell);
-        assert_eq!(classify("make || ? why", known), Line::Shell);
-        assert_eq!(classify("ls | ?.txt", known), Line::Shell);
-        assert_eq!(classify("echo a \\| ? b", known), Line::Shell);
-        assert_eq!(classify("| ? hi", known), Line::Shell);
+        assert_eq!(classify("echo 'a | ? b'", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("echo \"a | ? b\"", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("make || ? why", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("ls | ?.txt", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("echo a \\| ? b", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("| ? hi", Ask::Sentences, known), Line::Shell);
     }
 
     // NSH-16

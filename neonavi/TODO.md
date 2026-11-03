@@ -61,6 +61,7 @@ add the requirement there first.
 - [x] neosh shows how long a slow command took, and tells navi. (NSH-15)
 - [x] `<command> | ? [question]` in neosh hands navi the command's output
       and errors. (NSH-16)
+- [x] `NEOSH_ASK=marked|off` when sentences should stay commands. (NSH-17)
 - [x] `neosh/install.sh`, local or through curl, never touching the login
       shell. (NSH-14)
 - [x] Image and PDF input: `-a`, `/attach`, and Raycast's Ask About Selected

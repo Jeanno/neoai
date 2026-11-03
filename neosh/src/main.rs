@@ -207,7 +207,9 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             let read = self.inner.read_line(shell, again)?;
             let ReadResult::Input(line) = read else { return Ok(read) };
             let mut guard = shell.try_lock().ok();
-            let what = navi::classify(&line, |word| guard.as_mut().is_none_or(|s| is_command(s, word)));
+            // NSH-17: read each line, so `NEOSH_ASK=marked` at the prompt counts at once.
+            let ask = navi::Ask::from_setting(guard.as_ref().and_then(|s| s.env_str("NEOSH_ASK")).as_deref());
+            let what = navi::classify(&line, ask, |word| guard.as_mut().is_none_or(|s| is_command(s, word)));
             let dir = guard.as_ref().map(|s| s.working_dir().to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
             match what {
                 navi::Line::Shell => {

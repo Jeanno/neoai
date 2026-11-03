@@ -47,6 +47,10 @@ hands a line to another shell. What neosh adds is below.
   (programs on most systems) followed by a word such as `is`, `are`,
   `does` or `the` (`who am i` stays a command). Anything else runs as a
   command, so a typo is still `command not found`.
+- NSH-17: `NEOSH_ASK` says which lines go to navi, read for every line so
+  setting it at the prompt or in `~/.neoshrc` counts at once: `sentences`
+  (the default) as above; `marked` only a `?` line and `| ?`; `off` none, so
+  every line runs as a command. Any other value is the default.
 - NSH-5: navi answers in the terminal as the `navi` CLI does (`navi -p`), in
   the shell's directory, with its approvals, and gives the prompt back when
   it has answered (CLI-38). ^C stops it.

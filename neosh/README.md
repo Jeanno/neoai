@@ -28,6 +28,10 @@ sentence and its first word is no command, or when it asks (`what is using
 port 3000`, `find the big files?`). All of a shell's conversation with navi
 is one session, whichever directory you ask from.
 
+If a sentence of yours should have been a command, set `NEOSH_ASK=marked`
+(in `~/.neoshrc` or at the prompt) and only `?` lines and `| ?` go to navi;
+`NEOSH_ASK=off` sends none.
+
 The interpreter is [brush](https://github.com/reubeno/brush)'s, a
 bash-compatible shell in Rust: pipelines, redirections, here-documents,
 functions, arrays, `[[ … ]]`, aliases, job control and bash's builtins.
