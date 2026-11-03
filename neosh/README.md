@@ -1,13 +1,13 @@
 # neosh
 
 A shell, as bash, zsh and fish are, with navi inside it. Its language is
-bash's, so your commands and scripts keep working; a line in plain English
+bash's, so your commands and scripts keep working; a line starting with `?`
 goes to navi instead, which knows what you have just been running.
 
 ```
 ~/proj $ npm run build
 … error TS2304: Cannot find name 'Foo'.
-~/proj $ why did that fail
+~/proj $ ? why did that fail
 ```
 
 navi is told the commands you ran since it last answered, with where they ran
@@ -21,18 +21,18 @@ asking before it changes anything. To show navi what a command printed, its erro
 
 When the answer is a command to run,
 the next prompt starts with it typed out: press Enter to run it, change it
-first, or clear it with ^C. Start a line with `?` to make sure it goes
-to navi (`? ls or exa`). Right after a command fails, `?` alone asks navi
-why and how to fix it; otherwise it says how to ask. A typo such as `gti status`
-stays `command not found`: a line goes to navi only when it reads as a
-sentence and its first word is no command, or when it asks (`what is using
-port 3000`, `find the big files?`). All of a shell's conversation with navi
-is one session, whichever directory you ask from; which model answers is
-said with its first answer, and again only when it changes.
+first, or clear it with ^C. Right after a command fails, `?` alone asks
+navi why and how to fix it; otherwise it says how to ask. Every line
+without a `?` is the shell's and runs as bash runs it, so Enter never does
+anything bash would not. If you forget the `?` and a sentence comes back
+`command not found`, the next prompt starts with `? ` and your sentence:
+Enter asks navi, ^C clears it. All of a shell's conversation with navi is
+one session, whichever directory you ask from; which model answers is said
+with its first answer, and again only when it changes.
 
-If a sentence of yours should have been a command, set `NEOSH_ASK=marked`
-(in `~/.neoshrc` or at the prompt) and only `?` lines and `| ?` go to navi;
-`NEOSH_ASK=off` sends none.
+`NEOSH_ASK=sentences` (in `~/.neoshrc` or at the prompt) also sends a
+sentence whose first word is no command straight to navi (`show me the big
+files`); `NEOSH_ASK=off` sends nothing.
 
 The interpreter is [brush](https://github.com/reubeno/brush)'s, a
 bash-compatible shell in Rust: pipelines, redirections, here-documents,

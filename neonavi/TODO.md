@@ -71,6 +71,10 @@ add the requirement there first.
 - [x] A command over several lines reaches navi with its breaks (` ↵ `),
       not run together; job control checked end to end. (NSH-6, NSH-3)
 - [x] `?` alone right after a failure asks navi why. (NSH-9)
+- [x] neosh sends only `?` lines to navi by default; a sentence that comes
+      back `command not found` waits at the prompt as `? …`. Guessing
+      sentences is `NEOSH_ASK=sentences`, and no longer takes a flag or a
+      glob (`ls -1 a?`). (NSH-4, NSH-17, NSH-23)
 - [x] neosh's prompt marks a branch with changes, `main*`, asking git
       without locks and never waiting on it. (NSH-22)
 - [x] neosh names navi's backend once a session, and again when it

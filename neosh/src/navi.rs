@@ -7,8 +7,8 @@ use std::process::Command;
 /// Commands kept to tell navi about (NSH-6).
 pub const RECENT_KEPT: usize = 10;
 
-/// Characters that make a line shell, not a sentence (NSH-4).
-const SHELL_CHARS: &[char] = &['|', '&', ';', '<', '>', '$', '`', '=', '(', ')', '/'];
+/// Characters that make a line shell, not a sentence (NSH-17).
+const SHELL_CHARS: &[char] = &['|', '&', ';', '<', '>', '$', '`', '=', '(', ')', '/', '*', '['];
 
 /// Question words that are also programs (`/usr/bin/what`, `which`, `who`).
 const ASKING: &[&str] = &["what", "which", "who"];
@@ -66,9 +66,9 @@ fn piped(line: &str) -> Option<(String, String)> {
 /// NSH-17: which lines go to navi, from `NEOSH_ASK`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ask {
-    /// `?` lines, `| ?` and sentences (the default).
+    /// `?` lines, `| ?` and sentences.
     Sentences,
-    /// Only `?` lines and `| ?`.
+    /// Only `?` lines and `| ?` (the default).
     Marked,
     /// None: every line is the shell's.
     Off,
@@ -78,16 +78,23 @@ impl Ask {
     /// `sentences`, `marked` or `off`; anything else is the default.
     pub fn from_setting(value: Option<&str>) -> Ask {
         match value.map(|v| v.trim().to_lowercase()).as_deref() {
-            Some("marked") => Ask::Marked,
+            Some("sentences") => Ask::Sentences,
             Some("off") => Ask::Off,
-            _ => Ask::Sentences,
+            _ => Ask::Marked,
         }
     }
 }
 
-/// NSH-4: a `?` line, or a sentence whose first word is no command; `is_command`
-/// says whether a word is a command, alias, function, builtin or keyword.
-pub fn classify(line: &str, ask: Ask, mut is_command: impl FnMut(&str) -> bool) -> Line {
+/// NSH-4: a `?` line, or with `sentences` (NSH-17) a sentence whose first word
+/// is no command; `is_command` says whether a word is a command, alias,
+/// function, builtin or keyword.
+pub fn classify(line: &str, ask: Ask, is_command: impl FnMut(&str) -> bool) -> Line {
+    classify_in(line, ask, is_command, |_| false)
+}
+
+/// As `classify`, with `globs` saying whether a word is a glob naming a file
+/// where the line would run (`ls a?`).
+pub fn classify_in(line: &str, ask: Ask, mut is_command: impl FnMut(&str) -> bool, globs: impl Fn(&str) -> bool) -> Line {
     let line = line.trim();
     if ask == Ask::Off {
         return Line::Shell;
@@ -111,15 +118,34 @@ pub fn classify(line: &str, ask: Ask, mut is_command: impl FnMut(&str) -> bool) 
     let first = words[0];
     // A sentence starts with a word, not a flag, a number or a path.
     let wordlike = first.chars().all(|c| c.is_alphabetic() || c == '\'' || c == ',');
-    if !wordlike {
+    if !wordlike || words.iter().any(|w| w.starts_with('-')) {
         return Line::Shell;
     }
     let lower = first.to_lowercase();
     let asking = ASKING.contains(&lower.as_str()) && QUESTION_NEXT.contains(&words[1].to_lowercase().as_str());
-    if asking || line.ends_with('?') || !is_command(first) {
+    let question = line.ends_with('?') && !words.last().is_some_and(|w| globs(w));
+    if asking || question || !is_command(first) {
         return Line::Navi(line.to_string());
     }
     Line::Shell
+}
+
+/// NSH-23: whether a line run as a command reads as a sentence for navi.
+pub fn sentence(line: &str, is_command: impl FnMut(&str) -> bool) -> bool {
+    !line.trim_start().starts_with('?') && !line.trim().contains('\n') && matches!(classify(line, Ask::Sentences, is_command), Line::Navi(_))
+}
+
+/// NSH-17: whether `word`, with `?` for any one character, names a file in `dir`.
+pub fn globs_a_file(word: &str, dir: &Path) -> bool {
+    let pattern: Vec<char> = word.chars().collect();
+    if !pattern.contains(&'?') {
+        return false;
+    }
+    let matches = |name: &str| {
+        let name: Vec<char> = name.chars().collect();
+        name.len() == pattern.len() && name.iter().zip(&pattern).all(|(n, p)| *p == '?' || n == p)
+    };
+    std::fs::read_dir(dir).is_ok_and(|entries| entries.flatten().any(|e| matches(&e.file_name().to_string_lossy())))
 }
 
 /// A command run in this shell, for navi (NSH-6).
@@ -179,14 +205,15 @@ pub const WHY_FAILED: &str = "why did my last command fail, and how do I fix it?
 
 /// What `?` alone says (NSH-9).
 pub const HELP: &str = "\
-Ask navi: start a line with ? (? why did that fail), type ? alone after a
-command fails, or just write a sentence that is not a command (find the
-biggest files here). navi sees the commands you ran since it last answered
-and asks before it changes anything. Pipe output to it with | ? (npm test
-| ? why). NEOSH_ASK=marked asks only with ?, and NEOSH_ASK=off never.";
+Ask navi: start a line with ? (? find the biggest files here), or type ?
+alone after a command fails. navi sees the commands you ran since it last
+answered and asks before it changes anything. Pipe output to it with | ?
+(npm test | ? why). A sentence typed as a command comes back as a question
+for Enter to ask. NEOSH_ASK=sentences also sends sentences that are no
+command, and NEOSH_ASK=off nothing.";
 
 /// What the first sentence sent to navi in a session says first (NSH-19).
-pub const SENTENCE_NOTE: &str = "\x1b[2m· a sentence goes to navi; `command <line>` runs it instead, and NEOSH_ASK=marked asks only with ?\x1b[0m";
+pub const SENTENCE_NOTE: &str = "\x1b[2m· a sentence goes to navi (NEOSH_ASK=sentences); `command <line>` runs it instead\x1b[0m";
 
 /// What a line for navi says when navi is not installed (NSH-9).
 pub const NOT_INSTALLED: &str = "\
@@ -303,15 +330,48 @@ mod tests {
         // Not a word first.
         assert_eq!(classify("./run the tests now", Ask::Sentences, known), Line::Shell);
         assert_eq!(classify("-x is a flag here", Ask::Sentences, known), Line::Shell);
+        // A flag or a glob anywhere: a command, a typo too.
+        assert_eq!(classify("ls -1 a?", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("gti commit -m wip", Ask::Sentences, known), Line::Shell);
+        assert_eq!(classify("rm the *.log files", Ask::Sentences, known), Line::Shell);
+        // A trailing `?` that names a file is a glob, not a question.
+        let here = |w: &str| w == "dir?";
+        assert_eq!(classify_in("ls the dir?", Ask::Sentences, known, here), Line::Shell);
+        assert_eq!(classify_in("ls the files?", Ask::Sentences, known, here), Line::Navi("ls the files?".into()));
+    }
+
+    // NSH-17
+    #[test]
+    fn a_question_mark_glob_is_matched_against_the_files_there() {
+        let top = std::env::temp_dir().join(format!("neosh-glob-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&top);
+        std::fs::create_dir_all(top.join("dir1")).unwrap();
+        std::fs::write(top.join("a.txt"), "").unwrap();
+        assert!(globs_a_file("dir?", &top));
+        assert!(globs_a_file("?.txt", &top));
+        assert!(!globs_a_file("files?", &top));
+        assert!(!globs_a_file("a.txt", &top), "no ?, no glob");
+        std::fs::remove_dir_all(&top).unwrap();
+    }
+
+    // NSH-23
+    #[test]
+    fn a_sentence_not_found_as_a_command_is_offered_to_navi() {
+        assert!(sentence("find me the biggest files", known) == false, "find is a command");
+        assert!(sentence("show me the biggest files", known));
+        assert!(!sentence("? show me the biggest files", known), "already a question");
+        assert!(!sentence("gti status", known), "a short typo");
+        assert!(!sentence("gti commit -m wip", known), "a typo with a flag");
+        assert!(!sentence("show me\nthe biggest files", known), "over lines");
     }
 
     // NSH-17
     #[test]
     fn neosh_ask_says_which_lines_go_to_navi() {
-        assert_eq!(Ask::from_setting(None), Ask::Sentences);
-        assert_eq!(Ask::from_setting(Some(" Marked ")), Ask::Marked);
+        assert_eq!(Ask::from_setting(None), Ask::Marked);
+        assert_eq!(Ask::from_setting(Some(" Sentences ")), Ask::Sentences);
         assert_eq!(Ask::from_setting(Some("off")), Ask::Off);
-        assert_eq!(Ask::from_setting(Some("nonsense")), Ask::Sentences);
+        assert_eq!(Ask::from_setting(Some("nonsense")), Ask::Marked);
         let marked = Ask::Marked;
         assert_eq!(classify("why did that fail", marked, known), Line::Shell);
         assert_eq!(classify("? why did that fail", marked, known), Line::Navi("why did that fail".into()));

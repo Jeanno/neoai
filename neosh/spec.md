@@ -3,7 +3,7 @@
 A shell, as zsh, bash and fish are: it reads commands, parses them and runs
 programs, pipelines and jobs itself, in one process. Its language is bash's,
 so what you know and the scripts you have keep working. navi lives inside
-it: a line in plain English goes to navi, which knows what you have just
+it: a line starting with `?` goes to navi, which knows what you have just
 been running.
 
 neosh is written in Rust (`neosh/`), one binary. Its interpreter is
@@ -39,22 +39,30 @@ hands a line to another shell. What neosh adds is below.
 ## navi
 
 - NSH-4: A line starting with `?` goes to navi with the rest as its prompt
-  (`? why did that fail`). So does a line whose first word is no command,
-  alias, function, builtin or keyword and that reads as a sentence: three
-  words or more, none holding `|`, `&`, `;`, `<`, `>`, `$`, `` ` ``, `=`,
-  `(` or a path's `/`. A sentence starting with a command still goes to navi
-  when it ends with `?`, or when its first word is `what`, `which` or `who`
-  (programs on most systems) followed by a word such as `is`, `are`,
-  `does` or `the` (`who am i` stays a command). Anything else runs as a
-  command, so a typo is still `command not found`.
-- NSH-19: The first time in a session that a line goes to navi for reading
-  as a sentence, without a `?`, neosh says so on stderr before navi
-  answers, with how to run it as a command instead (`command why …`) and
-  `NEOSH_ASK`.
+  (`? why did that fail`); `?` with anything but a space after it (`?*`,
+  `?.txt`) is a glob, as in bash. Every other line is the shell's and runs
+  as bash would run it: neosh never guesses that a command was meant for
+  navi, so Enter always does what it does in bash.
+- NSH-23: When a line typed as a command is not found (status 127) and reads
+  as a sentence (NSH-17), the next prompt starts with `? ` and the line,
+  so Enter asks navi instead, and ^C clears it. A suggestion from navi
+  comes first. Nothing goes to navi without Enter.
 - NSH-17: `NEOSH_ASK` says which lines go to navi, read for every line so
-  setting it at the prompt or in `~/.neoshrc` counts at once: `sentences`
-  (the default) as above; `marked` only a `?` line and `| ?`; `off` none, so
-  every line runs as a command. Any other value is the default.
+  setting it at the prompt or in `~/.neoshrc` counts at once: `marked` (the
+  default) a `?` line and `| ?`; `off` none, so every line runs as a
+  command; `sentences` also a line that reads as a sentence and whose first
+  word is no command, alias, function, builtin or keyword. A sentence is
+  three words or more, none starting with `-` and none holding `|`, `&`,
+  `;`, `<`, `>`, `$`, `` ` ``, `=`, `(`, `)`, `*`, `[` or a path's `/`. With
+  `sentences`, one starting with a command still goes to navi when it ends
+  with `?`, unless that last word is a glob naming a file there (`ls a?`),
+  or when its first word is `what`, `which` or `who` followed by a word
+  such as `is`, `are`, `does` or `the` (`who am i` stays a command). Any
+  other value is the default.
+- NSH-19: With `NEOSH_ASK=sentences`, the first time in a session that a
+  line goes to navi for reading as a sentence, without a `?`, neosh says so
+  on stderr before navi answers, with how to run it as a command instead
+  (`command why …`).
 - NSH-5: navi answers in the terminal as the `navi` CLI does (`navi -p`), in
   the shell's directory, with its approvals, and gives the prompt back when
   it has answered (CLI-38). ^C stops it and never the shell, from the

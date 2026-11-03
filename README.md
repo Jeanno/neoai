@@ -11,8 +11,8 @@ Run language models locally with no configuration.
   `navi serve`, which gives any app that takes an OpenAI base URL the same model, and
   `navi mcp`, which lets Claude Code or any MCP client hand navi a task.
 - **[neosh](neosh/README.md)** — a bash-compatible shell, in Rust, with navi inside it: type a
-  command and it runs; write a sentence ("why did that fail") and navi answers, knowing what you
-  just ran.
+  command and it runs, exactly as in bash; start a line with `?` ("? why did that fail") and navi
+  answers, knowing what you just ran.
 - **[jack-ins](jackins/NAVI.md)** — navi jacked into the apps you already use, starting with
   [Raycast](jackins/raycast/NAVI.md).
 

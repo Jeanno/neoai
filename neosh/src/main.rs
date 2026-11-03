@@ -158,13 +158,15 @@ struct WithNavi<IB: InputBackend> {
     noted: bool,
     /// What navi suggested running, for the next prompt (NSH-11).
     suggested: Option<String>,
+    /// A line not found as a command, to offer navi (NSH-23).
+    missed: Option<String>,
     session: String,
 }
 
 impl<IB: InputBackend> WithNavi<IB> {
     fn new(inner: IB) -> Self {
         let started = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        Self { inner, recent: navi::Recent::default(), handed: None, piped: None, noted: false, took: None, suggested: None, session: format!("neosh-{started}-{}", std::process::id()) }
+        Self { inner, recent: navi::Recent::default(), handed: None, piped: None, noted: false, took: None, suggested: None, missed: None, session: format!("neosh-{started}-{}", std::process::id()) }
     }
 }
 
@@ -197,7 +199,18 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             if let (Some((line, dir, at)), Some(s)) = (self.handed.take(), guard.as_ref()) {
                 let took = at.elapsed();
                 self.took = Some(took);
-                self.recent.push(navi::Ran { line, dir, status: s.last_exit_status(), took });
+                let status = s.last_exit_status();
+                // NSH-23: a sentence typed as a command, offered to navi.
+                let ask = navi::Ask::from_setting(s.env_str("NEOSH_ASK").as_deref());
+                if status == 127 && ask == navi::Ask::Marked && self.suggested.is_none() {
+                    self.missed = Some(line.clone());
+                }
+                self.recent.push(navi::Ran { line, dir, status, took });
+            }
+            if let Some(line) = self.missed.take() {
+                if navi::sentence(&line, |word| guard.as_mut().is_none_or(|s| is_command(s, word))) {
+                    self.suggested = Some(format!("? {line}"));
+                }
             }
             // NSH-12: drawn by neosh while PS1 is still its own.
             let ours = guard.as_ref().filter(|s| s.env_str("PS1").as_deref() == Some(prompt::DEFAULT_PS1)).map(|s| {
@@ -241,8 +254,8 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             let mut guard = shell.try_lock().ok();
             // NSH-17: read each line, so `NEOSH_ASK=marked` at the prompt counts at once.
             let ask = navi::Ask::from_setting(guard.as_ref().and_then(|s| s.env_str("NEOSH_ASK")).as_deref());
-            let what = navi::classify(&line, ask, |word| guard.as_mut().is_none_or(|s| is_command(s, word)));
             let dir = guard.as_ref().map(|s| s.working_dir().to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
+            let what = navi::classify_in(&line, ask, |word| guard.as_mut().is_none_or(|s| is_command(s, word)), |word| navi::globs_a_file(word, &dir));
             match what {
                 navi::Line::Shell => {
                     if !line.trim().is_empty() {

@@ -57,11 +57,11 @@ impl Drop for Home {
     }
 }
 
-// NSH-4 to NSH-7, NSH-19
+// NSH-4 to NSH-7, NSH-17, NSH-19
 #[test]
 fn a_sentence_and_a_question_reach_navi_with_what_was_run() {
     let home = Home::new("ask");
-    let screen = home.run(&["false", "why did that fail", "? and now", "gti status", "exit"], &[]);
+    let screen = home.run(&["false", "why did that fail", "? and now", "gti status", "exit"], &[("NEOSH_ASK", "sentences")]);
     let log = home.log();
     assert!(log.contains("-p why did that fail"), "{log}");
     assert!(log.contains("-p and now"), "{log}");
@@ -78,13 +78,27 @@ fn a_sentence_and_a_question_reach_navi_with_what_was_run() {
     assert!(screen.contains("command not found: gti"), "{screen}");
 }
 
-// NSH-17, NSH-9
+// NSH-4, NSH-23
 #[test]
-fn neosh_ask_marked_keeps_sentences_commands() {
+fn a_sentence_runs_as_a_command_then_waits_as_a_question() {
     let home = Home::new("marked");
-    let screen = home.run(&["NEOSH_ASK=marked", "why did that fail", "true", "?", "exit"], &[]);
+    let screen = home.run(&["why did that fail", "", "exit"], &[]);
     assert!(screen.contains("command not found: why"), "{screen}");
+    assert!(screen.contains("$ ? why did that fail"), "{screen}");
+    let log = home.log();
+    assert_eq!(log.matches("ARGS:").count(), 1, "{log}");
+    assert!(log.contains("-p why did that fail"), "{log}");
+    assert!(log.contains("RECENT: ~/work $ why did that fail (exit 127)"), "{log}");
+    assert!(!screen.contains("a sentence goes to navi"), "{screen}");
+}
+
+// NSH-23, NSH-17, NSH-9
+#[test]
+fn the_offered_question_can_be_cleared_and_nothing_is_sent() {
+    let home = Home::new("cleared");
+    let screen = home.run(&["show me the files", "\u{15}true", "?", "NEOSH_ASK=off", "show me the files", "? hi", "exit"], &[]);
     assert!(screen.contains("Ask navi: start a line with ?"), "{screen}");
+    assert_eq!(screen.matches("command not found: show").count(), 2, "{screen}");
     assert_eq!(home.log(), "");
 }
 
