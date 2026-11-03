@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
-import { access, mkdir, readFile, readlink, rm, stat } from 'node:fs/promises'
+import { access, copyFile, lstat, mkdir, readFile, readlink, rm, stat } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 import type { Browser, Locator, Page } from 'playwright-core'
 import { configDir, readConfig } from 'neorouter'
 import { changes, cutOff, describeAction, find, focused, pageAnswer, pageLines, textLines, window, type Action } from './page.ts'
@@ -17,7 +17,8 @@ export type { Action } from './page.ts'
 /** One session's tabs, as the browser tools use them: actions land in the current one. */
 export interface Tab {
   /** In the current tab, or a new one that becomes current (BRW-14). */
-  open: (url: string, o?: { newTab?: boolean }) => Promise<string>
+  /** `saveIn`: where a download it starts is kept (BRW-20). */
+  open: (url: string, o?: { newTab?: boolean; saveIn?: string }) => Promise<string>
   /** The session's tabs, the current one marked (BRW-14). */
   tabs: () => Promise<string>
   /** Makes a tab current and reads it (BRW-14). */
@@ -32,7 +33,7 @@ export interface Tab {
    * Does it, and says what changed (BRW-10), but only while the page still
    * describes it as `approved`.
    */
-  act: (action: Action, approved: { line: string; url: string }) => Promise<string>
+  act: (action: Action, approved: { line: string; url: string }, saveIn?: string) => Promise<string>
   /**
    * Runs `fn` with the tab to itself (BRW-11): nothing else the session does
    * in the tab runs between an action's description, its approval and its
@@ -386,6 +387,103 @@ const hostOf = (url: string) => {
 }
 
 /** A session's tabs, the first opened when first used (BRW-2, BRW-14). */
+/** The most a download may hold, and how long it may take (BRW-20). */
+const DOWNLOAD_MAX = 200 * 1024 * 1024
+const DOWNLOAD_MS = 60_000
+
+const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
+
+/** A name in `dir` nothing has yet: `name`, else `stem (2).ext` and on. */
+async function freeName(dir: string, name: string): Promise<string> {
+  const ext = extname(name)
+  const stem = name.slice(0, name.length - ext.length)
+  for (let n = 1; ; n++) {
+    const at = join(dir, n === 1 ? name : `${stem} (${n})${ext}`)
+    if (!(await lstat(at).catch(() => null))) return at
+  }
+}
+
+/** A download the browser began: its name, and how it ended. */
+interface Begun {
+  guid: string
+  name: string
+  ended: Promise<'completed' | 'canceled'>
+}
+
+/**
+ * Runs `fn` with downloads let through into `stage` and told of (BRW-20),
+ * then puts the browser back as it was, so downloads the user makes in the
+ * window go where they always do.
+ */
+const catchers = new Map<Browser, number>()
+
+async function catchingDownloads<T>(
+  browser: Browser,
+  stage: string,
+  fn: (began: (ms: number) => Promise<void>) => Promise<T>,
+): Promise<{ result: T; begun: Begun[] }> {
+  await mkdir(stage, { recursive: true })
+  const cdp = await browser.newBrowserCDPSession()
+  const begun: Begun[] = []
+  const ends = new Map<string, (state: 'completed' | 'canceled') => void>()
+  let first: () => void = () => {}
+  const firstBegun = new Promise<void>((r) => (first = r))
+  cdp.on('Browser.downloadWillBegin', (e) => {
+    begun.push({ guid: e.guid, name: e.suggestedFilename, ended: new Promise((done) => ends.set(e.guid, done)) })
+    first()
+  })
+  // Waits, at most `ms`, for a download to begin.
+  const began = (ms: number) => within(ms, firstBegun).catch(() => {})
+  cdp.on('Browser.downloadProgress', (e) => {
+    if (e.state !== 'inProgress') ends.get(e.guid)?.(e.state)
+  })
+  catchers.set(browser, (catchers.get(browser) ?? 0) + 1)
+  await cdp.send('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPath: stage, eventsEnabled: true })
+  try {
+    const result = await fn(began)
+    await Promise.all(begun.map((d) => within(DOWNLOAD_MS, d.ended).catch(() => {})))
+    return { result, begun }
+  } finally {
+    // Put back only once no other session of this process is catching too.
+    const left = (catchers.get(browser) ?? 1) - 1
+    if (left) catchers.set(browser, left)
+    else {
+      catchers.delete(browser)
+      await cdp.send('Browser.setDownloadBehavior', { behavior: 'default' }).catch(() => {})
+    }
+    await cdp.detach().catch(() => {})
+  }
+}
+
+/** Each download kept in `dir`, said in a line (BRW-20); nothing ever overwritten. */
+async function keepDownloads(begun: Begun[], stage: string, dir: string | undefined): Promise<string> {
+  const said: string[] = []
+  for (const d of begun) {
+    const name = basename(d.name.replace(/\\/g, '/')).replace(/[\x00-\x1f:]/g, '_') || 'download'
+    const staged = join(stage, d.guid)
+    const state = await Promise.race([d.ended, new Promise<'late'>((r) => setTimeout(() => r('late'), 0))])
+    try {
+      if (state === 'late') said.push(`A download of ${name} did not finish within 60s, so it was not kept.`)
+      else if (state === 'canceled') said.push(`A download of ${name} was cancelled.`)
+      else if (!dir) said.push(`It downloaded ${name}, which was not kept: there is nowhere to keep it.`)
+      else {
+        const bytes = (await stat(staged)).size
+        if (bytes > DOWNLOAD_MAX) said.push(`It downloaded ${name}, ${size(bytes)}: over 200 MB, so it was not kept.`)
+        else {
+          const at = await freeName(dir, name)
+          await copyFile(staged, at)
+          said.push(`It downloaded ${name} (${size(bytes)}), saved as ${at}.`)
+        }
+      }
+    } catch (e) {
+      said.push(`A download of ${name} could not be kept: ${reason(e)}.`)
+    } finally {
+      await rm(staged, { force: true })
+    }
+  }
+  return said.join('\n')
+}
+
 export function makeTab(o: BrowserOptions): Tab {
   /** The session's own tabs, by id, in the order opened. */
   const owned: { id: string; page: Page }[] = []
@@ -393,6 +491,9 @@ export function makeTab(o: BrowserOptions): Tab {
   let count = 0
   /** Tabs pages opened themselves since the last action began (BRW-15). */
   let popped: Page[] = []
+  // BRW-20: where downloads wait before they are kept.
+  const stage = join(o.home, '.neoai', 'browser', 'downloads')
+  const catching = async <T>(fn: (began: (ms: number) => Promise<void>) => Promise<T>) => catchingDownloads(await connect(o), stage, fn)
 
   const alive = (p: Page) => !p.isClosed() && !!p.context().browser()?.isConnected()
 
@@ -452,7 +553,7 @@ export function makeTab(o: BrowserOptions): Tab {
   }
 
   const unlocked: Tab = {
-    open: async (url, { newTab: fresh } = {}) => {
+    open: async (url, { newTab: fresh, saveIn } = {}) => {
       let parsed: URL
       try {
         parsed = new URL(url)
@@ -463,7 +564,16 @@ export function makeTab(o: BrowserOptions): Tab {
       try {
         // A new tab only once there is a first one; the first is new anyway.
         const p = fresh && current && alive(current) ? (current = adopt(await newTab(await connect(o)))) : await tab()
-        await p.goto(parsed.href, { waitUntil: 'domcontentloaded', timeout: o.loadMs ?? 30_000 })
+        // A link to a file downloads it rather than loading a page (BRW-20).
+        const { result: failed, begun } = await catching((began) =>
+          p.goto(parsed.href, { waitUntil: 'domcontentloaded', timeout: o.loadMs ?? 30_000 }).then(
+            () => null,
+            // The browser says so before it says what it is downloading.
+            async (e: unknown) => (/Download is starting/.test(reason(e)) && (await began(3000)), e),
+          ),
+        )
+        if (begun.length) return await keepDownloads(begun, stage, saveIn)
+        if (failed) throw failed
         await settle(p)
         return await answer(p)
       } catch (e) {
@@ -525,7 +635,7 @@ export function makeTab(o: BrowserOptions): Tab {
         return { problem: `could not read the page: ${reason(e)}` }
       }
     },
-    act: async (action, approved) => {
+    act: async (action, approved, saveIn) => {
       try {
         const p = await tab()
         // Looked at again just before acting: the ref must still name what was
@@ -540,34 +650,37 @@ export function makeTab(o: BrowserOptions): Tab {
         const mayOpen = action.kind === 'click' || action.kind === 'press' || (action.kind === 'type' && action.submit)
         const opening = mayOpen ? p.waitForEvent('popup', { timeout: 600 }).catch(() => null) : null
         const target = 'ref' in action ? p.locator(`aria-ref=${action.ref}`) : null
-        if (action.kind === 'click') await target!.click({ timeout: ACT_MS })
-        else if (action.kind === 'type') {
-          await target!.fill(action.text, { timeout: ACT_MS })
-          if (action.submit) await target!.press('Enter', { timeout: ACT_MS })
-        }
-        // By the label the user sees only: a value can stand behind a different label.
-        else if (action.kind === 'select') await target!.selectOption({ label: action.option }, { timeout: ACT_MS })
-        // BRW-19: a file field takes the file itself; anything else, by the chooser its click opens.
-        else if (action.kind === 'upload') {
-          const field = await target!.evaluate((e) => (e as unknown as { type?: string; tagName: string }).tagName === 'INPUT' && (e as unknown as { type?: string }).type === 'file', undefined, { timeout: ACT_MS })
-          if (field) await target!.setInputFiles(action.path, { timeout: ACT_MS })
-          else {
-            const chooser = p.waitForEvent('filechooser', { timeout: ACT_MS })
-            await target!.click({ timeout: ACT_MS })
-            await (await chooser).setFiles(action.path)
+        const { begun } = await catching(async () => {
+          if (action.kind === 'click') await target!.click({ timeout: ACT_MS })
+          else if (action.kind === 'type') {
+            await target!.fill(action.text, { timeout: ACT_MS })
+            if (action.submit) await target!.press('Enter', { timeout: ACT_MS })
           }
-        }
-        else await p.keyboard.press(action.key)
-        await Promise.all([settle(p), opening])
+          // By the label the user sees only: a value can stand behind a different label.
+          else if (action.kind === 'select') await target!.selectOption({ label: action.option }, { timeout: ACT_MS })
+          // BRW-19: a file field takes the file itself; anything else, by the chooser its click opens.
+          else if (action.kind === 'upload') {
+            const field = await target!.evaluate((e) => (e as unknown as { type?: string; tagName: string }).tagName === 'INPUT' && (e as unknown as { type?: string }).type === 'file', undefined, { timeout: ACT_MS })
+            if (field) await target!.setInputFiles(action.path, { timeout: ACT_MS })
+            else {
+              const chooser = p.waitForEvent('filechooser', { timeout: ACT_MS })
+              await target!.click({ timeout: ACT_MS })
+              await (await chooser).setFiles(action.path)
+            }
+          }
+          else await p.keyboard.press(action.key)
+          await Promise.all([settle(p), opening])
+        })
+        const got = begun.length ? `\n${await keepDownloads(begun, stage, saveIn)}` : ''
         // A tab the page opened becomes current: it is what the action led to (BRW-15).
         const opened = popped.filter(alive).at(-1)
         if (opened) {
           current = opened
           await settle(opened)
-          return `It opened a new tab, ${idOf(opened)}, now the current one.\n${await answer(opened)}`
+          return `It opened a new tab, ${idOf(opened)}, now the current one.\n${await answer(opened)}${got}`
         }
-        if (where(p) !== url) return await answer(p)
-        return changes(before, await linesOf(p))
+        if (where(p) !== url) return `${await answer(p)}${got}`
+        return `${changes(before, await linesOf(p))}${got}`
       } catch (e) {
         return `could not ${action.kind}: ${reason(e)}`
       }
@@ -596,7 +709,7 @@ export function makeTab(o: BrowserOptions): Tab {
     look: () => serial(() => unlocked.look()),
     back: () => serial(() => unlocked.back()),
     describe: (a) => serial(() => unlocked.describe(a)),
-    act: (a, approved) => serial(() => unlocked.act(a, approved)),
+    act: (a, approved, saveIn) => serial(() => unlocked.act(a, approved, saveIn)),
     lock: (fn) => serial(() => fn(unlocked)),
     // Asked for while an action awaits approval, with the tab held: it must not queue behind that.
     shot: () => unlocked.shot(),

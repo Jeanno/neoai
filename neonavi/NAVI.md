@@ -212,10 +212,14 @@ vision model a picture of it, apart from the conversation, and works from
 what it saw (BRW-18; `"browser": {"look": false}` leaves it
 out for a model that cannot take images). It can also attach a file from your
 computer to a form (`browser_upload`); since that sends the file away, it
-always asks you first, naming the file and its size (BRW-19). How well a model does with the
-browser is measured by `eval/browser`: thirteen tasks on local practice sites
+always asks you first, naming the file and its size (BRW-19). A file a page
+downloads is kept in the working directory under the site's name for it,
+never over a file already there (`report (2).csv`), and navi can then read
+it (BRW-20); files you download yourself in navi's window go where they
+always do. How well a model does with the
+browser is measured by `eval/browser`: fourteen tasks on local practice sites
 (searching, forms, signing in, cookie banners, frames, new tabs, stopping
-before paying, a chart drawn on a canvas, uploading a file), run against a `navi serve` with
+before paying, a chart drawn on a canvas, uploading and downloading files), run against a `navi serve` with
 `npx tsx eval/browser/run.mts --port <port>`; the latest scores are in
 `eval/browser/RESULTS.md`.
 `"browser": false` in the config removes it (`spec/browser.md`).

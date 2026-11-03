@@ -138,7 +138,9 @@ add the requirement there first.
       calling tools: the upload task passed 3/3 with the tool off, and
       stalled after looking with it on. The picture is now seen in a call of
       its own and only what was seen comes back. The eval is 13/13. (BRW-18)
-- [ ] Downloads in the browser.
+- [x] Downloads in the browser: kept in the working directory, never over a
+      file, only while navi acts (the user's own go where they always do).
+      The eval is 14/14. (BRW-20)
 - [ ] Harder eval tasks, or a WebArena-Lite subset for numbers comparable with
       other agents (needs Docker).
 - [x] Find a job by words in its prompt or answer: a box on the phone list,

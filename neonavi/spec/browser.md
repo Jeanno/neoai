@@ -89,6 +89,13 @@ has to look at the whole page again to see what happened.
   asked, whatever the judge or mode: the line names the file and its size,
   as in `upload /work/cv.pdf (12 KB) into button "Choose file" on
   jobs.example.com`.
+- BRW-20: A file the browser downloads, from an action or from opening a
+  link to it, is kept in the working directory under the name the site
+  gives (only its last part), never over a file already there: `report
+  (2).csv` next to `report.csv`. The answer says so, with the size and
+  where it went. A download over 200 MB, or not done in 60s, is not kept,
+  and the answer says why. Downloads are new files outside what navi
+  wrote, so `navi undo` leaves them.
 - BRW-10: An action answers with what changed: a new page answers as
   browser_open; on the same page, the lines that appeared, at most 40, and
   how many went; or that nothing on the page changed.
@@ -141,4 +148,3 @@ has to look at the whole page again to see what happened.
 
 - MCP: offer the browser tools to other agents directly, with the client's
   own approval for actions.
-- Downloads.

@@ -48,6 +48,9 @@ const SHIPPING: Record<string, Record<string, number>> = {
   Italy: { Rome: 8.8, Milan: 7.95 },
 }
 
+/** October's report, which only a download holds. */
+export const OCTOBER: [string, number][] = [['Kettles', 3120], ['Mugs', 845], ['Teapots', 1290], ['Trays', 410]]
+
 /** The chart's months and sales, in thousands. */
 export const SALES: [string, number][] = [['Jan', 42], ['Feb', 55], ['Mar', 38], ['Apr', 91], ['May', 47], ['Jun', 60]]
 
@@ -187,6 +190,15 @@ const c = document.getElementById('c').getContext('2d'), months = ${JSON.stringi
 c.fillStyle = '#fff'; c.fillRect(0, 0, 640, 360); c.font = '16px sans-serif'
 months.forEach((m, i) => { const h = v[i] * 3; c.fillStyle = '#3b6fd1'; c.fillRect(40 + i * 100, 320 - h, 60, h); c.fillStyle = '#222'; c.fillText(m, 50 + i * 100, 345); c.fillText(String(v[i]), 52 + i * 100, 312 - h) })
 </script>`))
+
+    // 14. A report only to be had as a download.
+    if (p === '/reports')
+      return html(page('Reports', `<h1>Sales reports</h1><p>Reports are not shown here; download one to read it.</p><ul><li><a href="/reports/october.csv">October report (CSV)</a></li><li><a href="/reports/september.csv">September report (CSV)</a></li></ul>`))
+    if (p === '/reports/october.csv' || p === '/reports/september.csv') {
+      const rows = p.includes('october') ? OCTOBER : [['Kettles', 2100], ['Mugs', 640]]
+      res.writeHead(200, { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="${p.split('/').at(-1)}"` })
+      return res.end(`product,sales\n${rows.map(([n, v]) => `${n},${v}`).join('\n')}\n`)
+    }
 
     // 13. A job application with a CV to upload.
     if (p === '/apply')

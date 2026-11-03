@@ -155,7 +155,8 @@ export function makeTools(
       if (!gate.act || !(await gate.act({ ...asked, shot: () => tab.shot(), ...(always && { always }) }, signal, id)))
         return `The user declined to ${asked.line}. Do not retry it; try another approach.`
       // Approval can take minutes: an action is not done on a page that moved on meanwhile.
-      return tab.act(action, asked)
+      // BRW-20: a download it starts is kept in the working directory.
+      return tab.act(action, asked, cwd)
     })
 
   /** The file's text, or null when there is none to read. */
@@ -335,7 +336,7 @@ export function makeTools(
         url: z.string(),
         new_tab: z.boolean().optional().describe('open it in a new tab, keeping the current one'),
       }),
-      execute: async ({ url, new_tab }) => browser!().open(url, { newTab: new_tab }),
+      execute: async ({ url, new_tab }) => browser!().open(url, { newTab: new_tab, saveIn: cwd }),
     }),
 
     browser_tabs: tool({

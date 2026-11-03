@@ -1,4 +1,4 @@
-import { lastTrainBefore, shippingFor, type Recorded } from './sites.ts'
+import { lastTrainBefore, OCTOBER, shippingFor, type Recorded } from './sites.ts'
 
 /** A browser eval task: what navi is asked, and how its answer and what it did are checked. */
 export interface Task {
@@ -125,5 +125,11 @@ export const TASKS: Task[] = [
       if (f.cv !== 'robin-vale-cv.txt' || !/Kettle designer/.test(f['cv.content'] ?? '')) return `sent with cv ${JSON.stringify(f.cv)}`
       return /robin vale/i.test(f.name ?? '') ? null : `name was ${JSON.stringify(f.name)}`
     },
+  },
+  {
+    id: 'download',
+    tests: 'downloading a file, then reading it (BRW-20)',
+    prompt: (b) => `Use your browser. Download the October sales report from ${b}/reports and tell me the total sales in it.`,
+    check: (a) => has(a, new RegExp(`\\b${OCTOBER.reduce((t, [, v]) => t + v, 0).toLocaleString('en').replace(',', ',?')}\\b`)),
   },
 ]

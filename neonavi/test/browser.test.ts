@@ -1,7 +1,7 @@
 import { after, before, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:http'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { connect, disconnect, findBrowser, makeTab, NO_BROWSER, profileDir, quitBrowser, type Action } from '../src/browser.ts'
@@ -41,6 +41,11 @@ before(async () => {
     else if (url.pathname === '/upload')
       res.end(`<title>Apply</title><label>CV <input type=file id=cv onchange="out.textContent='CV: '+this.files[0].name"></label>
 <input type=file id=photo hidden onchange="out.textContent='Photo: '+this.files[0].name+' '+this.files[0].size"><button onclick="photo.click()">Choose photo</button><p id=out></p>`)
+    else if (url.pathname === '/report.csv') {
+      res.writeHead(200, { 'content-type': 'text/csv', 'content-disposition': 'attachment; filename="report.csv"' })
+      res.end('month,sales\nApr,91\n')
+      return
+    } else if (url.pathname === '/files') res.end('<title>Files</title><a href="/report.csv">Monthly report</a>')
     else if (url.pathname === '/never') return // answered only when the server closes
     else if (url.pathname === '/found') res.end(`<title>Found</title><p>Results for ${url.searchParams.get('q')}</p>`)
     else res.end(SHOP)
@@ -261,6 +266,27 @@ test('a file goes into a file field, or through the chooser a button opens', { s
     assert.ok('line' in d, JSON.stringify(d))
     assert.match(d.line, new RegExp(`^upload ${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(12 B\\) into `))
     assert.match(await tab.act(action, d), shows)
+  }
+})
+
+// BRW-20
+test('a download is kept in the working directory, never over a file there', { skip }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'navi-downloads-'))
+  try {
+    const tab = makeTab({ home, headless: true })
+    const page = await tab.open(`${base}/files`, { saveIn: dir })
+    const action = { kind: 'click' as const, ref: refOf(page, 'link "Monthly report"') }
+    for (const name of ['report.csv', 'report (2).csv']) {
+      const d = await tab.describe(action)
+      assert.ok('line' in d)
+      const said = await tab.act(action, d, dir)
+      assert.ok(said.endsWith(`It downloaded report.csv (19 B), saved as ${join(dir, name)}.`), said)
+      assert.equal(await readFile(join(dir, name), 'utf8'), 'month,sales\nApr,91\n')
+    }
+    assert.equal(await tab.open(`${base}/report.csv`, { saveIn: dir }), `It downloaded report.csv (19 B), saved as ${join(dir, 'report (3).csv')}.`)
+    assert.match(await tab.open(`${base}/report.csv`), /not kept: there is nowhere to keep it/)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
   }
 })
 
