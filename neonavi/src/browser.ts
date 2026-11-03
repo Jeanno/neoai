@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { basename, dirname, extname, join } from 'node:path'
 import type { Browser, Dialog, Locator, Page } from 'playwright-core'
 import { configDir, readConfig } from 'neorouter'
-import { cancels, changes, cutOff, describeAction, find, focused, pageAnswer, pageLines, textLines, window, type Action } from './page.ts'
+import { cancels, changes, checkNote, checkOn, cutOff, describeAction, isCheck, find, focused, pageAnswer, pageLines, textLines, window, type Action } from './page.ts'
 
 export type { Action } from './page.ts'
 
@@ -587,7 +587,8 @@ export function makeTab(o: BrowserOptions): Tab {
 
   /** A page as an answer, naming its tab once the session has more than one. */
   const answer = async (p: Page) => {
-    const text = pageAnswer(await p.title().catch(() => ''), p.url(), await linesOf(p))
+    const [title, lines] = [await p.title().catch(() => ''), await linesOf(p)]
+    const text = pageAnswer(title, p.url(), lines, checkNote(title, lines, p.frames().map((f) => f.url())))
     return live().length > 1 ? `[tab ${idOf(p)}] ${text}` : text
   }
 
@@ -601,11 +602,18 @@ export function makeTab(o: BrowserOptions): Tab {
   const description = async (p: Page, action: Action) => {
     if (complex.get(p) === p.url()) throw new Error('Timeout: known too complex')
     const raw = await snapshot(p)
+    // BRW-25: nothing on a page that is itself a check is acted on (one in a frame is found below).
+    if (checkOn(await p.title().catch(() => ''), pageLines(raw), p.frames().map((f) => f.url())) === 'page') throw new Error('CHECK')
     const host = hostOf(p.url())
     const extra: { frame?: string; goes?: string } = {}
     if ('ref' in action) {
       const handle = await p.locator(`aria-ref=${action.ref}`).elementHandle({ timeout: 2000 }).catch(() => null)
       const frame = await handle?.ownerFrame()
+      // BRW-25: not for navi to pass.
+      if (frame && isCheck(frame.url())) {
+        await handle?.dispose()
+        throw new Error('CHECK')
+      }
       if (frame && frame !== p.mainFrame() && hostOf(frame.url()) !== host) extra.frame = hostOf(frame.url()) || frame.url()
       // Written without DOM types, which not every package that type-checks this has.
       const href = await handle
@@ -720,6 +728,8 @@ export function makeTab(o: BrowserOptions): Tab {
         const d = await description(await tab(), action)
         return d ?? { problem: `No element [ref=${'ref' in action ? action.ref : ''}] is on the page now; read the page again.` }
       } catch (e) {
+        if (reason(e) === 'CHECK')
+          return { problem: "That is part of a check that you are human, which navi does not pass: ask the user to pass it in navi's browser window, then read the page again." }
         if (/Timeout/.test(reason(e))) return { problem: 'This page is too complex to read as elements in time, so nothing on it can be acted on by ref.' }
         return { problem: `could not read the page: ${reason(e)}` }
       }

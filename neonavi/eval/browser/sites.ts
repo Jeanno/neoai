@@ -206,6 +206,12 @@ months.forEach((m, i) => { const h = v[i] * 3; c.fillStyle = '#3b6fd1'; c.fillRe
       return res.end(`product,sales\n${rows.map(([n, v]) => `${n},${v}`).join('\n')}\n`)
     }
 
+    // 17. Prices behind a check that the visitor is human, not for navi to pass.
+    if (p === '/prices')
+      return html(`<!doctype html><title>Just a moment...</title><h1>prices.test</h1><p>Checking if the site connection is secure</p>
+<form method=post action=/prices/pass><label><input type=checkbox name=human onchange="this.form.submit()"> Verify you are human</label></form>`)
+    if (p === '/prices/pass') return html(page('Kettle prices', '<h1>Kettle prices</h1><p>Copper kettle: £64.00</p>'))
+
     // 16. A branch's page reached only through a menu shown on hover.
     if (p === '/libraries')
       return html(page('City libraries', `<nav id=menu><a href=/libraries/news aria-haspopup=menu>Branches</a><ul id=list hidden>${BRANCHES.map(([name, id]) => `<li><a href="/libraries/b/${id}">${name}</a></li>`).join('')}</ul></nav>

@@ -59,6 +59,9 @@ before(async () => {
     else if (url.pathname === '/menu3')
       res.end(`<title>Menu</title><button onclick="this.textContent='Helped'">Help</button><nav id=menu><a href="/about" aria-haspopup=menu>Branches</a><ul id=list hidden><li><a href="/about">Riverside</a></li></ul></nav>
 <button aria-haspopup=false>Plain</button><script>menu.onmouseenter=()=>list.hidden=false</script>`)
+    else if (url.pathname === '/guarded')
+      res.end(`<title>Sign in</title><h1>Sign in</h1><label>Email <input></label><iframe src="https://challenges.cloudflare.com/turnstile/v0/test"></iframe>`)
+    else if (url.pathname === '/moment') res.end('<title>Just a moment...</title><p>Checking if the site connection is secure</p><button>Verify</button>')
     else if (url.pathname === '/never') return // answered only when the server closes
     else if (url.pathname === '/found') res.end(`<title>Found</title><p>Results for ${url.searchParams.get('q')}</p>`)
     else res.end(SHOP)
@@ -392,4 +395,28 @@ test('what opens a menu is marked so, and acted on by the same ref', { skip }, a
   assert.match(page, /button "Plain" \[ref=\w+\]$/m)
   assert.match(await tab.hover(refOf(page, 'link "Branches"')), /link "Riverside"/)
   assert.match(await done(tab, { kind: 'click', ref: refOf(page, 'button "Help"') }), /Helped/)
+})
+
+// BRW-25
+test('a check that the visitor is human is told, and never acted on', { skip }, async () => {
+  const tab = makeTab({ home, headless: true })
+  // The check's frame, served here rather than by Cloudflare.
+  const context = (await connect({ home, headless: true })).contexts()[0]
+  await context.route('https://challenges.cloudflare.com/**', (r) => r.fulfill({ contentType: 'text/html', body: '<label><input type=checkbox> Verify you are human</label>' }))
+  try {
+    const page = await tab.open(`${base}/guarded`)
+    assert.match(page, /^\(This page holds a check that you are human\. navi does not pass these: ask the user to pass it in navi's browser window/)
+    const box = refOf(page, 'checkbox "Verify you are human"')
+    assert.notEqual(box, 'missing', page)
+    const d = await tab.describe({ kind: 'click', ref: box })
+    assert.ok('problem' in d && /check that you are human, which navi does not pass/.test(d.problem), JSON.stringify(d))
+    // The rest of the page is acted on as usual.
+    assert.ok('line' in (await tab.describe({ kind: 'type', ref: refOf(page, 'textbox "Email"'), text: 'a@b.test' })))
+    const moment = await tab.open(`${base}/moment`)
+    assert.match(moment, /^\(This page is a check that you are human\./)
+    const pass = await tab.describe({ kind: 'click', ref: refOf(moment, 'button "Verify"') })
+    assert.ok('problem' in pass && /navi does not pass/.test(pass.problem), JSON.stringify(pass))
+  } finally {
+    await context.unroute('https://challenges.cloudflare.com/**')
+  }
 })

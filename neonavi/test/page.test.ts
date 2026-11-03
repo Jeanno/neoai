@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { changes, cutOff, describeAction, element, find, focused, pageLines, textLines, window } from '../src/page.ts'
+import { changes, checkNote, cutOff, describeAction, element, find, focused, isCheck, pageLines, textLines, window } from '../src/page.ts'
 
 const SNAPSHOT = `- generic [active] [ref=e1]:
   - banner [ref=e2]:
@@ -165,4 +165,19 @@ test('a part cut off by the depth limit is found', () => {
   assert.equal(cutOff('    - generic [ref=e9]: some words', 2), null)
   assert.equal(cutOff('  - generic [ref=e9]', 2), null)
   assert.equal(cutOff('    - text: looks like [ref=e9]', 2), null)
+})
+
+// BRW-25
+test('a check that the visitor is human is told by its title, its words or its frame', () => {
+  assert.equal(isCheck('https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/if/ov2'), true)
+  assert.equal(isCheck('https://www.google.com/recaptcha/api2/anchor?k=x'), true)
+  assert.equal(isCheck('https://newassets.hcaptcha.com/captcha/v1/abc'), true)
+  assert.equal(isCheck('https://www.google.com/maps/embed'), false)
+  assert.equal(isCheck('https://notchallenges.cloudflare.com.evil.test/'), false)
+  assert.equal(isCheck('about:blank'), false)
+  assert.match(checkNote('Just a moment...', ['text: Checking if the site connection is secure'], [])!, /^\(This page is a check that you are human\. navi does not pass these/)
+  assert.match(checkNote('Shop', ['checkbox "I\'m not a robot" [ref=e4]'], [])!, /This page is a check/)
+  assert.match(checkNote('Sign in', ['textbox "Email" [ref=e2]'], ['https://www.google.com/recaptcha/api2/anchor'])!, /This page holds a check/)
+  assert.equal(checkNote('Access denied', ['text: You do not have access'], ['https://www.youtube.com/embed/x']), null)
+  assert.equal(checkNote('Kettles', ['text: Just a moment, kettle prices are loading'], []), null)
 })

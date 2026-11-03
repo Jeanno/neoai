@@ -190,6 +190,8 @@ add the requirement there first.
       is now told to say what is not shown rather than guess, and what opens
       a menu is marked `[opens menu]`: the hover task went from 32-88s with
       looks first to 18-26s, hovering at once in 4 of 5. (BRW-24)
+- [x] Checks that you are human (Cloudflare, CAPTCHAs) told and left to the
+      user, never passed. (BRW-25)
 - [ ] The browser in Raycast: approval is ready, but Raycast's bundler
       cannot pack Playwright. (`jackins/raycast/spec.md` Open)
 - [x] The browser over MCP: `navi mcp --browser` serves the browser tools,

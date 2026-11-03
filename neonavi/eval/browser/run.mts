@@ -3,7 +3,7 @@
  * job, approvals answered yes, and the answer and what the sites recorded
  * checked. Writes eval/browser/RESULTS.md.
  *
- *   HOME=<home> navi serve --port 8495 &
+ *   HOME=<home> navi serve --port 8495 &      (with "notify": false in <home>'s config, or each task notifies)
  *   HOME=<home> npx tsx eval/browser/run.mts --port 8495 [--only form,frame] [--headless] [--verbose]
  */
 import { writeFile } from 'node:fs/promises'

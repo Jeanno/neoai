@@ -159,8 +159,45 @@ export function find(lines: string[], text: string): string {
 const indentOf = (line: string) => line.length - line.trimStart().length
 
 /** A page as browser_open answers it (BRW-6). */
-export function pageAnswer(title: string, url: string, lines: string[]): string {
-  return `${title || '(no title)'}\n${url}\n\n${window(lines)}`
+export function pageAnswer(title: string, url: string, lines: string[], note?: string | null): string {
+  return `${note ? `${note}\n` : ''}${title || '(no title)'}\n${url}\n\n${window(lines)}`
+}
+
+/** Where checks that a visitor is human are served from, in a frame (BRW-25). */
+const CHECK_HOSTS = /(^|\.)(challenges\.cloudflare\.com|hcaptcha\.com|captcha-delivery\.com|arkoselabs\.com|funcaptcha\.com|perimeterx\.net|px-cloud\.net)$/
+/** reCAPTCHA is served from google.com and recaptcha.net under one path. */
+const RECAPTCHA = /^https:\/\/(www\.)?(google\.com|recaptcha\.net)\/recaptcha\//
+
+/** Whether a frame at this URL is a check that the visitor is human (BRW-25). */
+export function isCheck(url: string): boolean {
+  if (RECAPTCHA.test(url)) return true
+  try {
+    return CHECK_HOSTS.test(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
+/** Pages that are only a check, by their title or their words. */
+const CHECK_TITLE = /^(just a moment|attention required|verifying you are human|are you a robot|security check|human verification)\b/i
+const CHECK_WORDS = /\b(verify (that )?you are (a )?human|verifying you are human|checking (if the site connection is secure|your browser)|i'?m not a robot|press (&|and) hold|complete the security check)\b/i
+
+/** Whether a page is a check that the visitor is human, holds one in a frame, or neither (BRW-25). */
+export function checkOn(title: string, lines: string[], frames: string[]): 'page' | 'frame' | null {
+  // A check's own words are read from its frame too: a frame says the page only holds one, unless the title says otherwise.
+  const framed = frames.some(isCheck)
+  if (CHECK_TITLE.test(title.trim()) || (!framed && lines.slice(0, 40).some((l) => CHECK_WORDS.test(l)))) return 'page'
+  return framed ? 'frame' : null
+}
+
+/**
+ * The first line a page is read with when it is, or holds, a check that the
+ * visitor is human (BRW-25); null when it is neither.
+ */
+export function checkNote(title: string, lines: string[], frames: string[]): string | null {
+  const on = checkOn(title, lines, frames)
+  if (!on) return null
+  return `(${on === 'page' ? 'This page is a check that you are human' : 'This page holds a check that you are human'}. navi does not pass these: ask the user to pass it in navi's browser window, on this tab, then read the page again.)`
 }
 
 /**
