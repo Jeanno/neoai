@@ -135,6 +135,12 @@ terminal that started them closes.
 - JOB-18: Only http and https links become links; they open in a new tab
   without a referrer. Any other link (`javascript:`, `data:`, a relative
   path) is shown as the text it was written as.
+- JOB-41: A finished job's answer has a Copy button that copies the answer
+  as it was written (its Markdown), and each fenced code block in an answer
+  has one that copies just that code. The button says Copied for a moment.
+  The page on the tailnet is plain http, where browsers may refuse the
+  clipboard API, so it falls back to copying a selection; when neither
+  works it says so, and to press and hold the answer instead.
 
 ## A queue
 

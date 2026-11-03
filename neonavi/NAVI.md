@@ -107,7 +107,8 @@ prompt in its folder (JOB-32 to JOB-34).
 Answers on the phone page are shown formatted (headings, lists, tables,
 code, links), and since an answer can quote a web page, none of it is ever
 read as HTML: only http(s) links work, and nothing in an answer can run
-(JOB-17, JOB-18).
+(JOB-17, JOB-18). Copy under an answer copies it as written, Markdown and
+all, and each code block has a Copy of its own for just the code (JOB-41).
 
 The phone page has them too: its box can start a job now or schedule it
 (every 30 minutes, every hour, or each day or weekday at a time, as a watch

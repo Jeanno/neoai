@@ -152,6 +152,9 @@ add the requirement there first.
 - [x] Answers on the phone page formatted from their Markdown (lists,
       tables, code, links), built as elements so nothing in an answer runs;
       only http(s) links. (JOB-17, JOB-18)
+- [x] Copy an answer, or one code block of it, from the phone page, also
+      over plain http on the tailnet where the clipboard API is refused.
+      (JOB-41)
 - [x] Memory: a short file of facts about you sent with every turn, added
       by the model only with your yes, whatever the judge says; `navi memory`
       lists, adds and forgets. (MEM-1 to MEM-11, PRM-14)

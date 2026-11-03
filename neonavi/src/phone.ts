@@ -147,6 +147,8 @@ export const PHONE_PAGE = `<!doctype html>
 
   /* Formatted answers (JOB-17). */
   .md { white-space: normal; }
+  .codebox { position: relative; } .codebox pre { padding-right: 72px; min-height: 22px; }
+  .codebox .copy { position: absolute; top: 6px; right: 6px; font-size: 12px; padding: 3px 9px; }
   .md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
   .md p, .md ul, .md ol, .md blockquote, .md .mt, .md pre { margin: 0 0 12px; }
   .md p { white-space: pre-line; }
@@ -265,6 +267,31 @@ ${MARKDOWN_JS}
   let repeating = null
   // SCH-18: the schedule being edited, as { id, prompt, repeat, time, quiet }, kept across refreshes.
   let editing = null
+  // JOB-41: what was just copied, said on its button for a moment.
+  let copied = ''
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true }
+    } catch {}
+    // Plain http on the tailnet: copy a selection instead.
+    const t = document.createElement('textarea')
+    t.value = text; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0'
+    document.body.append(t); t.select(); t.setSelectionRange(0, text.length)
+    let ok = false
+    try { ok = document.execCommand('copy') } catch {}
+    t.remove()
+    return ok
+  }
+  const copy = async (key, text) => {
+    const ok = await copyText(text)
+    copied = ok ? key : ''; failed = ok ? '' : 'Could not copy here: press and hold the answer to select it instead.'
+    render()
+    setTimeout(() => { if (copied === key) { copied = ''; render() } }, 1500)
+  }
+  // An answer, formatted (JOB-17), each fenced code block with its own Copy (JOB-41).
+  const answerOf = (text, key) => renderMarkdown(text, el).map((b, i) => b.tagName === 'PRE'
+    ? el('div', { class: 'codebox' }, b, el('button', { class: 'chip copy', 'aria-label': 'Copy code', onclick: () => copy(key + ':' + i, b.textContent) }, copied === key + ':' + i ? 'Copied' : 'Copy'))
+    : b)
   const repeatOf = (s) => s.every === 30 ? '30' : s.every === 60 ? '60' : !s.at ? 'keep'
     : !s.days ? 'daily' : s.days.join() === '1,2,3,4,5' ? 'weekdays' : 'keep'
   const editTimed = (e) => e.repeat === 'daily' || e.repeat === 'weekdays' || (e.repeat === 'keep' && e.at)
@@ -468,11 +495,11 @@ ${MARKDOWN_JS}
               job.pending && approval(),
               live && !job.pending && el('div', { class: 'working', style: job.log.length ? 'margin-top:8px' : false }, el('span', { class: 'dots' }, el('i'), el('i'), el('i')), latest() || (job.status === 'queued' ? 'Queued' : 'Working')),
               // JOB-17: formatted, as elements holding the text.
-              !live && t.answer && el('div', { class: 'md', style: job.log.length ? 'margin-top:10px' : false }, renderMarkdown(t.answer, el)),
+              !live && t.answer && el('div', { class: 'md', style: job.log.length ? 'margin-top:10px' : false }, answerOf(t.answer, job.id + ':' + i)),
               job.error && el('p', { class: 'err' }, job.error),
               !live && job.status === 'stopped' && !t.answer && el('div', { class: 'meta' }, 'Stopped.'),
               !live && after())
-          : el('div', { class: 'navi' }, t.answer ? el('div', { class: 'md' }, renderMarkdown(t.answer, el)) : el('div', { class: 'meta' }, 'No answer')),
+          : el('div', { class: 'navi' }, t.answer ? el('div', { class: 'md' }, answerOf(t.answer, job.id + ':' + i)) : el('div', { class: 'meta' }, 'No answer')),
       ]
     }))
   }
@@ -536,6 +563,8 @@ ${MARKDOWN_JS}
       job.changes && job.changes.length > 0 && el('div', { class: 'meta', style: 'margin-top:10px' }, 'Changed ' + job.changes.join(', ')),
       undone().length > 0 && el('div', { class: 'meta', style: 'margin-top:10px' }, 'Undone: ' + undone().join('; ')),
       el('div', { class: 'actions' },
+        // JOB-41: the answer as written.
+        job.answer && chip(copied === job.id + ':answer' ? 'Copied' : 'Copy', () => copy(job.id + ':answer', job.answer), { 'aria-label': 'Copy answer' }),
         job.cut && chip('Go on', () => act(() => api('/jobs/' + job.id + '/reply', { prompt: 'Go on from where you stopped.' }))),
         job.changes && job.changes.length > 0 && chip('Undo changes', () => {
           if (confirm('Put back the files this job changed? Files edited since are left alone.')) act(() => api('/jobs/' + job.id + '/undo', {}))

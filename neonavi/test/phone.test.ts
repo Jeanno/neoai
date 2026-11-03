@@ -757,3 +757,62 @@ test('JOB-40: the phone shows what the Mac and the phone are told, and sets each
   await mac.getByRole('radio', { name: /^Everything/, checked: true }).waitFor()
   assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { model: 'm', push: { url: 'https://ntfy.sh/t', notify: false } })
 })
+
+test('JOB-41: Copy takes the answer as written, and a code block its code, with or without the clipboard API', { skip }, async (t) => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-phone-'))
+  const answer = 'Run **this**:\n\n```sh\nnpm test -- --watch\n```\n\nThen look.'
+  const jobs = await makeJobs({
+    home,
+    start: async () => ({
+      model: 'small',
+      session: {
+        history: [],
+        async *turn() {
+          yield { type: 'done', history: [], text: answer, empty: false, stopped: false } as const
+        },
+      },
+    }),
+    notify: () => {},
+  })
+  jobs.create('how do I test', home)
+  await jobs.idle()
+  const token = '6'.repeat(64)
+  const [server] = await listen([], noModels, 0, { jobs: { jobs, token, directories: async () => [home], home } })
+  const browser = await chromium.launch({ executablePath: executable ?? undefined })
+  t.after(async () => {
+    await browser.close()
+    server.close()
+  })
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`
+  const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
+  const clipboard = async () => {
+    const p = await context.newPage()
+    await p.goto(url)
+    const text = await p.evaluate(() => navigator.clipboard.readText())
+    await p.close()
+    return text
+  }
+  const page = await context.newPage()
+  await page.goto(url)
+  await page.getByText('how do I test').click()
+  await page.getByRole('button', { name: 'Copy answer' }).click()
+  await page.getByRole('button', { name: 'Copy answer' }).getByText('Copied').waitFor()
+  assert.equal(await clipboard(), answer)
+  await page.getByRole('button', { name: 'Copy answer' }).getByText('Copy', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Copy code' }).click()
+  await page.getByRole('button', { name: 'Copy code' }).getByText('Copied').waitFor()
+  assert.equal(await clipboard(), 'npm test -- --watch')
+  // No clipboard API, as on plain http over the tailnet: a selection is copied.
+  const bare = await context.newPage()
+  await bare.addInitScript(() => Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true }))
+  await bare.goto(url)
+  await bare.getByText('how do I test').click()
+  await bare.getByRole('button', { name: 'Copy code' }).click()
+  await bare.getByRole('button', { name: 'Copy code' }).getByText('Copied').waitFor()
+  assert.equal(await bare.locator('.err').count(), 0)
+  assert.equal(await clipboard(), 'npm test -- --watch')
+  // Neither works: it says so, and what to do instead.
+  await bare.evaluate(() => (document.execCommand = () => false))
+  await bare.getByRole('button', { name: 'Copy answer' }).click()
+  await bare.getByText('Could not copy here: press and hold the answer to select it instead.').waitFor()
+})
