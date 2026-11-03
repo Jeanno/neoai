@@ -1260,6 +1260,7 @@ dependencies = [
  "brush-builtins",
  "brush-core",
  "brush-interactive",
+ "crossterm",
  "tokio",
 ]
 

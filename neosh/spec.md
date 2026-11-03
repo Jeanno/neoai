@@ -42,6 +42,16 @@ hands a line to another shell. What neosh adds is below.
   one's. A path starting `/`, `./` or `../`, or `.`, `..` and `-`, is never
   looked up. A directory that is not there says so as bash does
   (`cd: share: No such file or directory`, status 1).
+- NSH-29: With `shopt -s autocd`, a line that is only the name of a
+  directory and no command (`src`, `..`, `~/work`) runs `cd -- <it>`, said
+  on stderr as bash says it; history keeps the line as typed.
+- NSH-30: With `shopt -s cdspell` in an interactive neosh, a `cd` to a
+  directory that is not there tries each part of the path with one
+  character swapped, missing, extra or wrong (`cd ../bta` for `../beta`);
+  a single such directory found is printed and gone to, as bash does.
+- NSH-31: An interactive neosh sets `COLUMNS` and `LINES` to the terminal's
+  size before each prompt while `checkwinsize` is on (as it is by default,
+  as in bash 5), so scripts and `select` see the width.
 - NSH-24: An interactive neosh expands history as bash does, before
   anything else reads the line, while `set -H` (`histexpand`, on by
   default) is: `!!` the last command, `!n` the n-th in `history`, `!-n` the

@@ -71,6 +71,9 @@ add the requirement there first.
 - [x] A command over several lines reaches navi with its breaks (` ↵ `),
       not run together; job control checked end to end. (NSH-6, NSH-3)
 - [x] `?` alone right after a failure asks navi why. (NSH-9)
+- [x] `shopt -s autocd` and `cdspell`, which brush took and ignored, and
+      `COLUMNS`/`LINES` set from the terminal; a directory on `PATH` (`bin/..`)
+      is no longer taken for a program. (NSH-29, NSH-30, NSH-31)
 - [x] A `?` line sets `$?` and the prompt as a command does; `navi --once`
       exits 130 when ^C stops it (it said 0), and the terminal tests now see
       navi's real exit status, not `cat`'s. (NSH-28, CLI-38)

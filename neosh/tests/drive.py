@@ -4,11 +4,13 @@
 # what the screen showed, escape sequences taken out.
 #
 #   python3 drive.py <program> <line>...
-import os, pty, sys, time, select, re
+import os, pty, sys, time, select, re, fcntl, termios, struct
 prog, lines = sys.argv[1], sys.argv[2:]
 pid, fd = pty.fork()
 if pid == 0:
     os.execv(prog, [prog])
+# A terminal of a usual size, 120 by 40.
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))
 out = b''
 def pump(t):
     global out

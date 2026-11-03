@@ -180,6 +180,8 @@ struct WithNavi<IB: InputBackend> {
     suggested: Option<String>,
     /// A line not found as a command, to offer navi (NSH-23).
     missed: Option<String>,
+    /// A line run in place of the one typed, and that one, for history (NSH-29).
+    retyped: Option<(String, String)>,
     /// The line brush adds to history as it runs it, and whether bash would keep it (NSH-26).
     settle: Option<(String, bool)>,
     session: String,
@@ -188,7 +190,7 @@ struct WithNavi<IB: InputBackend> {
 impl<IB: InputBackend> WithNavi<IB> {
     fn new(inner: IB) -> Self {
         let started = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        Self { inner, recent: navi::Recent::default(), handed: None, piped: None, noted: false, took: None, suggested: None, missed: None, settle: None, session: format!("neosh-{started}-{}", std::process::id()) }
+        Self { inner, recent: navi::Recent::default(), handed: None, piped: None, noted: false, took: None, suggested: None, missed: None, retyped: None, settle: None, session: format!("neosh-{started}-{}", std::process::id()) }
     }
 }
 
@@ -217,6 +219,22 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                 }
                 self.recent.clear();
                 self.suggested = navi::take_suggestion(&navi::command_file(&self.session));
+            }
+            // NSH-29: history keeps what was typed, not the `cd` run for it.
+            if let Some((ran, typed)) = self.retyped.take() {
+                if let Some(history) = guard.as_mut().and_then(|s| s.history_mut()) {
+                    let found = history.iter().filter(|i| i.command_line == ran).last().cloned();
+                    if let Some(item) = found {
+                        let _ = history.update_by_id(item.id, brush_core::history::Item { command_line: typed, ..item });
+                    }
+                }
+            }
+            // NSH-31: the terminal's size, for scripts, while checkwinsize is on.
+            if let Some(s) = guard.as_mut().filter(|s| s.options().check_window_size_after_external_commands) {
+                if let Ok((columns, lines)) = crossterm::terminal::size() {
+                    let _ = s.env_mut().set_global("COLUMNS", brush_core::ShellVariable::new(columns.to_string()));
+                    let _ = s.env_mut().set_global("LINES", brush_core::ShellVariable::new(lines.to_string()));
+                }
             }
             // NSH-27: no more than HISTSIZE lines.
             if let Some(keep) = guard.as_ref().and_then(|s| histsize::limit(s.env_str("HISTSIZE").as_deref())) {
@@ -329,8 +347,18 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                             print!("{}", term::title(line.trim()));
                             let _ = std::io::stdout().flush();
                         }
-                        self.handed = Some((line.trim().to_string(), dir, Instant::now()));
+                        self.handed = Some((line.trim().to_string(), dir.clone(), Instant::now()));
                         self.settle = Some((line.trim().to_string(), keep));
+                        // NSH-29: a directory's name alone goes there.
+                        let home = guard.as_ref().and_then(|s| s.env_str("HOME").map(|h| PathBuf::from(h.as_ref())));
+                        let auto = guard.as_mut().filter(|s| s.options().auto_cd).is_some_and(|s| autocd(s, line.trim(), &dir, home.as_deref()));
+                        if auto {
+                            let typed = line.trim().to_string();
+                            let ran = format!("cd -- {typed}");
+                            eprintln!("{ran}");
+                            self.retyped = Some((ran.clone(), typed));
+                            return Ok(ReadResult::Input(format!("{ran}\n")));
+                        }
                     }
                     return Ok(ReadResult::Input(line));
                 }
@@ -437,13 +465,28 @@ fn settle(history: &mut brush_core::history::History, line: &str, keep: bool, er
     }
 }
 
+/// NSH-29: whether `line` is only the name of a directory and no command,
+/// in words the shell reads as they are (`~` aside), so `cd -- <line>` goes there.
+fn autocd<SE: brush_core::ShellExtensions>(shell: &mut brush_core::Shell<SE>, line: &str, dir: &Path, home: Option<&Path>) -> bool {
+    let plain = !line.is_empty() && line.chars().all(|c| c.is_alphanumeric() || "._-/~+@:,%".contains(c));
+    if !plain || is_command(shell, line) {
+        return false;
+    }
+    let path = match (line.strip_prefix('~'), home) {
+        (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with('/') => home.join(rest.trim_start_matches('/')),
+        _ => dir.join(line),
+    };
+    path.is_dir()
+}
+
 /// NSH-4: whether a word runs something: a keyword, alias, function, builtin or program.
 fn is_command<SE: brush_core::ShellExtensions>(shell: &mut brush_core::Shell<SE>, word: &str) -> bool {
     shell.is_keyword(word)
         || shell.aliases().contains_key(word)
         || shell.func_mut(word).is_some()
         || shell.builtin_mut(word).is_some()
-        || shell.find_first_executable_in_path(word).is_some()
+        // A directory on PATH (`bin/..`) is no program.
+        || shell.find_first_executable_in_path(word).is_some_and(|p| p.is_file())
 }
 
 #[cfg(test)]

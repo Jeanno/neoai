@@ -10,6 +10,7 @@ publish = false
 brush-core = "0.5.0"
 brush-builtins = "0.2.0"
 brush-interactive = { version = "0.4.0", features = ["reedline", "minimal"] }
+crossterm = "0.29.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 
 [dev-dependencies]

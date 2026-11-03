@@ -244,3 +244,27 @@ fn a_line_for_navi_sets_the_status_as_a_command_does() {
     let screen = home.run(&["PATH=/usr/bin:/bin", "? anyone", "echo none $?", "exit"], &[]);
     assert!(screen.lines().any(|l| l.trim() == "none 127"), "{screen}");
 }
+
+// NSH-29, NSH-30, NSH-31
+#[test]
+fn autocd_cdspell_and_the_terminal_size_work_as_in_bash() {
+    let home = Home::new("shopts");
+    std::fs::create_dir_all(home.0.join("work/alpha/beta")).unwrap();
+    let screen = home.run(
+        &["alpha", "shopt -s autocd cdspell", "alpha", "pwd", "..", "cd alpah/bta", "pwd", "echo size $COLUMNS $LINES", "history", "exit"],
+        &[],
+    );
+    let lines: Vec<&str> = screen.lines().map(str::trim).collect();
+    let work = std::fs::canonicalize(home.0.join("work")).unwrap();
+    // Off by default: a directory's name is no command.
+    assert!(screen.contains("command not found: alpha"), "{screen}");
+    assert!(lines.contains(&"cd -- alpha"), "{screen}");
+    assert!(lines.contains(&format!("{}", work.join("alpha").display()).as_str()), "{screen}");
+    assert!(lines.contains(&"cd -- .."), "{screen}");
+    assert!(lines.contains(&"alpha/beta"), "cdspell says what it went to: {screen}");
+    assert!(lines.contains(&format!("{}", work.join("alpha/beta").display()).as_str()), "{screen}");
+    assert!(lines.contains(&"size 120 40"), "{screen}");
+    // History keeps the line as typed.
+    assert!(lines.iter().any(|l| l.ends_with(" ..") && l.starts_with(char::is_numeric)), "{screen}");
+    assert!(!lines.iter().any(|l| l.ends_with("cd -- ..") && l.starts_with(char::is_numeric)), "{screen}");
+}

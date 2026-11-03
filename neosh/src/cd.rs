@@ -33,6 +33,46 @@ pub fn look_up(target: &str, cdpath: Option<&str>, cwd: &Path) -> Option<(PathBu
     })
 }
 
+/// NSH-30: `target` with each part not there put right by one character
+/// swapped, missing, extra or wrong, when exactly one directory is that near.
+pub fn spelled(target: &str, cwd: &Path) -> Option<String> {
+    let mut base = if target.starts_with('/') { PathBuf::from("/") } else { cwd.to_path_buf() };
+    let mut parts = Vec::new();
+    for part in target.split('/') {
+        if part.is_empty() || part == "." || part == ".." || base.join(part).is_dir() {
+            base = base.join(part);
+            parts.push(part.to_string());
+            continue;
+        }
+        let near: Vec<String> = std::fs::read_dir(&base)
+            .ok()?
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|name| one_off(part, name))
+            .collect();
+        let [only] = near.as_slice() else { return None };
+        base = base.join(only);
+        parts.push(only.clone());
+    }
+    Some(parts.join("/"))
+}
+
+/// Whether `a` and `b` are one swap, one missing, one extra or one wrong character apart.
+fn one_off(a: &str, b: &str) -> bool {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    if a == b {
+        return false;
+    }
+    let lead = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    match a.len() as isize - b.len() as isize {
+        0 => a[lead + 1..] == b[lead + 1..] || (lead + 1 < a.len() && a[lead] == b[lead + 1] && a[lead + 1] == b[lead] && a[lead + 2..] == b[lead + 2..]),
+        1 => a[lead + 1..] == b[lead..],
+        -1 => a[lead..] == b[lead + 1..],
+        _ => false,
+    }
+}
+
 fn execute(context: ExecutionContext<'_, SE>, mut args: Vec<CommandArg>) -> BoxFuture<'_, Result<ExecutionResult, brush_core::Error>> {
     Box::pin(async move {
         let Some(brush_cd) = BRUSH_CD.get().copied() else {
@@ -59,6 +99,13 @@ fn execute(context: ExecutionContext<'_, SE>, mut args: Vec<CommandArg>) -> BoxF
             if let Some((found, print)) = look_up(target, cdpath.as_deref(), &cwd) {
                 args[*i] = CommandArg::String(found.to_string_lossy().into_owned());
                 printed = print.then_some(found);
+            } else if let Some(fixed) = (target != "-" && !cwd.join(target).is_dir() && context.shell.options().interactive && context.shell.options().cd_autocorrect_spelling)
+                .then(|| spelled(target, &cwd))
+                .flatten()
+            {
+                // NSH-30: a typo put right, said as bash says it.
+                args[*i] = CommandArg::String(fixed.clone());
+                printed = Some(PathBuf::from(fixed));
             } else if target != "-" && !cwd.join(target).is_dir() {
                 let why = if cwd.join(target).exists() { "Not a directory" } else { "No such file or directory" };
                 let _ = writeln!(context.stderr(), "neosh: cd: {target}: {why}");
@@ -99,6 +146,26 @@ mod tests {
         }
         assert_eq!(look_up("neoai", None, &cwd), None);
         assert_eq!(look_up("neoai", Some(""), &cwd), None);
+        std::fs::remove_dir_all(&top).unwrap();
+    }
+
+    // NSH-30
+    #[test]
+    fn a_typo_in_a_path_is_put_right_when_one_directory_is_that_near() {
+        let top = std::env::temp_dir().join(format!("neosh-cdspell-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&top);
+        for d in ["here", "beta/src", "gamma", "gamme"] {
+            std::fs::create_dir_all(top.join(d)).unwrap();
+        }
+        std::fs::write(top.join("betb"), "").unwrap();
+        let here = top.join("here");
+        assert_eq!(spelled("../bta", &here).as_deref(), Some("../beta"), "missing");
+        assert_eq!(spelled("../ebta", &here).as_deref(), Some("../beta"), "swapped");
+        assert_eq!(spelled("../betaa/scr", &here).as_deref(), Some("../beta/src"), "extra, then swapped");
+        assert_eq!(spelled("../bexa", &here).as_deref(), Some("../beta"), "wrong, and the file betb is no directory");
+        assert_eq!(spelled("../gammx", &here), None, "two near: none chosen");
+        assert_eq!(spelled("../zzz", &here), None);
+        assert!(!one_off("beta", "beta") && !one_off("ab", "abcd") && one_off("ab", "ba"));
         std::fs::remove_dir_all(&top).unwrap();
     }
 }
