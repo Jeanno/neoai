@@ -36,6 +36,12 @@ hands a line to another shell. What neosh adds is below.
   (^Z, `jobs`, `fg`, `bg`), and bash's builtins. Where brush and bash differ,
   bash is right, and the difference is brush's to fix.
 
+- NSH-25: `cd` looks a relative directory up in `CDPATH` as bash does:
+  each entry in turn (an empty one is `.`), the first holding the directory
+  wins and its path is printed, and with none the directory is the current
+  one's. A path starting `/`, `./` or `../`, or `.`, `..` and `-`, is never
+  looked up. A directory that is not there says so as bash does
+  (`cd: share: No such file or directory`, status 1).
 - NSH-24: An interactive neosh expands history as bash does, before
   anything else reads the line, while `set -H` (`histexpand`, on by
   default) is: `!!` the last command, `!n` the n-th in `history`, `!-n` the
@@ -139,3 +145,7 @@ hands a line to another shell. What neosh adds is below.
   straight to the terminal, so neosh sees only the status.
 - A prebuilt binary, so installing needs no Rust.
 - History modifiers after a `:` (`:h`, `:t`, `:s/a/b/`, `:p`).
+- Where brush is not bash yet (NSH-3), found by running both: `select`
+  does not parse; `shopt -s globstar` makes `**/x` name paths that are not
+  there; `coproc` can stop neosh with a bad file descriptor; `dirs` shows
+  `/private/tmp` for `/tmp`. These are brush's to fix, and reported there.

@@ -71,6 +71,8 @@ add the requirement there first.
 - [x] A command over several lines reaches navi with its breaks (` ↵ `),
       not run together; job control checked end to end. (NSH-6, NSH-3)
 - [x] `?` alone right after a failure asks navi why. (NSH-9)
+- [x] `cd` looks in `CDPATH`, which brush's ignores, and says why it
+      could not as bash does. (NSH-25)
 - [x] History expansion, which brush lacks: `!!`, `!n`, `!-n`, `!text`,
       `!?text?`, word picks (`!$`, `!!:2`) and `^old^new`. (NSH-24)
 - [x] neosh sends only `?` lines to navi by default; a sentence that comes

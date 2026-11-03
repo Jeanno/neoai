@@ -5,6 +5,7 @@
 //! reader around brush's own, which sends lines for navi to navi (NSH-4).
 
 mod bang;
+mod cd;
 mod navi;
 mod prompt;
 mod term;
@@ -108,7 +109,9 @@ async fn run(args: Args) -> Result<u8, ShellError> {
     if let Some(histfile) = history_file(std::env::var_os("HISTFILE"), std::env::var_os("HOME")) {
         builder = builder.var("HISTFILE", brush_core::ShellVariable::new(histfile.to_string_lossy().into_owned()));
     }
-    let shell = builder.build().await?;
+    let mut shell = builder.build().await?;
+    // NSH-25: CDPATH, which brush's `cd` does not look in.
+    cd::install(&mut shell);
     let shell: ShellRef = std::sync::Arc::new(tokio::sync::Mutex::new(shell));
 
     // NSH-1: ~/.profile for a login shell, ~/.neoshrc for an interactive one.

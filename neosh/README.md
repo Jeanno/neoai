@@ -37,7 +37,7 @@ files`); `NEOSH_ASK=off` sends nothing.
 The interpreter is [brush](https://github.com/reubeno/brush)'s, a
 bash-compatible shell in Rust: pipelines, redirections, here-documents,
 functions, arrays, `[[ … ]]`, aliases, job control, bash's builtins and its
-history expansion (`sudo !!`, `!$`, `^old^new`).
+history expansion (`sudo !!`, `!$`, `^old^new`), and `cd` looks in `CDPATH`.
 What neosh adds is specified in [spec.md](spec.md).
 
 The prompt shows where you are, the git branch (with `*` when tracked files
