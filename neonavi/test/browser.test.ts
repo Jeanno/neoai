@@ -56,6 +56,9 @@ before(async () => {
     else if (url.pathname === '/menu2')
       res.end(`<title>Menu</title><nav id=menu><a href="/about">Branches</a><ul id=list hidden><li><a href="/about">Riverside</a></li></ul></nav>
 <script>menu.onmouseenter=()=>list.hidden=false;menu.onmouseleave=()=>list.hidden=true;addEventListener('pageshow',()=>list.hidden=true)</script>`)
+    else if (url.pathname === '/menu3')
+      res.end(`<title>Menu</title><button onclick="this.textContent='Helped'">Help</button><nav id=menu><a href="/about" aria-haspopup=menu>Branches</a><ul id=list hidden><li><a href="/about">Riverside</a></li></ul></nav>
+<button aria-haspopup=false>Plain</button><script>menu.onmouseenter=()=>list.hidden=false</script>`)
     else if (url.pathname === '/never') return // answered only when the server closes
     else if (url.pathname === '/found') res.end(`<title>Found</title><p>Results for ${url.searchParams.get('q')}</p>`)
     else res.end(SHOP)
@@ -378,4 +381,15 @@ test('a pop-up in a tab that is no session\'s is left to the user, not dismissed
   } finally {
     await own.close({ runBeforeUnload: false }).catch(() => {})
   }
+})
+
+// BRW-24
+test('what opens a menu is marked so, and acted on by the same ref', { skip }, async () => {
+  const tab = makeTab({ home, headless: true })
+  const page = await tab.open(`${base}/menu3`)
+  assert.match(page, /link "Branches" \[ref=\w+\] \[opens menu\]/)
+  assert.match(page, /button "Help" \[ref=\w+\]$/m)
+  assert.match(page, /button "Plain" \[ref=\w+\]$/m)
+  assert.match(await tab.hover(refOf(page, 'link "Branches"')), /link "Riverside"/)
+  assert.match(await done(tab, { kind: 'click', ref: refOf(page, 'button "Help"') }), /Helped/)
 })

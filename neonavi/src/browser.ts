@@ -292,15 +292,37 @@ const PARTS = 300
 
 const read = (where: Page | Locator) => where.ariaSnapshot({ mode: 'ai', depth: DEPTH, timeout: 3000 } as never)
 
-/** The page as Playwright's snapshot, however deeply nested (BRW-5). */
+/** How many elements that open a menu are marked on a page (BRW-24). */
+const MENUS = 10
+
+/**
+ * The refs of elements that say they open a menu (BRW-24), each read on its
+ * own: an element keeps its ref, so the page read after names it the same.
+ */
+async function menuRefs(page: Page): Promise<Set<string>> {
+  const opens = page.locator('[aria-haspopup]:not([aria-haspopup="false"])')
+  const refs = new Set<string>()
+  // Bounded, as count waits on no timeout and a page that never loaded never answers it (BRW-17).
+  const n = Math.min(await within(1000, opens.count()).catch(() => 0), MENUS)
+  for (let i = 0; i < n; i++) {
+    const own = await opens.nth(i).ariaSnapshot({ mode: 'ai', depth: 1, timeout: 500 } as never).catch(() => '')
+    const ref = /\[ref=([\w-]+)\]/.exec(own)?.[1]
+    if (ref) refs.add(ref)
+  }
+  return refs
+}
+
+/** The page as Playwright's snapshot, however deeply nested (BRW-5), with what opens a menu marked (BRW-24). */
 async function snapshot(page: Page): Promise<string> {
   const until = Date.now() + SNAPSHOT_MS
+  // Read before the page itself: a ref is looked up in the latest reading only.
+  const menus = await menuRefs(page)
   const top = await read(page)
   const left = { parts: PARTS, until }
   const whole = await deepen(page, top, left)
   // A ref is looked up in the latest snapshot only, which a part's replaced: read the whole page last again.
   if (left.parts < PARTS) await read(page)
-  return whole
+  return menus.size ? whole.replace(/\[ref=([\w-]+)\]/g, (flag, ref: string) => (menus.has(ref) ? `${flag} [opens menu]` : flag)) : whole
 }
 
 let parts = 0

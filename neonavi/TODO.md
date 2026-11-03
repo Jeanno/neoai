@@ -185,10 +185,11 @@ add the requirement there first.
 - [x] Hover, for menus and tooltips shown only on hover, asked about never. (BRW-22)
 - [x] A page gone back to could not be clicked (Chrome's back-forward cache);
       found by the hover eval task. (BRW-23)
-- [ ] browser_look once answered from a picture what the picture could not
-      show (a closed hover menu: "12:00 to 6:00", which is on no page). Have
-      it say what it cannot see rather than guess; mark elements that open
-      a menu in the page text, so hovering is thought of first.
+- [x] browser_look once answered from a picture what the picture could not
+      show (a closed hover menu: "12:00 to 6:00", which is on no page). It
+      is now told to say what is not shown rather than guess, and what opens
+      a menu is marked `[opens menu]`: the hover task went from 32-88s with
+      looks first to 18-26s, hovering at once in 4 of 5. (BRW-24)
 - [ ] The browser in Raycast: approval is ready, but Raycast's bundler
       cannot pack Playwright. (`jackins/raycast/spec.md` Open)
 - [x] The browser over MCP: `navi mcp --browser` serves the browser tools,

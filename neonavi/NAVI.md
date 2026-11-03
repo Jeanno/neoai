@@ -230,7 +230,8 @@ it, and a question ("Delete this draft?") is answered Cancel and passed on,
 until navi does the action again with an answer, which always asks you,
 naming the question (BRW-21). navi can also hover over an element, for a
 menu or tooltip a page shows only on hover; that presses nothing, so it is
-not asked about (BRW-22). A page gone back to can be acted on like any
+not asked about (BRW-22); what says it opens a menu reads `[opens menu]`
+in the page text (BRW-24). A page gone back to can be acted on like any
 other: navi's browser keeps no back-forward cache, whose restored pages
 could not be clicked (BRW-23). How well a model does with the
 browser is measured by `eval/browser`: sixteen tasks on local practice sites

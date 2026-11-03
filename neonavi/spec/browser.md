@@ -114,6 +114,9 @@ has to look at the whole page again to see what happened.
   navi starts keeps no back-forward cache, whose restored pages Playwright
   cannot act on; on a browser started without that, a page gone back to
   whose refs cannot be acted on is opened again.
+- BRW-24: An element that says it opens a menu (`aria-haspopup`) is marked
+  `[opens menu]` in the page text, so that hovering or clicking it to see
+  the menu is thought of before guessing. At most 10 on a page are marked.
 - BRW-10: An action answers with what changed: a new page answers as
   browser_open; on the same page, the lines that appeared, at most 40, and
   how many went; or that nothing on the page changed.
