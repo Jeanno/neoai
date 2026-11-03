@@ -73,6 +73,10 @@ jack-ins are others (`jackins/NAVI.md`).
 - HAR-8: Attachments are kept in the history like the prompt they came with.
   For the history's size (SES-8) an image counts as 1,000 tokens, however
   many bytes it holds.
+- HAR-13: `attachmentsOf()` reads back the attachments a stored user message
+  holds (HAR-8), as they were sent: text files with their text, images with
+  their data, scanned pages as one PDF's pages. A turn can be asked again
+  with them, and a message the harness did not make holds none.
 
 ## Open
 

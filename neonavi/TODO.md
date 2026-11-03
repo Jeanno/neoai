@@ -186,6 +186,7 @@ add the requirement there first.
 - [x] Redo: `navi redo` and `/redo` bring back what an undo put back, never
       over a change made since; the model is told. (UND-14 to UND-16)
 - [x] Undo from Raycast: Undo File Changes (⌘Z) in Navi Chat, with Redo in its toast. (RAY-13, RAY-14)
+- [x] Ask Again (⇧⌘R) in Navi Chat, files and all, as `/retry`; navi's own notes no longer show as questions. (RAY-19, RAY-20, HAR-13)
 - [x] Jobs from Raycast: Navi Jobs lists navi serve's jobs, allows or denies
       what they wait on, tries again, follows up, deletes, stops and starts
       them. (RAY-15 to RAY-18)

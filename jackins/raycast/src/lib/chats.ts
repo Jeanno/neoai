@@ -1,4 +1,5 @@
 import type { ModelMessage } from 'ai'
+import { attachmentsOf, type Attachment } from 'neonavi/harness'
 import { randomUUID } from 'node:crypto'
 import { splitThinking } from './think'
 import { turnFromHistory, userText, type Turn } from './turn'
@@ -89,22 +90,43 @@ export function turns(history: ModelMessage[]): number {
   return history.filter((m) => m.role === 'user').length
 }
 
+// navi's own notes to the model (UND-7, ESC-3), never what the user asked.
+const NOTES = /^(\(navi: [\s\S]*?\)(\n\n|$))+/
+
+/** RAY-20: a user message that is only navi's note, part of the turn it is in. */
+const isNote = (m: ModelMessage) => m.role === 'user' && !userText(m).names.length && NOTES.test(userText(m).prompt) && !userText(m).prompt.replace(NOTES, '').trim()
+
+/** What the user asked, without navi's notes before it. */
+const asked = (m: ModelMessage) => userText(m).prompt.replace(NOTES, '')
+
+/**
+ * RAY-19: the latest question, as asked, with its files, and the history
+ * from before it, to ask it again in place of its answer.
+ */
+export function lastQuestion(history: ModelMessage[]): { before: ModelMessage[]; prompt: string; attachments: Attachment[] } | undefined {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i]
+    if (m.role !== 'user' || isNote(m)) continue
+    return { before: history.slice(0, i), prompt: asked(m), attachments: attachmentsOf(m.content as Parameters<typeof attachmentsOf>[0]) }
+  }
+}
+
 /** Newest first: each question with the assistant and tool messages after it. */
 export function exchanges(history: ModelMessage[]): Exchange[] {
   const out: Exchange[] = []
   let start = -1
   const close = (end: number) => {
     if (start < 0) return
-    const { prompt, names } = userText(history[start])
+    const { names } = userText(history[start])
     out.push({
       id: String(start),
-      question: prompt,
+      question: asked(history[start]),
       attached: names,
       turn: turnFromHistory(history.slice(start + 1, end)),
     })
   }
   history.forEach((m, i) => {
-    if (m.role !== 'user') return
+    if (m.role !== 'user' || isNote(m)) return
     close(i)
     start = i
   })

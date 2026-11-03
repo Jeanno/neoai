@@ -12,6 +12,8 @@ export interface Answered {
   turn: Turn
   /** What to store and pass back to continue (HAR-3). */
   history: ModelMessage[]
+  /** The model that gave the answer, for asking again (LED-17). */
+  model?: string
 }
 
 /**
@@ -78,13 +80,20 @@ export function useNavi() {
   }
 
   const run = useCallback(
-    async (prompt: string, history: ModelMessage[] = [], attachments?: Attachment[]): Promise<Answered | undefined> => {
+    async (
+      prompt: string,
+      history: ModelMessage[] = [],
+      attachments?: Attachment[],
+      /** The model whose answer this asks for again (RAY-19). */
+      again?: string,
+    ): Promise<Answered | undefined> => {
       controller.current?.abort()
       const current = new AbortController()
       controller.current = current
       const live = () => controller.current === current
       let t = emptyTurn()
       let stored: ModelMessage[] | undefined
+      let model: string | undefined
       setTurn(t)
       setStreaming(true)
       try {
@@ -92,11 +101,12 @@ export function useNavi() {
         setNavi(n)
         if (!n) return undefined
         const session = (await harnessFor(n)).session(history)
-        for await (const e of session.turn(prompt, { signal: current.signal, attachments })) {
+        for await (const e of session.turn(prompt, { signal: current.signal, attachments, again })) {
           t = applyEvent(t, e)
           if (live()) setTurn(t)
           if (e.type === 'done') stored = e.history
         }
+        model = session.answered
       } catch (error) {
         t = { ...t, errors: [...t.errors, errorMessage(error)] }
         if (live()) setTurn(t)
@@ -105,7 +115,7 @@ export function useNavi() {
       }
       if (t.errors.length && !current.signal.aborted)
         await showToast({ style: Toast.Style.Failure, title: 'Navi could not answer', message: t.errors[0] })
-      return stored && { turn: t, history: stored }
+      return stored && { turn: t, history: stored, model }
     },
     [],
   )

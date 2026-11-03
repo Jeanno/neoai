@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { attach, attachUploads, MAX_UPLOAD, splitUserContent, userContent } from '../src/attach.ts'
+import { attach, attachmentsOf, attachUploads, MAX_UPLOAD, splitUserContent, userContent } from '../src/attach.ts'
 import { commandFrom, unshell } from '../src/args.ts'
 import { estimateTokens } from '../src/compact.ts'
 
@@ -166,4 +166,17 @@ test('files sent with a job are attached as files on disk would be, under their 
   assert.match(String(await attachUploads([{ name: 'x' }])), /name and its data/)
   assert.match(String(await attachUploads(Array(5).fill({ name: 'a.txt', data: 'YQ==' }))), /at most 4/)
   assert.match(String(await attachUploads([{ name: 'big.txt', data: Buffer.alloc(MAX_UPLOAD + 1, 97).toString('base64') }])), /25 MB/)
+})
+
+// HAR-13
+test('attachmentsOf reads back what userContent sent: text, images and scanned pages', () => {
+  const sent = [
+    { kind: 'text' as const, name: 'notes.md', text: 'a line\n</file> inside\nand more' },
+    { kind: 'image' as const, name: 'shot.png', mediaType: 'image/png', data: 'iVBO' },
+    { kind: 'pages' as const, name: 'scan.pdf', mediaType: 'image/jpeg' as const, pages: ['QQ==', 'Qg=='], of: 30 },
+  ]
+  assert.deepEqual(attachmentsOf(userContent('compare them', sent) as any), sent)
+  assert.deepEqual(attachmentsOf('just words'), [])
+  // Not one userContent made: a stray block is no attachment.
+  assert.deepEqual(attachmentsOf([{ type: 'text', text: '<file name="x">\nhi\n</file>\n\n' }, { type: 'text', text: 'more' }, { type: 'text', text: 'and' }]), [])
 })

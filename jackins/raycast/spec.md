@@ -61,6 +61,16 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
   off, and the next turn is told (UND-7).
 - RAY-14: The undo's toast offers Redo (UND-14), which brings the changes back
   and offers the undo again.
+- RAY-19: Navi Chat offers Ask Again (⇧⌘R) on the latest question while
+  nothing is answering. The chat goes back to how it was before that
+  question, which is asked again with its files on the model answering now,
+  in place of its answer (CLI-33), and counted as asked again (LED-17) when
+  the model that gave the answer is known. When that question's turn changed
+  files that can still be undone (RAY-13), it says to Undo File Changes
+  first and asks nothing; after that undo, the next turn is not told of it
+  (CLI-34).
+- RAY-20: navi's own notes inside a turn (a `(navi: …)` message, ESC-3) are
+  part of that turn, never a question of their own.
 
 ## Jobs
 

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { ModelMessage } from 'ai'
 import {
   exchanges,
+  lastQuestion,
   newChat,
   parseChats,
   serializeChats,
@@ -136,4 +137,35 @@ test('a question asked about files shows without their text', () => {
     exchanges(asked).map((e) => [e.question, e.attached]),
     [['Describe these files.', ['notes.txt', 'p.png']]],
   )
+})
+
+// RAY-19, RAY-20: the latest question as asked, files and all, past navi's notes inside its turn.
+test('lastQuestion is the latest question with its files and what came before it', () => {
+  const history: ModelMessage[] = [
+    { role: 'user', content: 'first' },
+    { role: 'assistant', content: 'one' },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: '<image name="p.png" />\n\n' },
+        { type: 'text', text: '(navi: you undid your last change to a.txt.)\n\nwhat is this' },
+        { type: 'file', mediaType: 'image/png', data: 'AAAA', filename: 'p.png' },
+      ],
+    },
+    { role: 'assistant', content: 'Not sure.' },
+    { role: 'user', content: '(navi: the model that started on this struggled: no answer. Carry on from where it got to and finish the task above.)' },
+    { role: 'assistant', content: 'A cat.' },
+  ]
+  const last = lastQuestion(history)!
+  assert.equal(last.prompt, 'what is this')
+  assert.deepEqual(last.before, history.slice(0, 2))
+  assert.deepEqual(last.attachments, [{ kind: 'image', name: 'p.png', mediaType: 'image/png', data: 'AAAA' }])
+  assert.deepEqual(
+    exchanges(history).map((e) => [e.question, e.attached]),
+    [
+      ['what is this', ['p.png']],
+      ['first', []],
+    ],
+  )
+  assert.equal(lastQuestion([]), undefined)
 })

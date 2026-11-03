@@ -189,6 +189,32 @@ export function splitUserContent(content: string | readonly { type: string; text
   return { prompt: texts.at(-1) ?? '', names }
 }
 
+/** HAR-13: the attachments userContent put in a stored user message, as they were sent. */
+export function attachmentsOf(content: string | readonly { type: string; text?: string; data?: unknown; mediaType?: string; filename?: string }[]): Attachment[] {
+  if (typeof content === 'string' || !splitUserContent(content).names.length) return []
+  const files = content.filter((p) => p.type === 'file' && typeof p.data === 'string')
+  const out: Attachment[] = []
+  for (const p of content) {
+    if (p.type !== 'text' || typeof p.text !== 'string') continue
+    const text = /^<file name="([^"]*)">\n([\s\S]*)\n<\/file>\n\n$/.exec(p.text)
+    if (text) {
+      out.push({ kind: 'text', name: text[1], text: text[2] })
+      continue
+    }
+    const image = /^<image name="([^"]*)"( pages="(?:the first \d+ of )?(\d+)")? \/>\n\n$/.exec(p.text)
+    if (!image) continue
+    const name = image[1]
+    if (image[2]) {
+      const pages = files.filter((f) => f.filename?.startsWith(`${name} page `))
+      out.push({ kind: 'pages', name, mediaType: 'image/jpeg', pages: pages.map((f) => f.data as string), of: Number(image[3]) })
+    } else {
+      const f = files.find((f) => f.filename === name)
+      if (f) out.push({ kind: 'image', name, mediaType: f.mediaType ?? 'image/png', data: f.data as string })
+    }
+  }
+  return out
+}
+
 /** What is piped in, as a text file named `stdin` (CLI-22). */
 export async function attachStdin(input: NodeJS.ReadableStream & { isTTY?: boolean }): Promise<Attachment> {
   if (input.isTTY) throw new Error('-a - attaches what is piped in, and nothing is: stdin is a terminal')

@@ -16,7 +16,7 @@ export type { FileChange } from './diff.ts'
 import { compact, estimateTokens } from './compact.ts'
 import { splitUserContent, userContent, type Attachment } from './attach.ts'
 
-export { attach, splitUserContent, type Attachment } from './attach.ts'
+export { attach, attachmentsOf, splitUserContent, type Attachment } from './attach.ts'
 import { searchBackend } from './web.ts'
 import { CORRECTION_WINDOW, kindOf, readLedger, readsAsCorrection, readsAsRepeat, readUndoneEntries, record, routeAway, ROUTE_DAYS, type LedgerEntry } from './ledger.ts'
 import type { Tab } from './browser.ts'

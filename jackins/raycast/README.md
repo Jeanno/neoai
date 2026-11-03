@@ -106,6 +106,10 @@ were, and the message that pops up lists them. Its **Redo** button brings the
 changes back. Only Navi's latest change can be undone this way; a file you
 have edited since is left alone.
 
+Not happy with an answer in **Navi Chat**? Select the latest question and
+press **⇧ ⌘ R** (**Ask Again**): the answer is replaced by a fresh one, with
+the same files sent again. If that answer changed files, undo them first.
+
 While an answer or summary is showing:
 
 | Keys       | What it does                       |
