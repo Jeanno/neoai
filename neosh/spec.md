@@ -148,4 +148,4 @@ hands a line to another shell. What neosh adds is below.
 - Where brush is not bash yet (NSH-3), found by running both: `select`
   does not parse; `shopt -s globstar` makes `**/x` name paths that are not
   there; `coproc` can stop neosh with a bad file descriptor; `dirs` shows
-  `/private/tmp` for `/tmp`. These are brush's to fix, and reported there.
+  `/private/tmp` for `/tmp`. These are brush's to fix.
