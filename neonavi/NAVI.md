@@ -21,8 +21,10 @@ to leave it out).
 piped in; nothing piped can then answer an approval, so commands that need
 one are declined. At the
 prompt, `/attach <file>` (drag a file in) sends one with your next message,
-`/model <spec>` switches model for the rest of the conversation, and `/help`
-lists these.
+`/model <spec>` switches model for the rest of the conversation, `/copy`
+puts the last answer on the clipboard (`/copy code` just its last code
+block, `/copy code 2` the second; over SSH it goes to your own computer's
+clipboard), and `/help` lists these.
 
 `navi serve` puts the same model chain behind an OpenAI-compatible server on
 this computer: give any app the base URL `http://127.0.0.1:8484/v1`, any API

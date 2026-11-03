@@ -23,6 +23,7 @@ import { LEVELS, notifyLevels, push, pushConfig, withLevels, type Level } from '
 import { addFact, forgetFact, memoryFile, projectRoot, readMemory } from './memory.ts'
 import { SUGGEST_AFTER, suggestFacts } from './suggest.ts'
 import { listUndo, namer, redo, redoneLines, undo, undoneReport } from './undo.ts'
+import { lastAnswerIn, pickCopy, toClipboard } from './copy.ts'
 import { wall } from './clock.ts'
 import { makeQuietNotify, needsYou, parseQuiet } from './quiet.ts'
 import { makeSchedules, nextText, parseDays, parseEvery, runMarks, whenText } from './schedules.ts'
@@ -93,6 +94,7 @@ const HELP = [
   '/attach <file>     send an image, PDF or text file with the next prompt',
   "/undo              put back the files navi's last turn changed",
   '/redo              bring back what the last /undo put back',
+  '/copy [code [n]]   copy the last answer, or its last (or n-th) code block',
   '/help              this list',
   '^C                 stop an answer; at an empty prompt, leave',
   'exit, quit         leave, maybe offering facts to remember',
@@ -1021,6 +1023,8 @@ async function main() {
   })
   let answering = chosen
   let session = (await harnessFor(chosen)).session(stored)
+  // CLI-31: what /copy takes; a resumed conversation's own to begin with.
+  let lastAnswer = lastAnswerIn(stored)
   // Answered turns in this run, for suggesting what to remember (MEM-20).
   let answeredHere = 0
 
@@ -1124,11 +1128,13 @@ async function main() {
     // worth carrying forward, and a follow-up is how you recover from a bad turn.
     await saveSession(file, done!.history, cwd)
     if (done!.stopped) {
+      if (!done!.empty) lastAnswer = done!.text
       if (!streaming && !done!.empty) console.log(done!.text)
       console.error(dim('· stopped'))
       return !done!.empty
     }
     if (!done!.empty) {
+      lastAnswer = done!.text
       if (!streaming) console.log(done!.text)
       // HAR-11: an answer that ends mid-thought says why.
       if (done!.cut) console.error(dim(CUT_NOTE))
@@ -1167,6 +1173,15 @@ async function main() {
       else if (command?.name === 'help') console.error(HELP)
       else if (command?.name === 'undo') await undoHere(cwd)
       else if (command?.name === 'redo') await redoHere(cwd)
+      else if (command?.name === 'copy') {
+        // CLI-31: the last answer, this session's or the resumed conversation's.
+        const got = pickCopy(lastAnswer, command.args)
+        if ('problem' in got) console.error(got.problem)
+        else {
+          const problem = await toClipboard(got.text)
+          console.error(problem ?? dim(`· ${got.said}`))
+        }
+      }
       else if (command?.name === 'attach' && !command.path) console.error('usage: /attach <file>')
       else if (command?.name === 'attach') {
         try {

@@ -40,6 +40,8 @@ add the requirement there first.
 - [x] `write_file` and `edit_file`, each change shown as a diff; a new file
       here is made without asking, any other change asks. (TL-36 to TL-40)
 - [x] `/model` mid-session, without leaving the loop, and `/help`. (CLI-19 to CLI-21)
+- [x] `/copy` the last answer or one of its code blocks, to the system
+      clipboard or over SSH the terminal's (OSC 52). (CLI-31, CLI-32)
 - [x] Image and PDF input: `-a`, `/attach`, and Raycast's Ask About Selected
       Files; images go to the model, PDFs as text. (HAR-7, HAR-8, CLI-22,
       CLI-23, RAY-11)

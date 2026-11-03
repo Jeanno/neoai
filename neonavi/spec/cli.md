@@ -87,8 +87,9 @@
 ## Commands
 
 - CLI-19: At the `navi>` prompt, a line that is exactly `/model`, or starts
-  with `/model ` or `/attach `, or is `/help`, `/undo` (UND-4) or `/redo`
-  (UND-14), is a command, not a prompt.
+  with `/model ` or `/attach `, or is `/help`, `/undo` (UND-4), `/redo`
+  (UND-14), `/copy` or starts with `/copy ` (CLI-31), is a command, not a
+  prompt.
 - CLI-20: `/model` prints the model answering, as SET-1 words it, and the
   saved chain, with the session's own when `--model` or an earlier `/model`
   set one. `/model <spec>` takes what `--model` takes and switches to it for
@@ -97,6 +98,16 @@
   nothing in it answers, each link's reason is printed (MOD-21) and the
   current model stays.
 - CLI-21: `/help` lists the commands and how to leave.
+- CLI-31: `/copy` copies navi's last answer, as it was written, to the
+  clipboard; `/copy code` copies its last fenced code block, and
+  `/copy code <n>` its n-th, without the fences. After `--resume` the last
+  answer is the conversation's. It says what it copied (the answer, or code
+  block n of how many, and its lines), and, when there is nothing to copy
+  or no such block, says that instead.
+- CLI-32: The clipboard is the system's: pbcopy on macOS, wl-copy, xclip or
+  xsel on Linux, clip on Windows. Over SSH it is the terminal's own, through
+  OSC 52, so the copy lands on the computer the user sits at. With none of
+  these it says no clipboard was found.
 - CLI-23: `/attach <file>` attaches a file to the next prompt (HAR-7); it may
   be given more than once. A path may be quoted, or have its spaces escaped
   as a terminal's drag and drop writes them. A file that cannot be attached

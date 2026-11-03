@@ -87,7 +87,7 @@ export function startsFresh(o: { prompt: string | null; resume: boolean }): bool
   return o.prompt === null && !o.resume
 }
 
-export type Command = { name: 'model'; spec: string } | { name: 'attach'; path: string } | { name: 'help' } | { name: 'undo' } | { name: 'redo' }
+export type Command = { name: 'model'; spec: string } | { name: 'attach'; path: string } | { name: 'help' } | { name: 'undo' } | { name: 'redo' } | { name: 'copy'; args: string }
 
 /**
  * A path as typed or dropped into a terminal (CLI-23): quoted, or with its
@@ -107,5 +107,6 @@ export function commandFrom(line: string): Command | null {
   if (line === '/help') return { name: 'help' }
   if (line === '/undo') return { name: 'undo' }
   if (line === '/redo') return { name: 'redo' }
+  if (line === '/copy' || line.startsWith('/copy ')) return { name: 'copy', args: line.slice('/copy'.length).trim() }
   return null
 }

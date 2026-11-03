@@ -166,11 +166,12 @@ async function naviOnTerminal(
   /** Called with all shown so far on each output, to type keys that are not a line. */
   react?: (shown: string, type: (keys: string) => void) => void,
   home?: string,
+  extraEnv: Record<string, string> = {},
 ) {
   home ??= await mkdtemp(join(tmpdir(), 'navi-cli-'))
   await mkdir(join(home, '.neoai'), { recursive: true })
   await writeFile(join(home, '.neoai', 'config.json'), JSON.stringify(config))
-  const env = { PATH: process.env.PATH, HOME: home, NEOROUTER_QUIET: '1', TERM: 'xterm' }
+  const env = { PATH: process.env.PATH, HOME: home, NEOROUTER_QUIET: '1', TERM: 'xterm', ...extraEnv }
   // script(1) needs real pipes, and node's stdio on macOS is a socket.
   const child = spawn('sh', ['-c', 'cat | script -q /dev/null "$@" | cat', 'sh', TSX, CLI, ...args], { env, cwd: home, detached: true })
   let shown = ''
@@ -472,4 +473,16 @@ test('navi notify says and sets what the Mac and the phone are told, leaving the
     assert.equal(r.code, 1, bad.join(' '))
     assert.match(r.stderr, /usage: navi notify/)
   }
+})
+
+// CLI-31, CLI-32: over SSH, so the copy goes to the terminal and never to this computer's clipboard.
+test('/copy copies the last answer, and says there is none before one', { skip: process.platform !== 'darwin' }, async () => {
+  const fake = await fakeModel()
+  const r = await naviOnTerminal([], ['/copy', 'what is here', '/copy', '/copy code', 'QUIT'], fake.config, undefined, undefined, { SSH_CONNECTION: '10.0.0.1 1 10.0.0.2 22' })
+  fake.close()
+  assert.equal(r.code, 0, JSON.stringify(r.shown))
+  assert.match(r.shown, /There is no answer to copy yet\./)
+  assert.ok(r.raw.includes(`\x1b]52;c;${Buffer.from('It holds .neoai.').toString('base64')}\x07`))
+  assert.match(r.shown, /· copied the answer \(1 line\)/)
+  assert.match(r.shown, /The last answer has no code block/)
 })
