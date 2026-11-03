@@ -6,8 +6,9 @@
 
 mod navi;
 mod prompt;
+mod term;
 
-use std::io::IsTerminal as _;
+use std::io::{IsTerminal as _, Write as _};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -127,7 +128,8 @@ async fn run(args: Args) -> Result<u8, ShellError> {
     } else if let Some(script) = args.rest.first() {
         shell.lock().await.run_script(std::path::Path::new(script), args.rest.iter().skip(1)).await?;
     } else if interactive {
-        let ui = brush_interactive::UIOptions::default();
+        // NSH-18: VS Code's command marks, where brush finds them supported.
+        let ui = brush_interactive::UIOptions { terminal_shell_integration: true, ..Default::default() };
         let mut input = WithNavi::new(brush_interactive::ReedlineInputBackend::new(&ui, &shell)?);
         brush_interactive::InteractiveShell::new(&shell, &mut input, &(&ui).into())?.run_interactively().await?;
     } else {
@@ -197,8 +199,20 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                     color: s.env_str("NO_COLOR").is_none(),
                 })
             });
+            // NSH-18: the title and directory, for the window and new tabs.
+            let told = guard.as_ref().filter(|s| term::wanted(s.env_str("TERM").as_deref())).map(|s| {
+                let dir = s.working_dir().to_path_buf();
+                let home = std::env::var_os("HOME").map(PathBuf::from);
+                let host = s.env_str("HOSTNAME").map(|h| h.into_owned()).unwrap_or_default();
+                format!("{}{}", term::title(&prompt::tilde(&dir, home.as_deref())), term::directory(&host, &dir))
+            });
             let again = InteractivePrompt { prompt: ours.unwrap_or_else(|| prompt.prompt.clone()), alt_side_prompt: prompt.alt_side_prompt.clone(), continuation_prompt: prompt.continuation_prompt.clone() };
+            let titled = guard.as_ref().is_some_and(|s| term::wanted(s.env_str("TERM").as_deref()));
             drop(guard.take());
+            if let Some(told) = told {
+                print!("{told}");
+                let _ = std::io::stdout().flush();
+            }
             // NSH-11: ready to run with Enter, change, or clear with ^C.
             if let Some(command) = self.suggested.take() {
                 let end = command.len();
@@ -214,6 +228,11 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             match what {
                 navi::Line::Shell => {
                     if !line.trim().is_empty() {
+                        // NSH-18: the command, while it runs.
+                        if titled {
+                            print!("{}", term::title(line.trim()));
+                            let _ = std::io::stdout().flush();
+                        }
                         self.handed = Some((line.trim().to_string(), dir, Instant::now()));
                     }
                     return Ok(ReadResult::Input(line));

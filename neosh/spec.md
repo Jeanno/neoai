@@ -90,6 +90,14 @@ hands a line to another shell. What neosh adds is below.
   prompt before any status (`~/proj main 1m 4s 1 $`), and in what navi is
   told of it (`~/proj $ cargo build (exit 101, took 1m 4s)`).
 
+## The terminal
+
+- NSH-18: An interactive neosh tells the terminal, unless `TERM` is unset or
+  `dumb`: the title is the directory while it waits and the command while
+  one runs; the directory is reported (OSC 7), so Terminal, iTerm and others
+  open a new tab there; and in VS Code's terminal, commands are marked with
+  their status as its shell integration expects.
+
 ## Open
 
 - Whether the git tree has changes, which needs reading the index.
