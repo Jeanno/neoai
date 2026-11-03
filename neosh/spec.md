@@ -97,6 +97,11 @@ hands a line to another shell. What neosh adds is below.
   several lines is told on one, each line break shown as ` ↵ `.
 - NSH-7: One shell session is one conversation with navi, whichever
   directory it is asked from (CLI-39); a new neosh starts a new one.
+- NSH-28: A line for navi is a command like any other for `$?` and the
+  prompt: its status is navi's, 0 when navi answered, 130 when ^C stopped
+  it, 127 with no `navi` on `$PATH`, 126 when it could not be started, and 0 for `?` alone saying how to ask.
+  So a failure shown before is cleared once navi has answered it, and
+  `$?` after `? …` says how the asking went.
 - NSH-21: Which backend and model answered is said with the first answer
   of a session and again only when it changes (MOD-28): a hosted provider
   taking over from a local model is always said.

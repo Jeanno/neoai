@@ -87,7 +87,9 @@
 - CLI-38: `--once` with `-p` on a terminal answers that prompt and exits,
   asking about commands and changes on the terminal as ever, instead of
   going on to the `navi>` prompt. Without `-p` it is an error, with the
-  usage. (A shell runs navi this way: NSH-5.)
+  usage. It exits 0 when it answered, 130 when ^C stopped the turn (as a
+  program stopped by ^C does, whatever was said before it), and 1 when
+  there was no answer. (A shell runs navi this way: NSH-5, NSH-28.)
 - CLI-39: `--session <name>` keeps the conversation under that name instead
   of the directory's: continued and saved there from whichever directory
   navi is run in. With `--new` it is an error, with the usage.

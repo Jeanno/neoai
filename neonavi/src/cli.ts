@@ -1046,6 +1046,8 @@ async function main() {
   // CLI-31: what /copy takes; a resumed conversation's own to begin with.
   let lastAnswer = lastAnswerIn(stored)
   // CLI-33: the last turn of this run, to ask again; `changed` is its kept undo turn (CLI-34).
+  // CLI-38: whether the last turn was stopped by ^C, for --once's exit status.
+  let stoppedLast = false
   let lastTurn: { prompt: string; attachments: Attachment[]; before: typeof stored; changed?: string; model?: string } | undefined
   const latestKept = async () => (await listUndo(homedir(), cwd).catch(() => []))[0]?.id
   // Answered turns in this run, for suggesting what to remember (MEM-20).
@@ -1167,6 +1169,7 @@ async function main() {
     // Saved even when the answer came out empty: the tool results are the part
     // worth carrying forward, and a follow-up is how you recover from a bad turn.
     if (!apart) await saveSession(file, done!.history, cwd)
+    stoppedLast = done!.stopped
     if (done!.stopped) {
       if (!done!.empty) lastAnswer = done!.text
       if (!streaming && !done!.empty) console.log(done!.text)
@@ -1236,7 +1239,7 @@ async function main() {
         const command = suggestedCommand(lastAnswer ?? '')
         if (command) await writeFile(commandFile, `${command}\n`).catch((e) => console.error(dim(`· could not hand the command to the shell: ${(e as Error).message}`)))
       }
-      if (!interactive || once) return answered ? 0 : 1
+      if (!interactive || once) return stoppedLast ? 130 : answered ? 0 : 1
     }
     for (;;) {
       // The marker gets a lighter background; bold is opened as part of the

@@ -221,9 +221,9 @@ neosh: navi is not installed, so there is no one to ask.
 Install it: curl -fsSL https://raw.githubusercontent.com/Jeanno/neoai/master/neonavi/install.sh | sh";
 
 /// NSH-5, NSH-7, NSH-11: navi's answer in the terminal, in `dir`, in this
-/// session's conversation, and the command it suggests, if any.
+/// session's conversation; how navi ended (NSH-28) and the command it suggests, if any.
 /// `navi` is the program the shell found on its own `$PATH`, which is passed on too.
-pub fn ask(navi: &Path, path: Option<&str>, prompt: &str, dir: &Path, session: &str, recent: &str) -> Result<Option<String>, std::io::Error> {
+pub fn ask(navi: &Path, path: Option<&str>, prompt: &str, dir: &Path, session: &str, recent: &str) -> Result<(u8, Option<String>), std::io::Error> {
     let handed = command_file(session);
     let _ = std::fs::remove_file(&handed);
     let mut command = Command::new(navi);
@@ -240,8 +240,18 @@ pub fn ask(navi: &Path, path: Option<&str>, prompt: &str, dir: &Path, session: &
     } else {
         command.env_remove("NAVI_RECENT");
     }
-    command.status()?;
-    Ok(take_suggestion(&handed))
+    let ended = command.status()?;
+    Ok((status_of(ended), take_suggestion(&handed)))
+}
+
+/// NSH-28: a program's end as `$?` says it, 128 and the signal when one stopped it.
+pub fn status_of(ended: std::process::ExitStatus) -> u8 {
+    use std::os::unix::process::ExitStatusExt as _;
+    match (ended.code(), ended.signal()) {
+        (Some(code), _) => u8::try_from(code & 0xff).unwrap_or(1),
+        (None, Some(signal)) => u8::try_from(128 + signal).unwrap_or(255),
+        (None, None) => 1,
+    }
 }
 
 /// Where navi hands this session's suggested command back (CLI-41).

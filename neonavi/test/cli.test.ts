@@ -177,8 +177,9 @@ async function naviOnTerminal(
   await mkdir(join(home, '.neoai'), { recursive: true })
   await writeFile(join(home, '.neoai', 'config.json'), JSON.stringify(config))
   const env = { PATH: process.env.PATH, HOME: home, NEOROUTER_QUIET: '1', TERM: 'xterm', ...extraEnv }
-  // script(1) needs real pipes, and node's stdio on macOS is a socket.
-  const child = spawn('sh', ['-c', 'cat | script -q /dev/null "$@" | cat', 'sh', TSX, CLI, ...args], { env, cwd: home, detached: true })
+  // script(1) needs real pipes, and node's stdio on macOS is a socket. Its
+  // status, navi's, is written down: the pipeline's would be the last cat's.
+  const child = spawn('sh', ['-c', 'cat | { script -q /dev/null "$@"; echo $? > "$HOME/.navi-exit"; } | cat', 'sh', TSX, CLI, ...args], { env, cwd: home, detached: true })
   let shown = ''
   let prompts = 0
   child.stdout.on('data', (c) => {
@@ -196,8 +197,10 @@ async function naviOnTerminal(
   // A navi that never leaves fails the test rather than hanging the run.
   // The whole group: script(1) and navi under it outlive a killed sh.
   const limit = setTimeout(() => process.kill(-child.pid!, 'SIGKILL'), 20_000)
-  const code = await new Promise<number>((resolve) => child.on('close', (c) => resolve(c ?? -1)))
+  const closed = await new Promise<number>((resolve) => child.on('close', (c) => resolve(c ?? -1)))
   clearTimeout(limit)
+  const written = await readFile(join(home, '.navi-exit'), 'utf8').catch(() => '')
+  const code = written.trim() ? Number(written.trim()) : closed
   return { code, raw: shown, shown: shown.replace(/\x1b\[[0-9;]*m/g, ''), home }
 }
 
@@ -585,6 +588,20 @@ test('--once answers on a terminal and gives the terminal back', { skip: process
   fake.close()
   assert.equal(r.code, 0, JSON.stringify(r.shown))
   assert.match(r.shown, /It holds \.neoai\./)
+  assert.doesNotMatch(r.shown, /navi>/)
+})
+
+// CLI-38, CLI-25: ^C stopping a --once turn ends navi as ^C ends a program, 130.
+test('--once stopped by ^C exits 130, its words kept', { skip: process.platform !== 'darwin' }, async () => {
+  const fake = await fakeModel({ hang: true })
+  let pressed = false
+  const r = await naviOnTerminal(['--once', '-p', 'tell me slowly'], [], fake.config, (shown, type) => {
+    if (!pressed && shown.includes('Part one.')) (pressed = true, type('\x03'))
+    return shown.includes('\x1b[?2004l') && pressed ? 'end' : undefined
+  })
+  fake.close()
+  assert.equal(r.code, 130, JSON.stringify(r.shown))
+  assert.match(r.shown, /Part one\.[\s\S]*· stopped/)
   assert.doesNotMatch(r.shown, /navi>/)
 })
 

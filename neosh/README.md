@@ -22,7 +22,8 @@ asking before it changes anything. To show navi what a command printed, its erro
 When the answer is a command to run,
 the next prompt starts with it typed out: press Enter to run it, change it
 first, or clear it with ^C. Right after a command fails, `?` alone asks
-navi why and how to fix it; otherwise it says how to ask. Every line
+navi why and how to fix it, and once navi has answered the prompt shows no
+failure: `$?` after a `?` line is navi's (130 if you stopped it with ^C); otherwise it says how to ask. Every line
 without a `?` is the shell's and runs as bash runs it, so Enter never does
 anything bash would not. If you forget the `?` and a sentence comes back
 `command not found`, the next prompt starts with `? ` and your sentence:

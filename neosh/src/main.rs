@@ -340,6 +340,9 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                             let _ = s.add_to_history(line.trim_end_matches('\n'));
                         }
                         eprintln!("{}", navi::NOT_INSTALLED);
+                        if let Some(s) = guard.as_mut() {
+                            s.set_last_exit_status(127);
+                        }
                         continue;
                     };
                     let home = std::env::var_os("HOME").map(PathBuf::from);
@@ -360,11 +363,18 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                     let found = guard.as_ref().and_then(|s| s.find_first_executable_in_path("navi"));
                     let path = guard.as_ref().and_then(|s| s.env_str("PATH").map(|p| p.into_owned()));
                     drop(guard);
+                    // NSH-28: how the asking went, as `$?` and in the prompt.
+                    let ended = |status: u8| {
+                        if let Ok(mut s) = shell.try_lock() {
+                            s.set_last_exit_status(status);
+                        }
+                    };
                     // NSH-9: alone, it asks about a failure just seen, or says how to ask.
                     let ask = match ask.is_empty() {
                         true if self.recent.last_failed() => navi::WHY_FAILED.to_string(),
                         true => {
                             println!("{}", navi::HELP);
+                            ended(0);
                             continue;
                         }
                         false => ask,
@@ -372,6 +382,7 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                     let home = std::env::var_os("HOME").map(PathBuf::from);
                     let Some(found) = found else {
                         eprintln!("{}", navi::NOT_INSTALLED);
+                        ended(127);
                         continue;
                     };
                     // NSH-19: once, so a sentence meant as a command is not a mystery.
@@ -380,11 +391,15 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                         eprintln!("{}", navi::SENTENCE_NOTE);
                     }
                     match navi::ask(&found, path.as_deref(), &ask, &dir, &self.session, &self.recent.describe(home.as_deref())) {
-                        Ok(suggested) => {
+                        Ok((status, suggested)) => {
                             self.recent.clear();
                             self.suggested = suggested;
+                            ended(status);
                         }
-                        Err(e) => eprintln!("neosh: could not start navi: {e}"),
+                        Err(e) => {
+                            eprintln!("neosh: could not start navi: {e}");
+                            ended(126);
+                        }
                     }
                 }
             }

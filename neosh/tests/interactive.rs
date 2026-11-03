@@ -10,6 +10,7 @@ const STAND_IN: &str = r#"#!/bin/sh
 { echo "ARGS: $*"; echo "PWD: $PWD"; echo "RECENT: $NAVI_RECENT"; [ -t 0 ] || echo "STDIN: $(cat)"; echo ---; } >> "$HOME/navi.log"
 case "$*" in *suggest*) echo 'echo suggested-ran' > "$NAVI_COMMAND_FILE" ;; esac
 echo "navi says hi"
+case "$*" in *"cannot answer"*) exit 3 ;; esac
 "#;
 
 struct Home(PathBuf);
@@ -222,4 +223,24 @@ fn history_is_as_long_as_histsize_and_histfilesize_say() {
     std::fs::write(home.0.join(".neosh_history"), &earlier).unwrap();
     home.run(&["exit"], &[("HISTFILESIZE", "-1")]);
     assert_eq!(std::fs::read_to_string(home.0.join(".neosh_history")).unwrap().lines().count(), 21, "below zero keeps all");
+}
+
+// NSH-28
+#[test]
+fn a_line_for_navi_sets_the_status_as_a_command_does() {
+    let home = Home::new("status");
+    let screen = home.run(
+        &["false", "? why", "echo after-answer $?", "? you cannot answer", "echo after-failure $?", "false", "?", "echo after-why $?", "true", "?", "echo after-help $?", "exit"],
+        &[],
+    );
+    let lines: Vec<&str> = screen.lines().map(str::trim).collect();
+    for want in ["after-answer 0", "after-failure 3", "after-why 0", "after-help 0"] {
+        assert!(lines.contains(&want), "{want}: {screen}");
+    }
+    // The prompt after an answer shows no failure from before it.
+    assert!(screen.contains("~/work 1 $ ? why"), "{screen}");
+    assert!(screen.contains("~/work $ echo after-answer"), "{screen}");
+    // With no navi to ask: 127, as a command not found.
+    let screen = home.run(&["PATH=/usr/bin:/bin", "? anyone", "echo none $?", "exit"], &[]);
+    assert!(screen.lines().any(|l| l.trim() == "none 127"), "{screen}");
 }

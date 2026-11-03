@@ -71,6 +71,9 @@ add the requirement there first.
 - [x] A command over several lines reaches navi with its breaks (` ↵ `),
       not run together; job control checked end to end. (NSH-6, NSH-3)
 - [x] `?` alone right after a failure asks navi why. (NSH-9)
+- [x] A `?` line sets `$?` and the prompt as a command does; `navi --once`
+      exits 130 when ^C stops it (it said 0), and the terminal tests now see
+      navi's real exit status, not `cat`'s. (NSH-28, CLI-38)
 - [x] `HISTSIZE` and `HISTFILESIZE`, 500 by default as in bash: brush let
       the history file grow forever. (NSH-27)
 - [x] `HISTCONTROL` and `HISTIGNORE`, which brush ignores: a line typed
