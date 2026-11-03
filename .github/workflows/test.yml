@@ -32,3 +32,21 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+  # neosh, the shell, is Rust.
+  neosh:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: neosh
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            neosh/target
+          key: neosh-${{ hashFiles('neosh/Cargo.lock') }}
+
+      - run: cargo test

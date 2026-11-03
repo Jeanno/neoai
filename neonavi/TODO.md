@@ -48,6 +48,11 @@ add the requirement there first.
       asking before an overwrite. (CLI-36, CLI-37)
 - [x] `/retry` the last prompt in place of its answer, on the model answering
       now, counted as asked again. (CLI-33, CLI-34, LED-17)
+- [x] `--once`, `--session NAME` and `NAVI_RECENT`, for a shell that asks
+      navi on its user's behalf. (CLI-38 to CLI-40)
+- [x] neosh: a bash-compatible shell in Rust with navi inside it; a sentence
+      or a `?` line goes to navi with the commands run before it.
+      (`neosh/spec.md` NSH-1 to NSH-10)
 - [x] Image and PDF input: `-a`, `/attach`, and Raycast's Ask About Selected
       Files; images go to the model, PDFs as text. (HAR-7, HAR-8, CLI-22,
       CLI-23, RAY-11)

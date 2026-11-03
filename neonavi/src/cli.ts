@@ -104,7 +104,7 @@ const HELP = [
 ].join('\n')
 
 const USAGE = [
-  'usage: navi [-p "what you want done"] [-a file]... [-r|--resume | -n|--new] [--model local|best|<provider>:<model>[,...]] [--max-steps N]',
+  'usage: navi [-p "what you want done"] [-a file]... [-r|--resume | -n|--new] [--once] [--session NAME] [--model local|best|<provider>:<model>[,...]] [--max-steps N]',
   '       navi setup [--check]',
   '       navi sessions [show [<directory>] | clear [<directory> | --all]]',
   '       navi serve [--port N] [--install | --uninstall]',
@@ -130,6 +130,8 @@ const ABOUT = [
   '  -a, --attach FILE  send an image, PDF or text file with the prompt; - sends what is piped in',
   '  -r, --resume       bare navi continues the saved conversation too',
   '  -n, --new          start with no conversation and save none; the saved one is left as it is',
+  '  --once             with -p on a terminal: answer, then exit rather than keep asking',
+  '  --session NAME     keep the conversation under NAME, from any directory',
   '  --model SPEC       use another model chain for this run',
   '  --max-steps N      model responses per turn (default 32)',
   'navi setup           choose models and keys; --check only reports',
@@ -921,6 +923,12 @@ async function main() {
   const n = takeFlag(argv, '-n', false)
   argv = n.rest
   const apart = fresh.value !== undefined || n.value !== undefined
+  // CLI-38, CLI-39: how a shell runs navi (NSH-5, NSH-7).
+  const onceFlag = takeFlag(argv, '--once', false)
+  argv = onceFlag.rest
+  const once = onceFlag.value !== undefined
+  const named = takeFlag(argv, '--session', true)
+  argv = named.rest
   const model = takeFlag(argv, '--model', true)
   argv = model.rest
   const attaching = takeAll(argv, ['-a', '--attach'])
@@ -932,9 +940,10 @@ async function main() {
   const maxSteps = steps.value === undefined ? DEFAULT_STEPS : Number(steps.value)
   const { prompt: first, stray } = promptFrom(argv)
   const badSteps = !Number.isInteger(maxSteps) || maxSteps < 1
-  if (stray.length || badSteps || (!first && !interactive) || (apart && resuming)) {
+  const clash = apart && resuming ? '--new and --resume: pick one' : apart && named.value !== undefined ? '--new and --session: pick one' : once && !first ? '--once needs -p' : named.value === '' ? '--session needs a name' : undefined
+  if (stray.length || badSteps || (!first && !interactive) || clash) {
     if (stray.length) console.error(`unexpected: ${stray.join(' ')}`)
-    else if (apart && resuming) console.error('--new and --resume: pick one')
+    else if (clash) console.error(clash)
     else if (badSteps) console.error(`not a step count: ${steps.value}`)
     console.error(USAGE)
     return 1
@@ -968,10 +977,11 @@ async function main() {
   for (const line of failedLines(failures)) console.error(dim(`· ${line}`))
 
   const cwd = process.cwd()
-  const file = sessionFile(cwd, homedir())
+  const file = named.value ? sessionFile(`session:${named.value}`, homedir()) : sessionFile(cwd, homedir())
   const anew = apart || startsFresh({ prompt: first, resume: resuming })
   const stored = anew ? [] : await loadSession(file)
-  if (stored.length) console.error(dim(`· continuing (${stored.length} messages)`))
+  // A shell asking each time (CLI-38) has no need to hear it.
+  if (stored.length && !once) console.error(dim(`· continuing (${stored.length} messages)`))
 
   let adding: Promise<void> = Promise.resolve()
   // The turn running now, which ^C stops (CLI-25).
@@ -1095,6 +1105,9 @@ async function main() {
   }
 
   /** One question in, one answer out. Returns whether the model said anything. */
+  // CLI-40: what the user ran in their shell, for the first turn only.
+  const recent = process.env.NAVI_RECENT?.trim()
+  let shellNote = recent ? `the user ran these in their shell since you last answered, oldest first, each with its directory and how it ended:\n${recent}` : undefined
   const turn = async (prompt: string, again?: { attachments: Attachment[]; model?: string }) => {
     let done: Extract<HarnessEvent, { type: 'done' }> | undefined
     const stop = new AbortController()
@@ -1106,7 +1119,9 @@ async function main() {
     const kept = await latestKept()
     spin.start()
     try {
-      for await (const e of session.turn(prompt, { attachments, signal: stop.signal, again: again?.model })) {
+      const told = shellNote
+      shellNote = undefined
+      for await (const e of session.turn(prompt, { attachments, signal: stop.signal, again: again?.model, note: told })) {
         if (e.type === 'done') done = e
         else if (e.type === 'text') {
           // Unstreamed text waits for the end; the spinner keeps going meanwhile.
@@ -1209,7 +1224,7 @@ async function main() {
     if (first) {
       const answered = await turn(first)
       if (answered) answeredHere++
-      if (!interactive) return answered ? 0 : 1
+      if (!interactive || once) return answered ? 0 : 1
     }
     for (;;) {
       // The marker gets a lighter background; bold is opened as part of the

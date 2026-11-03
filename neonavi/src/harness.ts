@@ -178,6 +178,8 @@ export interface Session {
       attachments?: Attachment[]
       /** The model whose answer this turn asks for again (LED-17). */
       again?: string
+      /** Told to the model before the prompt, as navi's note; not part of what was asked (CLI-40). */
+      note?: string
     },
   ) => AsyncIterable<HarnessEvent>
 }
@@ -241,7 +243,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
 
     async function* turn(
       prompt: string,
-      { signal, attachments, again }: { signal?: AbortSignal; attachments?: Attachment[]; again?: string } = {},
+      { signal, attachments, again, note }: { signal?: AbortSignal; attachments?: Attachment[]; again?: string; note?: string } = {},
     ): AsyncGenerator<HarnessEvent> {
       if (busy) throw new Error('a turn is already running in this session')
       busy = true
@@ -250,7 +252,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       if (signal?.aborted) onAbort()
       else signal?.addEventListener('abort', onAbort, { once: true })
       const events = channel<HarnessEvent>()
-      const work = run(prompt, attachments, stop.signal, events.push, again).then(events.close, events.fail)
+      const work = run(prompt, attachments, stop.signal, events.push, again, note).then(events.close, events.fail)
       try {
         yield* events
       } finally {
@@ -262,7 +264,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       }
     }
 
-    async function run(prompt: string, attachments: Attachment[] | undefined, signal: AbortSignal, emit: (e: HarnessEvent) => void, again?: string) {
+    async function run(prompt: string, attachments: Attachment[] | undefined, signal: AbortSignal, emit: (e: HarnessEvent) => void, again?: string, note?: string) {
       const started = Date.now()
       // LED-7, LED-13: the answer before, if recent enough to be what this turn is about, and what was asked for it.
       const recent = answered && started - answered.at < CORRECTION_WINDOW ? answered : undefined
@@ -286,7 +288,8 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       if (packed.compacted) emit({ type: 'compacted', messages: packed.compacted })
       // UND-7: what the user undid since, said before what they ask now.
       const undone = await takeNote(home, o.cwd).catch(() => undefined)
-      const sent: ModelMessage[] = [...packed.messages, { role: 'user', content: userContent(undone ? `${undone}\n\n${prompt}` : prompt, attachments) }]
+      const notes = [undone, note && `(navi: ${note})`].filter(Boolean).join('\n\n')
+      const sent: ModelMessage[] = [...packed.messages, { role: 'user', content: userContent(notes ? `${notes}\n\n${prompt}` : prompt, attachments) }]
       const recorder = makeRecorder(home, o.cwd, prompt, undefined, o.job)
 
       // A tool runs as soon as its call is parsed, which can be before the

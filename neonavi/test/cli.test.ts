@@ -11,12 +11,12 @@ const CLI = join(import.meta.dirname, '..', 'src', 'cli.ts')
 const TSX = join(import.meta.dirname, '..', '..', 'node_modules', '.bin', 'tsx')
 
 /** Runs navi as a user would, in a home of its own with no keys, stdin a pipe (never a terminal). */
-async function navi(args: string[], { config = {}, input = '', home, quiet = true }: { config?: object; input?: string; home?: string; quiet?: boolean } = {}) {
+async function navi(args: string[], { config = {}, input = '', home, quiet = true, env: extra = {} }: { config?: object; input?: string; home?: string; quiet?: boolean; env?: Record<string, string> } = {}) {
   home ??= await mkdtemp(join(tmpdir(), 'navi-cli-'))
   await mkdir(join(home, '.neoai'), { recursive: true })
   await writeFile(join(home, '.neoai', 'config.json'), JSON.stringify(config))
   // Only what running needs: no provider key may leak in from the real environment.
-  const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, NEOROUTER_QUIET: quiet ? '1' : undefined }
+  const env: Record<string, string | undefined> = { PATH: process.env.PATH, HOME: home, NEOROUTER_QUIET: quiet ? '1' : undefined, ...extra }
   const child = spawn(TSX, [CLI, ...args], { env, cwd: home })
   let stdout = ''
   let stderr = ''
@@ -168,8 +168,8 @@ async function naviOnTerminal(
   args: string[],
   lines: string[],
   config: object,
-  /** Called with all shown so far on each output, to type keys that are not a line. */
-  react?: (shown: string, type: (keys: string) => void) => void,
+  /** Called with all shown so far on each output, to type keys that are not a line; 'end' closes the input. */
+  react?: (shown: string, type: (keys: string) => void) => void | 'end',
   home?: string,
   extraEnv: Record<string, string> = {},
 ) {
@@ -183,7 +183,7 @@ async function naviOnTerminal(
   let prompts = 0
   child.stdout.on('data', (c) => {
     shown += c
-    react?.(shown, (keys) => child.stdin.write(keys))
+    if (react?.(shown, (keys) => child.stdin.write(keys)) === 'end') child.stdin.end()
     // One line per prompt shown, sent once it is.
     const seen = shown.split('navi>').length - 1
     while (prompts < seen) {
@@ -575,4 +575,40 @@ test('/save writes the last answer to a file, asking before it overwrites one', 
   assert.equal(await readFile(join(r.home, 'a.txt'), 'utf8'), 'It holds .neoai.\n')
   assert.match(r.shown, /Could not save to nope\/b\.txt: there is no such folder/)
   assert.match(r.shown, /\.neoai is a folder; give a file name\./)
+})
+
+// CLI-38: on a terminal, --once answers the -p prompt and exits instead of asking for more.
+test('--once answers on a terminal and gives the terminal back', { skip: process.platform !== 'darwin' }, async () => {
+  const fake = await fakeModel()
+  // Input closed once navi has left the terminal as it found it, so script(1) can finish.
+  const r = await naviOnTerminal(['--once', '-p', 'what is here'], [], fake.config, (shown) => (shown.includes('\x1b[?2004l') ? 'end' : undefined))
+  fake.close()
+  assert.equal(r.code, 0, JSON.stringify(r.shown))
+  assert.match(r.shown, /It holds \.neoai\./)
+  assert.doesNotMatch(r.shown, /navi>/)
+})
+
+// CLI-39, CLI-40: one conversation by name from any directory, told what the shell ran.
+test('--session keeps one conversation by name, and NAVI_RECENT is told before the prompt', async () => {
+  const fake = await fakeModel()
+  const home = await mkdtemp(join(tmpdir(), 'navi-cli-'))
+  assert.equal((await navi(['--session', 'sh1', '-p', 'what is here'], { config: fake.config, home })).code, 0)
+  const recent = '~/proj $ npm test (exit 1)'
+  const r = await navi(['--session', 'sh1', '-p', 'why did that fail'], { config: fake.config, home, quiet: false, env: { NAVI_RECENT: recent } })
+  assert.equal(r.code, 0, r.stderr)
+  assert.match(r.stderr, /· continuing \(4 messages\)/)
+  const asked = fake.bodies.at(-1).messages.filter((m: any) => m.role === 'user').at(-1).content
+  assert.equal(asked, `(navi: the user ran these in their shell since you last answered, oldest first, each with its directory and how it ended:\n${recent})\n\nwhy did that fail`)
+  // Kept by name: the directory's own conversation was never made.
+  assert.equal((await readdir(join(home, '.neoai', 'sessions'))).length, 1)
+  const plain = await navi(['-p', 'what is here'], { config: fake.config, home, quiet: false })
+  assert.doesNotMatch(plain.stderr, /continuing/)
+  // The ledger took what was asked, not the note.
+  const ledger = (await readFile(join(home, '.neoai', 'ledger.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l))
+  assert.equal(ledger[1].promptChars, 'why did that fail'.length)
+  const bad = await navi(['--once'], { config: fake.config, home })
+  const both = await navi(['--new', '--session', 'x', '-p', 'hi'], { config: fake.config, home })
+  fake.close()
+  assert.match(bad.stderr, /--once needs -p/)
+  assert.match(both.stderr, /--new and --session: pick one/)
 })

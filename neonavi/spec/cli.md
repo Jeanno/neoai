@@ -84,6 +84,17 @@
   exits 1; in interactive mode the loop continues.
 - CLI-13: History is saved after every turn, empty answer or not, except
   under `--new` (CLI-35).
+- CLI-38: `--once` with `-p` on a terminal answers that prompt and exits,
+  asking about commands and changes on the terminal as ever, instead of
+  going on to the `navi>` prompt. Without `-p` it is an error, with the
+  usage. (A shell runs navi this way: NSH-5.)
+- CLI-39: `--session <name>` keeps the conversation under that name instead
+  of the directory's: continued and saved there from whichever directory
+  navi is run in. With `--new` it is an error, with the usage.
+- CLI-40: `NAVI_RECENT` in the environment, when not empty, is what the
+  user ran in their shell since navi last answered, a command a line; the
+  model is told it before the prompt, as a note of navi's (`(navi: …)`), so
+  the ledger and the conversation's title take only what was asked.
 - CLI-35: `-n` or `--new` starts with no conversation and saves none: the
   directory's saved conversation is neither read nor changed, so a script's
   `navi -n -p "…"` never joins or alters the one you are having there. Undo
