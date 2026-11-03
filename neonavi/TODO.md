@@ -42,6 +42,8 @@ add the requirement there first.
 - [x] `/model` mid-session, without leaving the loop, and `/help`. (CLI-19 to CLI-21)
 - [x] `/copy` the last answer or one of its code blocks, to the system
       clipboard or over SSH the terminal's (OSC 52). (CLI-31, CLI-32)
+- [x] `/retry` the last prompt in place of its answer, on the model answering
+      now, counted as asked again. (CLI-33, CLI-34, LED-17)
 - [x] Image and PDF input: `-a`, `/attach`, and Raycast's Ask About Selected
       Files; images go to the model, PDFs as text. (HAR-7, HAR-8, CLI-22,
       CLI-23, RAY-11)

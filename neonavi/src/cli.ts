@@ -22,7 +22,7 @@ import { makeJobs, matches, serveToken, tailnetAddresses, titleOf, working, type
 import { LEVELS, notifyLevels, push, pushConfig, withLevels, type Level } from './push.ts'
 import { addFact, forgetFact, memoryFile, projectRoot, readMemory } from './memory.ts'
 import { SUGGEST_AFTER, suggestFacts } from './suggest.ts'
-import { listUndo, namer, redo, redoneLines, undo, undoneReport } from './undo.ts'
+import { listUndo, namer, redo, redoneLines, takeNote, undo, undoneReport } from './undo.ts'
 import { lastAnswerIn, pickCopy, toClipboard } from './copy.ts'
 import { wall } from './clock.ts'
 import { makeQuietNotify, needsYou, parseQuiet } from './quiet.ts'
@@ -95,6 +95,7 @@ const HELP = [
   "/undo              put back the files navi's last turn changed",
   '/redo              bring back what the last /undo put back',
   '/copy [code [n]]   copy the last answer, or its last (or n-th) code block',
+  '/retry             ask the last prompt again, on the model answering now',
   '/help              this list',
   '^C                 stop an answer; at an empty prompt, leave',
   'exit, quit         leave, maybe offering facts to remember',
@@ -1025,6 +1026,9 @@ async function main() {
   let session = (await harnessFor(chosen)).session(stored)
   // CLI-31: what /copy takes; a resumed conversation's own to begin with.
   let lastAnswer = lastAnswerIn(stored)
+  // CLI-33: the last turn of this run, to ask again; `changed` is its kept undo turn (CLI-34).
+  let lastTurn: { prompt: string; attachments: Attachment[]; before: typeof stored; changed?: string; model?: string } | undefined
+  const latestKept = async () => (await listUndo(homedir(), cwd).catch(() => []))[0]?.id
   // Answered turns in this run, for suggesting what to remember (MEM-20).
   let answeredHere = 0
 
@@ -1082,16 +1086,18 @@ async function main() {
   }
 
   /** One question in, one answer out. Returns whether the model said anything. */
-  const turn = async (prompt: string) => {
+  const turn = async (prompt: string, again?: { attachments: Attachment[]; model?: string }) => {
     let done: Extract<HarnessEvent, { type: 'done' }> | undefined
     const stop = new AbortController()
     running = stop
+    // Attachments go with the next prompt only (CLI-22, CLI-23); a retry sends its own.
+    const attachments = again ? again.attachments : pending
+    if (!again) pending = []
+    const before = session.history
+    const kept = await latestKept()
     spin.start()
     try {
-      // Attachments go with the next prompt only (CLI-22, CLI-23).
-      const attachments = pending
-      pending = []
-      for await (const e of session.turn(prompt, { attachments, signal: stop.signal })) {
+      for await (const e of session.turn(prompt, { attachments, signal: stop.signal, again: again?.model })) {
         if (e.type === 'done') done = e
         else if (e.type === 'text') {
           // Unstreamed text waits for the end; the spinner keeps going meanwhile.
@@ -1124,6 +1130,8 @@ async function main() {
       spin.stop()
     }
     endLine()
+    const changed = await latestKept()
+    lastTurn = { prompt, attachments, before, model: session.answered, ...(changed !== kept && { changed }) }
     // Saved even when the answer came out empty: the tool results are the part
     // worth carrying forward, and a follow-up is how you recover from a bad turn.
     await saveSession(file, done!.history, cwd)
@@ -1142,6 +1150,27 @@ async function main() {
     }
     console.error(dim('the model returned no answer; ask again'))
     return false
+  }
+
+  /** CLI-33, CLI-34: the last turn again, from the conversation as it was before it. */
+  const retry = async () => {
+    if (!lastTurn) {
+      console.error('Nothing to try again yet: ask something first.')
+      return false
+    }
+    const t = lastTurn
+    if (t.changed) {
+      if ((await listUndo(homedir(), cwd).catch(() => [])).some((k) => k.id === t.changed)) {
+        console.error('The last turn changed files: /undo them first, then /retry, so the second try starts from the same files.')
+        return false
+      }
+      // The undone turn is gone from the conversation, so nothing is told about it.
+      await takeNote(homedir(), cwd).catch(() => undefined)
+    }
+    session = (await harnessFor(answering)).session(t.before)
+    lastAnswer = lastAnswerIn(t.before)
+    console.error(dim(`· asking again on ${modelLabel(answering)}: ${t.prompt.length > 60 ? `${t.prompt.slice(0, 60)}…` : t.prompt}`))
+    return turn(t.prompt, { attachments: t.attachments, model: t.model })
   }
 
   try {
@@ -1181,6 +1210,9 @@ async function main() {
           const problem = await toClipboard(got.text)
           console.error(problem ?? dim(`· ${got.said}`))
         }
+      }
+      else if (command?.name === 'retry') {
+        if (await retry()) answeredHere++
       }
       else if (command?.name === 'attach' && !command.path) console.error('usage: /attach <file>')
       else if (command?.name === 'attach') {

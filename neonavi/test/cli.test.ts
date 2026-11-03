@@ -104,11 +104,14 @@ test('sessions with nothing saved says so', async () => {
 /** Its first step calls `tool`. With `hang`, each answer starts with "Part one." and never finishes until the client leaves. */
 async function fakeModel({ hang = false, tool = { name: 'list_dir', args: '{"path":"."}' } } = {}) {
   let calls = 0
+  const bodies: any[] = []
   const sse = (chunks: object[]) => chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('') + 'data: [DONE]\n\n'
   const server = createServer((req, res) => {
     if (req.url?.endsWith('/models')) return res.end(JSON.stringify({ data: [{ id: 'fake-1', context_length: 32000 }] }))
-    req.resume()
+    let body = ''
+    req.on('data', (c) => (body += c))
     req.on('end', () => {
+      bodies.push(JSON.parse(body))
       const step = calls++
       res.writeHead(200, { 'content-type': 'text/event-stream' })
       if (hang) return void res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'Part one.' } }] })}\n\n`)
@@ -127,6 +130,8 @@ async function fakeModel({ hang = false, tool = { name: 'list_dir', args: '{"pat
   return {
     config: { model: 'box:fake-1', custom: { box: { baseURL: url } } },
     steps: () => calls,
+    /** What each step was sent. */
+    bodies,
     close: () => (server.closeAllConnections(), server.close()),
   }
 }
@@ -485,4 +490,45 @@ test('/copy copies the last answer, and says there is none before one', { skip: 
   assert.ok(r.raw.includes(`\x1b]52;c;${Buffer.from('It holds .neoai.').toString('base64')}\x07`))
   assert.match(r.shown, /· copied the answer \(1 line\)/)
   assert.match(r.shown, /The last answer has no code block/)
+})
+
+// CLI-33, LED-17: asked again from the conversation as it was before, and counted as asked again.
+test('/retry asks the last prompt again in place of the turn that answered it', { skip: process.platform !== 'darwin' }, async () => {
+  const fake = await fakeModel()
+  const r = await naviOnTerminal([], ['/retry', 'what is here', '/retry', 'QUIT'], fake.config)
+  fake.close()
+  assert.equal(r.code, 0, JSON.stringify(r.shown))
+  assert.match(r.shown, /Nothing to try again yet: ask something first\./)
+  assert.match(r.shown, /· asking again on fake-1 on box: what is here/)
+  assert.equal(fake.steps(), 3)
+  // The second try never sees the first: one question, and no tool result from before.
+  const last = fake.bodies[2].messages
+  assert.deepEqual(last.map((m: any) => m.role), ['system', 'user'])
+  const [file] = await readdir(join(r.home, '.neoai', 'sessions'))
+  const saved = JSON.parse(await readFile(join(r.home, '.neoai', 'sessions', file), 'utf8'))
+  assert.deepEqual(saved.messages.map((m: any) => m.role), ['user', 'assistant'])
+  const lines = (await readFile(join(r.home, '.neoai', 'ledger.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l))
+  assert.equal(lines.length, 2)
+  assert.equal(lines[0].repeats, undefined)
+  assert.equal(lines[1].repeats, lines[0].model)
+  assert.equal(lines[1].aboutKind, lines[1].kind)
+})
+
+// CLI-34: a turn whose changes still stand is undone first, then tried again.
+test('/retry after a turn that changed files asks for /undo first', { skip: process.platform !== 'darwin' }, async () => {
+  const fake = await fakeModel({ tool: { name: 'write_file', args: JSON.stringify({ path: 'note.txt', content: 'first try\n' }) } })
+  let asked = 0
+  const r = await naviOnTerminal([], ['write a note', '/retry', '/undo', '/retry', 'QUIT'], { ...fake.config, approve: 'ask' }, (shown, type) => {
+    const seen = shown.split('[y/N]').length - 1
+    while (asked < seen) asked++, type('y\n')
+  })
+  fake.close()
+  assert.equal(r.code, 0, JSON.stringify(r.shown))
+  assert.match(r.shown, /The last turn changed files: \/undo them first, then \/retry/)
+  assert.match(r.shown, /· asking again on/)
+  // Undone, and the second try (which only answers) left it so.
+  await assert.rejects(stat(join(r.home, 'note.txt')))
+  assert.equal(fake.steps(), 3)
+  // UND-7 does not tell the second try about a turn it never saw.
+  assert.doesNotMatch(JSON.stringify(fake.bodies[2].messages), /undid|undone/i)
 })

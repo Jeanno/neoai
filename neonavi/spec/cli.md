@@ -88,8 +88,8 @@
 
 - CLI-19: At the `navi>` prompt, a line that is exactly `/model`, or starts
   with `/model ` or `/attach `, or is `/help`, `/undo` (UND-4), `/redo`
-  (UND-14), `/copy` or starts with `/copy ` (CLI-31), is a command, not a
-  prompt.
+  (UND-14), `/copy` or starts with `/copy ` (CLI-31), or is `/retry`
+  (CLI-33), is a command, not a prompt.
 - CLI-20: `/model` prints the model answering, as SET-1 words it, and the
   saved chain, with the session's own when `--model` or an earlier `/model`
   set one. `/model <spec>` takes what `--model` takes and switches to it for
@@ -108,6 +108,19 @@
   xsel on Linux, clip on Windows. Over SSH it is the terminal's own, through
   OSC 52, so the copy lands on the computer the user sits at. With none of
   these it says no clipboard was found.
+- CLI-33: `/retry` asks the last prompt of this run again, with the files
+  attached to it, in place of the turn that answered it: the conversation
+  goes back to how it was before that turn, so the answer it replaces is
+  never seen again by the model. It answers on the model answering now, so
+  `/model best` then `/retry` asks the better model. Shell commands the turn
+  ran are not undone and run again only if the model asks, and ask as
+  before. A turn stopped with ^C or with no answer can be retried too.
+- CLI-34: When the turn to retry changed files that are still as it left
+  them (UND-1), `/retry` does nothing and says to `/undo` first, so the
+  second try starts from the files the first one found. After that undo,
+  the next turn is not told about it (UND-7), as the turn it undid is gone
+  from the conversation. With no turn yet in this run (a `--resume`d
+  conversation's turns included), it says there is nothing to try again.
 - CLI-23: `/attach <file>` attaches a file to the next prompt (HAR-7); it may
   be given more than once. A path may be quoted, or have its spaces escaped
   as a terminal's drag and drop writes them. A file that cannot be attached

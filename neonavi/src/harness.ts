@@ -164,12 +164,22 @@ export type HarnessEvent =
 export interface Session {
   /** The conversation so far, updated when each turn ends. */
   readonly history: ModelMessage[]
+  /** The model whose answer ends the conversation, when the last turn gave one (LED-7). */
+  readonly answered?: string
   /**
    * Runs one prompt through the step loop. Aborting the signal, or leaving
    * the loop early, stops the turn and keeps what was said so far. One turn
    * at a time.
    */
-  turn: (prompt: string, o?: { signal?: AbortSignal; attachments?: Attachment[] }) => AsyncIterable<HarnessEvent>
+  turn: (
+    prompt: string,
+    o?: {
+      signal?: AbortSignal
+      attachments?: Attachment[]
+      /** The model whose answer this turn asks for again (LED-17). */
+      again?: string
+    },
+  ) => AsyncIterable<HarnessEvent>
 }
 
 export interface Harness {
@@ -231,7 +241,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
 
     async function* turn(
       prompt: string,
-      { signal, attachments }: { signal?: AbortSignal; attachments?: Attachment[] } = {},
+      { signal, attachments, again }: { signal?: AbortSignal; attachments?: Attachment[]; again?: string } = {},
     ): AsyncGenerator<HarnessEvent> {
       if (busy) throw new Error('a turn is already running in this session')
       busy = true
@@ -240,7 +250,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       if (signal?.aborted) onAbort()
       else signal?.addEventListener('abort', onAbort, { once: true })
       const events = channel<HarnessEvent>()
-      const work = run(prompt, attachments, stop.signal, events.push).then(events.close, events.fail)
+      const work = run(prompt, attachments, stop.signal, events.push, again).then(events.close, events.fail)
       try {
         yield* events
       } finally {
@@ -252,7 +262,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       }
     }
 
-    async function run(prompt: string, attachments: Attachment[] | undefined, signal: AbortSignal, emit: (e: HarnessEvent) => void) {
+    async function run(prompt: string, attachments: Attachment[] | undefined, signal: AbortSignal, emit: (e: HarnessEvent) => void, again?: string) {
       const started = Date.now()
       // LED-7, LED-13: the answer before, if recent enough to be what this turn is about, and what was asked for it.
       const recent = answered && started - answered.at < CORRECTION_WINDOW ? answered : undefined
@@ -542,7 +552,10 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           outcome: stopped ? 'stopped' : text.trim() ? 'answered' : failed ? 'error' : 'empty',
           kind,
           ...(escalated && { escalated }),
-          ...(recent && readsAsCorrection(prompt)
+          // LED-17: asked again outright, whatever the prompt reads as.
+          ...(again
+            ? { repeats: again, aboutKind: kind }
+            : recent && readsAsCorrection(prompt)
             ? { corrects: recent.model, ...about }
             : recent && readsAsRepeat(prompt, before.text) && { repeats: recent.model, ...about }),
           ...(done.cut && { cut: true as const }),
@@ -559,6 +572,9 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
     return {
       get history() {
         return history
+      },
+      get answered() {
+        return answered?.model
       },
       turn,
     }

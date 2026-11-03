@@ -62,6 +62,9 @@ what was said.
   "fix the signup bug") is not. A turn that reads as a correction (LED-7) is
   recorded as that instead; navi's own notes in the conversation are not
   taken for what was asked; the first turn of a conversation repeats nothing.
+- LED-17: A turn asked again with `/retry` (CLI-33) records `repeats`: the
+  model whose answer it replaces, with `aboutKind` that turn's kind, however
+  its prompt reads.
 - LED-14: `navi stats` shows, for a model whose answers were asked for again,
   their share of its answers (`25% asked again`).
 - LED-15: A turn that corrects or repeats (LED-7, LED-13) also records
