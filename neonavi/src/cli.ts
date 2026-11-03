@@ -23,7 +23,7 @@ import { LEVELS, notifyLevels, push, pushConfig, withLevels, type Level } from '
 import { addFact, forgetFact, memoryFile, projectRoot, readMemory } from './memory.ts'
 import { SUGGEST_AFTER, suggestFacts } from './suggest.ts'
 import { listUndo, namer, redo, redoneLines, takeNote, undo, undoneReport } from './undo.ts'
-import { lastAnswerIn, pickCopy, pickSave, toClipboard } from './copy.ts'
+import { lastAnswerIn, pickCopy, pickSave, suggestedCommand, toClipboard } from './copy.ts'
 import { wall } from './clock.ts'
 import { makeQuietNotify, needsYou, parseQuiet } from './quiet.ts'
 import { makeSchedules, nextText, parseDays, parseEvery, runMarks, whenText } from './schedules.ts'
@@ -1107,7 +1107,15 @@ async function main() {
   /** One question in, one answer out. Returns whether the model said anything. */
   // CLI-40: what the user ran in their shell, for the first turn only.
   const recent = process.env.NAVI_RECENT?.trim()
-  let shellNote = recent ? `the user ran these in their shell since you last answered, oldest first, each with its directory and how it ended:\n${recent}` : undefined
+  // CLI-41: and that a command it suggests lands at their prompt.
+  const commandFile = process.env.NAVI_COMMAND_FILE?.trim()
+  let shellNote =
+    [
+      recent && `the user ran these in their shell since you last answered, oldest first, each with its directory and how it ended:\n${recent}`,
+      commandFile && 'you are asked from their shell: when the answer is a command for them to run, end with it alone in a ```sh block, and the shell will put it at their prompt for them to run or change',
+    ]
+      .filter(Boolean)
+      .join('; ') || undefined
   const turn = async (prompt: string, again?: { attachments: Attachment[]; model?: string }) => {
     let done: Extract<HarnessEvent, { type: 'done' }> | undefined
     const stop = new AbortController()
@@ -1224,6 +1232,10 @@ async function main() {
     if (first) {
       const answered = await turn(first)
       if (answered) answeredHere++
+      if (commandFile && answered) {
+        const command = suggestedCommand(lastAnswer ?? '')
+        if (command) await writeFile(commandFile, `${command}\n`).catch((e) => console.error(dim(`· could not hand the command to the shell: ${(e as Error).message}`)))
+      }
       if (!interactive || once) return answered ? 0 : 1
     }
     for (;;) {

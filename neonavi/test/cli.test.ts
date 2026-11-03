@@ -102,7 +102,7 @@ test('sessions with nothing saved says so', async () => {
  * steps: a list_dir call first, then a plain answer.
  */
 /** Its first step calls `tool`. With `hang`, each answer starts with "Part one." and never finishes until the client leaves. */
-async function fakeModel({ hang = false, tool = { name: 'list_dir', args: '{"path":"."}' } } = {}) {
+async function fakeModel({ hang = false, tool = { name: 'list_dir', args: '{"path":"."}' }, answer = 'It holds .neoai.' } = {}) {
   let calls = 0
   const bodies: any[] = []
   const sse = (chunks: object[]) => chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join('') + 'data: [DONE]\n\n'
@@ -121,7 +121,7 @@ async function fakeModel({ hang = false, tool = { name: 'list_dir', args: '{"pat
               { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c1', type: 'function', function: { name: tool.name, arguments: tool.args } }] } }] },
               { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
             ])
-          : sse([{ choices: [{ delta: { content: 'It holds .neoai.' } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }]),
+          : sse([{ choices: [{ delta: { content: answer } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }]),
       )
     })
   })
@@ -586,6 +586,25 @@ test('--once answers on a terminal and gives the terminal back', { skip: process
   assert.equal(r.code, 0, JSON.stringify(r.shown))
   assert.match(r.shown, /It holds \.neoai\./)
   assert.doesNotMatch(r.shown, /navi>/)
+})
+
+// CLI-41: the command an answer ends with, handed to the shell that asked.
+test('NAVI_COMMAND_FILE gets the one-line command the answer ends with, and the model is told it will', async () => {
+  const fake = await fakeModel({ answer: 'Use du:\n\n```sh\n$ du -sh * | sort -h\n```' })
+  const home = await mkdtemp(join(tmpdir(), 'navi-cli-'))
+  const file = join(home, 'command')
+  const r = await navi(['-n', '-p', 'biggest folders here'], { config: fake.config, home, env: { NAVI_COMMAND_FILE: file } })
+  assert.equal(r.code, 0, r.stderr)
+  assert.equal(await readFile(file, 'utf8'), 'du -sh * | sort -h\n')
+  const asked = fake.bodies.at(-1).messages.filter((m: any) => m.role === 'user').at(-1).content
+  assert.match(asked, /^\(navi: you are asked from their shell: .*```sh block.*\)\n\nbiggest folders here$/s)
+  fake.close()
+  // No command, no file.
+  const plain = await fakeModel()
+  const none = join(home, 'none')
+  assert.equal((await navi(['-n', '-p', 'what is here'], { config: plain.config, home, env: { NAVI_COMMAND_FILE: none } })).code, 0)
+  plain.close()
+  await assert.rejects(stat(none))
 })
 
 // CLI-39, CLI-40: one conversation by name from any directory, told what the shell ran.

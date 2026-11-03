@@ -53,6 +53,8 @@ add the requirement there first.
 - [x] neosh: a bash-compatible shell in Rust with navi inside it; a sentence
       or a `?` line goes to navi with the commands run before it.
       (`neosh/spec.md` NSH-1 to NSH-10)
+- [x] neosh puts the command navi suggests at the next prompt, for Enter to
+      run. (NSH-11, CLI-41)
 - [x] Image and PDF input: `-a`, `/attach`, and Raycast's Ask About Selected
       Files; images go to the model, PDFs as text. (HAR-7, HAR-8, CLI-22,
       CLI-23, RAY-11)

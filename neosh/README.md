@@ -12,7 +12,9 @@ goes to navi instead, which knows what you have just been running.
 
 navi is told the commands you ran since it last answered, with where they ran
 and how they ended, and answers in your terminal, in the shell's directory,
-asking before it changes anything. Start a line with `?` to make sure it goes
+asking before it changes anything. When the answer is a command to run,
+the next prompt starts with it typed out: press Enter to run it, change it
+first, or clear it with ^C. Start a line with `?` to make sure it goes
 to navi (`? ls or exa`); `?` alone says how. A typo such as `gti status`
 stays `command not found`: a line goes to navi only when it reads as a
 sentence and its first word is no command, or when it asks (`what is using

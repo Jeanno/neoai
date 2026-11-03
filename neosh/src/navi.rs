@@ -111,12 +111,14 @@ pub const NOT_INSTALLED: &str = "\
 neosh: navi is not installed, so there is no one to ask.
 Install it: curl -fsSL https://raw.githubusercontent.com/Jeanno/neoai/master/neonavi/install.sh | sh";
 
-/// NSH-5, NSH-7: navi's answer in the terminal, in `dir`, in this session's
-/// conversation; false when navi could not be started.
+/// NSH-5, NSH-7, NSH-11: navi's answer in the terminal, in `dir`, in this
+/// session's conversation, and the command it suggests, if any.
 /// `navi` is the program the shell found on its own `$PATH`, which is passed on too.
-pub fn ask(navi: &Path, path: Option<&str>, prompt: &str, dir: &Path, session: &str, recent: &str) -> Result<i32, std::io::Error> {
+pub fn ask(navi: &Path, path: Option<&str>, prompt: &str, dir: &Path, session: &str, recent: &str) -> Result<Option<String>, std::io::Error> {
+    let handed = std::env::temp_dir().join(format!("{session}-command"));
+    let _ = std::fs::remove_file(&handed);
     let mut command = Command::new(navi);
-    command.args(["--once", "--session", session, "-p", prompt]).current_dir(dir);
+    command.args(["--once", "--session", session, "-p", prompt]).current_dir(dir).env("NAVI_COMMAND_FILE", &handed);
     if let Some(path) = path {
         command.env("PATH", path);
     }
@@ -125,8 +127,16 @@ pub fn ask(navi: &Path, path: Option<&str>, prompt: &str, dir: &Path, session: &
     } else {
         command.env_remove("NAVI_RECENT");
     }
-    let status = command.status()?;
-    Ok(status.code().unwrap_or(130))
+    command.status()?;
+    let suggested = std::fs::read_to_string(&handed).ok();
+    let _ = std::fs::remove_file(&handed);
+    Ok(suggested.and_then(|s| suggestion(&s)))
+}
+
+/// NSH-11: what navi handed back, as one line to put at the prompt; or nothing.
+pub fn suggestion(handed: &str) -> Option<String> {
+    let line = handed.trim_end_matches(['\n', '\r']).trim();
+    (!line.is_empty() && !line.contains(['\n', '\r'])).then(|| line.to_string())
 }
 
 #[cfg(test)]
@@ -172,6 +182,14 @@ mod tests {
         // Not a word first.
         assert_eq!(classify("./run the tests now", known), Line::Shell);
         assert_eq!(classify("-x is a flag here", known), Line::Shell);
+    }
+
+    // NSH-11
+    #[test]
+    fn a_suggestion_is_one_line_or_nothing() {
+        assert_eq!(suggestion("du -sh * | sort -h\n"), Some("du -sh * | sort -h".into()));
+        assert_eq!(suggestion("  \n"), None);
+        assert_eq!(suggestion("cd x\nmake\n"), None);
     }
 
     // NSH-6

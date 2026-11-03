@@ -52,6 +52,11 @@ hands a line to another shell. What neosh adds is below.
 - NSH-9: `?` alone says how to ask navi. With no `navi` on `$PATH`, a line
   for navi says so and how to install it, and runs nothing.
 
+- NSH-11: When navi's answer ends with a command to run (CLI-41), the next
+  prompt starts with it typed out, the cursor at its end: Enter runs it, as
+  if typed, and it can be changed first or cleared with ^C. neosh never runs
+  it by itself.
+
 ## The prompt
 
 - NSH-10: The prompt is the directory, `~` for home, and `$` (`#` as root),

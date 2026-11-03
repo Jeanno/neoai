@@ -4,7 +4,7 @@ import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { commandFrom } from '../src/args.ts'
-import { clipboardCommands, codeBlocks, lastAnswerIn, pickCopy, toClipboard, pickSave } from '../src/copy.ts'
+import { clipboardCommands, codeBlocks, lastAnswerIn, pickCopy, toClipboard, pickSave, suggestedCommand } from '../src/copy.ts'
 
 const answer = 'Install it:\n\n```sh\nnpm i -g neoai\n```\n\nThen:\n\n~~~\nnavi setup\nnavi\n~~~\n'
 
@@ -92,4 +92,18 @@ test('pickSave takes what /copy would, a path after it, and ends with one newlin
   assert.match((pickSave(answer, 'code 3 x.sh') as any).problem, /has 2 code blocks/)
   assert.equal((pickSave(undefined, 'x.md') as any).problem, 'There is no answer to save yet.')
   assert.match((pickSave('no code', 'code x.sh') as any).problem, /\/save <file> saves all of it/)
+})
+
+// CLI-41
+test('the command for the shell is the last code block, when it is shell and one line', () => {
+  assert.equal(suggestedCommand('Run:\n\n```bash\n$ lsof -i :3000\n```'), 'lsof -i :3000')
+  assert.equal(suggestedCommand('```\ngit status\n```\nor\n```console\ngit log -1\n```'), 'git log -1')
+  assert.equal(suggestedCommand('```Shell\n  ls -la  \n\n```'), 'ls -la')
+  // Not a shell block, not one line, a comment, or no block at all.
+  assert.equal(suggestedCommand('```python\nprint(1)\n```'), undefined)
+  assert.equal(suggestedCommand('```sh\ncd x\nmake\n```'), undefined)
+  assert.equal(suggestedCommand('```sh\n# nothing to run\n```'), undefined)
+  assert.equal(suggestedCommand('Just use ls.'), undefined)
+  // The last block decides, even when an earlier one is shell.
+  assert.equal(suggestedCommand('```sh\nls\n```\n```json\n{}\n```'), undefined)
 })

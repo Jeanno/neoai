@@ -141,13 +141,15 @@ struct WithNavi<IB: InputBackend> {
     recent: navi::Recent,
     /// The line handed to the shell last, and where, to learn how it ended (NSH-6).
     handed: Option<(String, PathBuf)>,
+    /// What navi suggested running, for the next prompt (NSH-11).
+    suggested: Option<String>,
     session: String,
 }
 
 impl<IB: InputBackend> WithNavi<IB> {
     fn new(inner: IB) -> Self {
         let started = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        Self { inner, recent: navi::Recent::default(), handed: None, session: format!("neosh-{started}-{}", std::process::id()) }
+        Self { inner, recent: navi::Recent::default(), handed: None, suggested: None, session: format!("neosh-{started}-{}", std::process::id()) }
     }
 }
 
@@ -161,6 +163,11 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             }
             let again = InteractivePrompt { prompt: prompt.prompt.clone(), alt_side_prompt: prompt.alt_side_prompt.clone(), continuation_prompt: prompt.continuation_prompt.clone() };
             drop(guard.take());
+            // NSH-11: ready to run with Enter, change, or clear with ^C.
+            if let Some(command) = self.suggested.take() {
+                let end = command.len();
+                self.inner.set_read_buffer(command, end);
+            }
             let read = self.inner.read_line(shell, again)?;
             let ReadResult::Input(line) = read else { return Ok(read) };
             let mut guard = shell.try_lock().ok();
@@ -192,7 +199,10 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                         continue;
                     };
                     match navi::ask(&found, path.as_deref(), &ask, &dir, &self.session, &self.recent.describe(home.as_deref())) {
-                        Ok(_) => self.recent.clear(),
+                        Ok(suggested) => {
+                            self.recent.clear();
+                            self.suggested = suggested;
+                        }
                         Err(e) => eprintln!("neosh: could not start navi: {e}"),
                     }
                 }

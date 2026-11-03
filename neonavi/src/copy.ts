@@ -3,17 +3,32 @@ import { unshell } from './args.ts'
 
 /** The fenced code blocks of an answer, without their fences (CLI-31). */
 export function codeBlocks(text: string): string[] {
-  const out: string[] = []
+  return fenced(text).map((b) => b.body)
+}
+
+/** Each fenced block with the language its fence names, lowercased ('' for none). */
+function fenced(text: string): { lang: string; body: string }[] {
+  const out: { lang: string; body: string }[] = []
   const lines = text.split('\n')
   for (let i = 0; i < lines.length; i++) {
-    const open = /^\s*(`{3,}|~{3,})/.exec(lines[i])
+    const open = /^\s*(`{3,}|~{3,})\s*([^\s`]*)/.exec(lines[i])
     if (!open) continue
     const body: string[] = []
     // Closed by a fence of the same kind at least as long; an unclosed one runs to the end.
     while (++i < lines.length && !new RegExp(`^\\s*${open[1][0] === '`' ? '`' : '~'}{${open[1].length},}\\s*$`).test(lines[i])) body.push(lines[i])
-    out.push(body.join('\n'))
+    out.push({ lang: open[2].toLowerCase(), body: body.join('\n') })
   }
   return out
+}
+
+/** CLI-41: the one-line shell command an answer ends with, for the user's prompt; or none. */
+export function suggestedCommand(text: string): string | undefined {
+  const last = fenced(text).at(-1)
+  if (!last || !['', 'sh', 'bash', 'zsh', 'shell', 'console', 'shell-session'].includes(last.lang)) return
+  const lines = last.body.split('\n').map((l) => l.trim()).filter(Boolean)
+  if (lines.length !== 1) return
+  const command = lines[0].replace(/^\$\s+/, '')
+  return command && !command.startsWith('#') ? command : undefined
 }
 
 /** What `/copy [code [n]]` takes from the last answer, with what to say; or why nothing (CLI-31). */

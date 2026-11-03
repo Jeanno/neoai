@@ -387,7 +387,9 @@ directory's, so scripts can `navi -n -p "…"` without joining yours),
 asked from), `--once` (with `-p` on a terminal: answer, then exit instead of
 staying in the loop), `--max-steps N` (default 32). A program that runs navi
 for its user, as [neosh](../neosh/README.md) does, can put what they did
-before in `NAVI_RECENT`; navi is told it ahead of the prompt (CLI-38 to CLI-40).
+before in `NAVI_RECENT`; navi is told it ahead of the prompt. With
+`NAVI_COMMAND_FILE` set, a one-line command the answer ends with is written
+to that file, for the shell to put at its prompt (CLI-38 to CLI-41).
 
 Prompts leave the machine only for a provider or custom link; the backend that
 answered is announced on stderr every run.

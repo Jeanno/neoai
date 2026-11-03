@@ -95,6 +95,12 @@
   user ran in their shell since navi last answered, a command a line; the
   model is told it before the prompt, as a note of navi's (`(navi: …)`), so
   the ledger and the conversation's title take only what was asked.
+- CLI-41: `NAVI_COMMAND_FILE` in the environment names a file for the
+  command the answer suggests, for a shell to put at its prompt. The model
+  is told so in the same note; when the answer's last code block is a shell
+  one (`sh`, `bash`, `zsh`, `shell`, `console` or untagged) holding one
+  command on one line, a leading `$ ` taken off, navi writes it there once it
+  has answered. Otherwise the file is left alone.
 - CLI-35: `-n` or `--new` starts with no conversation and saves none: the
   directory's saved conversation is neither read nor changed, so a script's
   `navi -n -p "…"` never joins or alters the one you are having there. Undo
