@@ -104,6 +104,15 @@ hands a line to another shell. What neosh adds is below.
 - NSH-13: History is kept between sessions in `~/.neosh_history`, or in the
   file `HISTFILE` names when it comes with the environment; ↑ and ^R find
   lines from earlier sessions, and `history` lists them as bash's does.
+- NSH-26: History keeps what bash's would, a line for navi too: with
+  `HISTCONTROL` holding `ignorespace` (or `ignoreboth`) a line typed with a
+  space first is not kept, so a secret can be kept out of
+  `~/.neosh_history`; `ignoredups` (or `ignoreboth`) drops a line the same
+  as the one before, and `erasedups` drops its earlier copies from what ↑
+  goes through (the history file keeps what it already has).
+  A line matching one of `HISTIGNORE`'s `:`-separated patterns (`*`, `?`,
+  `[…]`, and `&` for the line before) is not kept either. A line not kept
+  still runs, and is never written to the history file.
 - NSH-9: `?` alone says how to ask navi, unless the command just run
   failed: then it asks navi why, and how to fix it (NSH-20). With no `navi` on `$PATH`, a line
   for navi says so and how to install it, and runs nothing.

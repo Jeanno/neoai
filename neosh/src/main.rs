@@ -6,6 +6,7 @@
 
 mod bang;
 mod cd;
+mod histctl;
 mod navi;
 mod prompt;
 mod term;
@@ -164,13 +165,15 @@ struct WithNavi<IB: InputBackend> {
     suggested: Option<String>,
     /// A line not found as a command, to offer navi (NSH-23).
     missed: Option<String>,
+    /// The line brush adds to history as it runs it, and whether bash would keep it (NSH-26).
+    settle: Option<(String, bool)>,
     session: String,
 }
 
 impl<IB: InputBackend> WithNavi<IB> {
     fn new(inner: IB) -> Self {
         let started = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        Self { inner, recent: navi::Recent::default(), handed: None, piped: None, noted: false, took: None, suggested: None, missed: None, session: format!("neosh-{started}-{}", std::process::id()) }
+        Self { inner, recent: navi::Recent::default(), handed: None, piped: None, noted: false, took: None, suggested: None, missed: None, settle: None, session: format!("neosh-{started}-{}", std::process::id()) }
     }
 }
 
@@ -194,11 +197,18 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                 if let Some(history) = guard.as_mut().and_then(|s| s.history_mut()) {
                     let found = history.iter().filter(|i| i.command_line == ran).last().cloned();
                     if let Some(item) = found {
-                        let _ = history.update_by_id(item.id, brush_core::history::Item { command_line: typed, ..item });
+                        let _ = history.update_by_id(item.id, brush_core::history::Item { command_line: typed.trim().to_string(), ..item });
                     }
                 }
                 self.recent.clear();
                 self.suggested = navi::take_suggestion(&navi::command_file(&self.session));
+            }
+            // NSH-26: brush keeps every line; drop what bash would not have kept.
+            if let Some((line, keep)) = self.settle.take() {
+                let erase = guard.as_ref().is_some_and(|s| histctl::erases(s.env_str("HISTCONTROL").as_deref()));
+                if let Some(history) = guard.as_mut().and_then(|s| s.history_mut()) {
+                    settle(history, &line, keep, erase);
+                }
             }
             if let (Some((line, dir, at)), Some(s)) = (self.handed.take(), guard.as_ref()) {
                 let took = at.elapsed();
@@ -274,6 +284,11 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             // NSH-17: read each line, so `NEOSH_ASK=marked` at the prompt counts at once.
             let ask = navi::Ask::from_setting(guard.as_ref().and_then(|s| s.env_str("NEOSH_ASK")).as_deref());
             let dir = guard.as_ref().map(|s| s.working_dir().to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
+            // NSH-26: decided on the line as typed, its leading space and all.
+            let keep = guard.as_ref().is_none_or(|s| {
+                let previous = s.history().and_then(|h| h.iter().last().map(|i| i.command_line.clone()));
+                histctl::keeps(line.trim_end_matches('\n'), previous.as_deref(), s.env_str("HISTCONTROL").as_deref(), s.env_str("HISTIGNORE").as_deref())
+            });
             let what = navi::classify_in(&line, ask, |word| guard.as_mut().is_none_or(|s| is_command(s, word)), |word| navi::globs_a_file(word, &dir));
             match what {
                 navi::Line::Shell => {
@@ -284,6 +299,7 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                             let _ = std::io::stdout().flush();
                         }
                         self.handed = Some((line.trim().to_string(), dir, Instant::now()));
+                        self.settle = Some((line.trim().to_string(), keep));
                     }
                     return Ok(ReadResult::Input(line));
                 }
@@ -300,12 +316,14 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                     let _ = std::fs::remove_file(&file);
                     let ran = navi::piped_line(&command, &question, &found, &self.session, &self.recent.describe(home.as_deref()), &file);
                     self.piped = Some((ran.clone(), line.trim_end_matches('\n').to_string()));
+                    self.settle = Some((line.trim().to_string(), keep));
                     return Ok(ReadResult::Input(ran));
                 }
                 navi::Line::Navi(ask) => {
-                    // NSH-8: kept as typed.
+                    // NSH-8: kept as typed, if bash would keep it (NSH-26).
                     if let Some(s) = guard.as_mut() {
                         let _ = s.add_to_history(line.trim_end_matches('\n'));
+                        self.settle = Some((line.trim().to_string(), keep));
                     }
                     // Found as the shell finds programs, so `export PATH=…` here counts.
                     let found = guard.as_ref().and_then(|s| s.find_first_executable_in_path("navi"));
@@ -360,6 +378,20 @@ fn history_file(inherited: Option<std::ffi::OsString>, home: Option<std::ffi::Os
 }
 
 /// NSH-4: whether a word runs something: a keyword, alias, function, builtin or program.
+/// NSH-26: history put right once `line` is in it: dropped if not kept,
+/// and with `erase` its earlier copies dropped.
+fn settle(history: &mut brush_core::history::History, line: &str, keep: bool, erase: bool) {
+    let ids: Vec<_> = history.iter().filter(|i| i.command_line == line).map(|i| i.id).collect();
+    let dropped = match (keep, ids.split_last()) {
+        (false, Some((last, _))) => vec![*last],
+        (true, Some((_, earlier))) if erase => earlier.to_vec(),
+        _ => Vec::new(),
+    };
+    for id in dropped {
+        let _ = history.delete_item_by_id(id);
+    }
+}
+
 fn is_command<SE: brush_core::ShellExtensions>(shell: &mut brush_core::Shell<SE>, word: &str) -> bool {
     shell.is_keyword(word)
         || shell.aliases().contains_key(word)

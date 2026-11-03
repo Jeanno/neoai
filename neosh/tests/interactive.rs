@@ -189,3 +189,19 @@ fn history_expands_as_in_bash() {
     assert!(lines.iter().any(|l| l.ends_with("echo two") && l.starts_with(char::is_numeric)), "{screen}");
     assert!(!lines.iter().any(|l| l.ends_with("echo !$") && l.starts_with(char::is_numeric)), "{screen}");
 }
+
+// NSH-26
+#[test]
+fn history_keeps_what_bash_would() {
+    let home = Home::new("histctl");
+    let screen = home.run(
+        &["HISTCONTROL=ignoreboth", "echo a", "echo a", " echo secret", " ? secret question", "HISTIGNORE='ls*'", "ls -d /", "history", "exit"],
+        &[],
+    );
+    // Not kept is still run, or asked.
+    assert!(screen.lines().any(|l| l.trim() == "secret"), "{screen}");
+    assert!(home.log().contains("-p secret question"), "{}", home.log());
+    let saved = std::fs::read_to_string(home.0.join(".neosh_history")).unwrap();
+    let lines: Vec<&str> = saved.lines().filter(|l| !l.starts_with('#')).collect();
+    assert_eq!(lines, ["HISTCONTROL=ignoreboth", "echo a", "HISTIGNORE='ls*'", "history", "exit"], "{saved}");
+}
