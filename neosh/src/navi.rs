@@ -200,7 +200,11 @@ pub fn ask(navi: &Path, path: Option<&str>, prompt: &str, dir: &Path, session: &
     let handed = command_file(session);
     let _ = std::fs::remove_file(&handed);
     let mut command = Command::new(navi);
-    command.args(["--once", "--session", session, "-p", prompt]).current_dir(dir).env("NAVI_COMMAND_FILE", &handed);
+    command
+        .args(["--once", "--session", session, "-p", prompt])
+        .current_dir(dir)
+        .env("NAVI_COMMAND_FILE", &handed)
+        .env("NEOROUTER_SEEN", seen_file(session));
     if let Some(path) = path {
         command.env("PATH", path);
     }
@@ -218,6 +222,11 @@ pub fn command_file(session: &str) -> PathBuf {
     std::env::temp_dir().join(format!("{session}-command"))
 }
 
+/// NSH-21: where this session's last backend announcement is kept (MOD-28).
+pub fn seen_file(session: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("{session}-seen"))
+}
+
 /// The suggestion navi left in `file`, which is gone after.
 pub fn take_suggestion(file: &Path) -> Option<String> {
     let suggested = std::fs::read_to_string(file).ok();
@@ -231,8 +240,9 @@ pub fn piped_line(command: &str, question: &str, navi: &Path, session: &str, rec
     let ask = if question.is_empty() { PIPED_ASK } else { question };
     let recent = if recent.is_empty() { String::new() } else { format!("NAVI_RECENT={} ", quote(recent)) };
     format!(
-        "{{ {command}\n}} 2>&1 | {recent}NAVI_COMMAND_FILE={} {} --session {} -a - -p {}",
+        "{{ {command}\n}} 2>&1 | {recent}NAVI_COMMAND_FILE={} NEOROUTER_SEEN={} {} --session {} -a - -p {}",
         quote(&file.to_string_lossy()),
+        quote(&seen_file(session).to_string_lossy()),
         quote(&navi.to_string_lossy()),
         quote(session),
         quote(ask)
@@ -329,7 +339,11 @@ mod tests {
     #[test]
     fn the_piped_line_quotes_what_it_hands_navi() {
         let line = piped_line("npm test", "why's it red", Path::new("/bin/navi"), "neosh-1", "~ $ ls (ok)", Path::new("/tmp/c"));
-        assert_eq!(line, "{ npm test\n} 2>&1 | NAVI_RECENT='~ $ ls (ok)' NAVI_COMMAND_FILE='/tmp/c' '/bin/navi' --session 'neosh-1' -a - -p 'why'\\''s it red'");
+        let seen = seen_file("neosh-1");
+        assert_eq!(
+            line,
+            format!("{{ npm test\n}} 2>&1 | NAVI_RECENT='~ $ ls (ok)' NAVI_COMMAND_FILE='/tmp/c' NEOROUTER_SEEN='{}' '/bin/navi' --session 'neosh-1' -a - -p 'why'\\''s it red'", seen.display())
+        );
         assert!(piped_line("ls", "", Path::new("navi"), "s", "", Path::new("f")).ends_with(&format!("-p '{PIPED_ASK}'")));
     }
 

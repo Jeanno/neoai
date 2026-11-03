@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Candidate, Prefer, Resolution, Server } from './types.ts'
@@ -259,12 +260,25 @@ async function keylessResolution(
  * The caller never picked this model, so they are told which one answered —
  * once, on stderr, where it cannot corrupt piped stdout.
  */
-function announce(r: Resolved): void {
+export function announce(r: Pick<Resolved, 'backend' | 'modelId' | 'rung' | 'local' | 'coldStartMs' | 'replaced'>): void {
   if (process.env.NEOROUTER_QUIET) return
   const cold = r.coldStartMs ? `, ${(r.coldStartMs / 1000).toFixed(1)}s cold start` : ''
   const gone = r.replaced ? `; ${r.replaced} is gone` : ''
   const rung = r.rung === 'hosted' && r.local ? 'on this computer' : r.rung
-  console.error(`neorouter: ${r.backend} · ${r.modelId} (${rung}${cold}${gone})`)
+  const line = `neorouter: ${r.backend} · ${r.modelId} (${rung}${cold}${gone})`
+  // MOD-28: said again only when it changed since the last one there.
+  const seen = process.env.NEOROUTER_SEEN
+  if (seen) {
+    let last: string | undefined
+    try {
+      last = readFileSync(seen, 'utf8')
+    } catch {}
+    if (last === line) return
+    try {
+      writeFileSync(seen, line)
+    } catch {}
+  }
+  console.error(line)
 }
 
 // Keyed by preference: 'fast' and the default resolve to different models, so a

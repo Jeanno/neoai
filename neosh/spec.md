@@ -71,6 +71,9 @@ hands a line to another shell. What neosh adds is below.
   several lines is told on one, each line break shown as ` ↵ `.
 - NSH-7: One shell session is one conversation with navi, whichever
   directory it is asked from (CLI-39); a new neosh starts a new one.
+- NSH-21: Which backend and model answered is said with the first answer
+  of a session and again only when it changes (MOD-28): a hosted provider
+  taking over from a local model is always said.
 - NSH-8: A line sent to navi is kept in the shell's history as typed.
 - NSH-13: History is kept between sessions in `~/.neosh_history`, or in the
   file `HISTFILE` names when it comes with the environment; ↑ and ^R find

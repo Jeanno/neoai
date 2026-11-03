@@ -71,6 +71,8 @@ add the requirement there first.
 - [x] A command over several lines reaches navi with its breaks (` ↵ `),
       not run together; job control checked end to end. (NSH-6, NSH-3)
 - [x] `?` alone right after a failure asks navi why. (NSH-9)
+- [x] neosh names navi's backend once a session, and again when it
+      changes (`NEOROUTER_SEEN`). (NSH-21, MOD-28)
 - [x] `neosh/install.sh`, local or through curl, never touching the login
       shell. (NSH-14)
 - [x] Image and PDF input: `-a`, `/attach`, and Raycast's Ask About Selected

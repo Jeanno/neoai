@@ -123,3 +123,9 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
   caller names none, and is itself held to the cap.
 
 ## Open
+- MOD-28: With `NEOROUTER_SEEN` naming a file, the announcement (CLI-15)
+  is made only when it differs from the last one written there, and is then
+  written there: a caller that asks many times, as a shell does, hears which
+  backend answered when it changes (the model, the rung, REMOTE, a cold
+  start), not every time. An unreadable or unwritable file announces as
+  without one. `NEOROUTER_QUIET` still says nothing at all.

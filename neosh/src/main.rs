@@ -168,6 +168,14 @@ impl<IB: InputBackend> WithNavi<IB> {
     }
 }
 
+// The session's files go with it.
+impl<IB: InputBackend> Drop for WithNavi<IB> {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(navi::seen_file(&self.session));
+        let _ = std::fs::remove_file(navi::command_file(&self.session));
+    }
+}
+
 impl<IB: InputBackend> InputBackend for WithNavi<IB> {
     fn read_line(&mut self, shell: &ShellRef<impl brush_core::ShellExtensions>, prompt: InteractivePrompt) -> Result<ReadResult, ShellError> {
         loop {

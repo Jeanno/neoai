@@ -27,7 +27,8 @@ why and how to fix it; otherwise it says how to ask. A typo such as `gti status`
 stays `command not found`: a line goes to navi only when it reads as a
 sentence and its first word is no command, or when it asks (`what is using
 port 3000`, `find the big files?`). All of a shell's conversation with navi
-is one session, whichever directory you ask from.
+is one session, whichever directory you ask from; which model answers is
+said with its first answer, and again only when it changes.
 
 If a sentence of yours should have been a command, set `NEOSH_ASK=marked`
 (in `~/.neoshrc` or at the prompt) and only `?` lines and `| ?` go to navi;
