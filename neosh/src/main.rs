@@ -203,10 +203,14 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             let ours = guard.as_ref().filter(|s| s.env_str("PS1").as_deref() == Some(prompt::DEFAULT_PS1)).map(|s| {
                 let dir = s.working_dir().to_path_buf();
                 let home = std::env::var_os("HOME").map(PathBuf::from);
+                let branch = prompt::branch(&dir);
                 prompt::render(&prompt::Parts {
                     dir: &dir,
                     home: home.as_deref(),
-                    branch: prompt::branch(&dir),
+                    // NSH-22: asked only inside a repository.
+                    changed: branch.is_some()
+                        && s.find_first_executable_in_path("git").is_some_and(|git| prompt::changed(&git, &dir, std::time::Duration::from_millis(200))),
+                    branch,
                     status: s.last_exit_status(),
                     took: self.took,
                     root: s.env_str("EUID").as_deref() == Some("0"),

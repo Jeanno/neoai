@@ -96,6 +96,11 @@ hands a line to another shell. What neosh adds is below.
   `.git` without running git. After a command that failed, it shows the
   status before the `$` (`~/proj main 1 $`), in red. Colour is left out
   when `NO_COLOR` is set.
+- NSH-22: When files git tracks have changes, staged or not, a `*` follows
+  the branch (`~/proj main* $`). neosh asks git (`git status`, taking no
+  locks, so it never gets in the way of a git command running beside it);
+  with no git on `$PATH`, or no answer within a fifth of a second, the `*`
+  is left out and the prompt is not held up. Untracked files are no change.
 - NSH-15: A command that took 5 seconds or more shows how long, in the next
   prompt before any status (`~/proj main 1m 4s 1 $`), and in what navi is
   told of it (`~/proj $ cargo build (exit 101, took 1m 4s)`).
@@ -110,7 +115,6 @@ hands a line to another shell. What neosh adds is below.
 
 ## Open
 
-- Whether the git tree has changes, which needs reading the index.
 - Telling navi a failed command's output without `| ?`: commands write
   straight to the terminal, so neosh sees only the status.
 - A prebuilt binary, so installing needs no Rust.
