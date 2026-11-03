@@ -68,3 +68,6 @@ installer ends by saying how, for when you are ready.
 ```bash
 cargo test
 ```
+
+`cargo test` also drives neosh on a pseudo-terminal (`tests/drive.py`, which
+needs python3) with a stand-in navi, end to end.

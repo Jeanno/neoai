@@ -150,6 +150,8 @@ struct WithNavi<IB: InputBackend> {
     took: Option<Duration>,
     /// The line run for `… | ?`, and as typed, to put right in history (NSH-16).
     piped: Option<(String, String)>,
+    /// Whether NSH-19's note has been said this session.
+    noted: bool,
     /// What navi suggested running, for the next prompt (NSH-11).
     suggested: Option<String>,
     session: String,
@@ -158,7 +160,7 @@ struct WithNavi<IB: InputBackend> {
 impl<IB: InputBackend> WithNavi<IB> {
     fn new(inner: IB) -> Self {
         let started = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        Self { inner, recent: navi::Recent::default(), handed: None, piped: None, took: None, suggested: None, session: format!("neosh-{started}-{}", std::process::id()) }
+        Self { inner, recent: navi::Recent::default(), handed: None, piped: None, noted: false, took: None, suggested: None, session: format!("neosh-{started}-{}", std::process::id()) }
     }
 }
 
@@ -270,6 +272,11 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
                         eprintln!("{}", navi::NOT_INSTALLED);
                         continue;
                     };
+                    // NSH-19: once, so a sentence meant as a command is not a mystery.
+                    if !self.noted && !line.trim_start().starts_with('?') {
+                        self.noted = true;
+                        eprintln!("{}", navi::SENTENCE_NOTE);
+                    }
                     match navi::ask(&found, path.as_deref(), &ask, &dir, &self.session, &self.recent.describe(home.as_deref())) {
                         Ok(suggested) => {
                             self.recent.clear();

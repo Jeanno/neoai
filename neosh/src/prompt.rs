@@ -49,9 +49,12 @@ pub fn long(took: std::time::Duration) -> Option<String> {
     }
 }
 
-/// The directory with `~` for home.
+/// The directory with `~` for home, also when `$HOME` is reached through a
+/// symlink (as `/var` is `/private/var` on macOS) and the directory is not.
 pub fn tilde(dir: &Path, home: Option<&Path>) -> String {
-    match home.and_then(|h| dir.strip_prefix(h).ok()) {
+    let under = |h: &Path| dir.strip_prefix(h).ok().map(Path::to_path_buf);
+    let rel = home.and_then(|h| under(h).or_else(|| std::fs::canonicalize(h).ok().and_then(|real| under(&real))));
+    match rel.as_deref() {
         Some(rel) if rel.as_os_str().is_empty() => "~".to_string(),
         Some(rel) => format!("~/{}", rel.display()),
         None => dir.display().to_string(),
@@ -99,6 +102,18 @@ mod tests {
         assert_eq!(render(&slow), "~/proj 1m 4s 1 $ ");
         let red = render(&Parts { status: 2, color: true, ..parts(dir) });
         assert!(red.contains("\x1b[31m2\x1b[0m"), "{red:?}");
+    }
+
+    // NSH-10
+    #[test]
+    fn home_is_tilde_through_a_symlink_too() {
+        let top = std::env::temp_dir().join(format!("neosh-tilde-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&top);
+        std::fs::create_dir_all(top.join("real/proj")).unwrap();
+        std::os::unix::fs::symlink(top.join("real"), top.join("link")).unwrap();
+        let real = std::fs::canonicalize(top.join("real/proj")).unwrap();
+        assert_eq!(tilde(&real, Some(&top.join("link"))), "~/proj");
+        std::fs::remove_dir_all(&top).unwrap();
     }
 
     // NSH-15

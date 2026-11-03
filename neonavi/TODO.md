@@ -64,6 +64,8 @@ add the requirement there first.
 - [x] `NEOSH_ASK=marked|off` when sentences should stay commands. (NSH-17)
 - [x] neosh tells the terminal its title and directory, and VS Code its
       command marks. (NSH-18)
+- [x] neosh says once a session that a sentence went to navi, and how not
+      to (NSH-19); end-to-end tests on a pseudo-terminal.
 - [x] `neosh/install.sh`, local or through curl, never touching the login
       shell. (NSH-14)
 - [x] Image and PDF input: `-a`, `/attach`, and Raycast's Ask About Selected

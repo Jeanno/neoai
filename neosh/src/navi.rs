@@ -175,6 +175,9 @@ commands you ran since it last answered and asks before it changes anything.
 Pipe output to it with | ? (npm test | ? why). NEOSH_ASK=marked asks only
 with ?, and NEOSH_ASK=off never.";
 
+/// What the first sentence sent to navi in a session says first (NSH-19).
+pub const SENTENCE_NOTE: &str = "\x1b[2m· a sentence goes to navi; `command <line>` runs it instead, and NEOSH_ASK=marked asks only with ?\x1b[0m";
+
 /// What a line for navi says when navi is not installed (NSH-9).
 pub const NOT_INSTALLED: &str = "\
 neosh: navi is not installed, so there is no one to ask.
