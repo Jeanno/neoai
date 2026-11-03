@@ -95,7 +95,7 @@
 - CLI-19: At the `navi>` prompt, a line that is exactly `/model`, or starts
   with `/model ` or `/attach `, or is `/help`, `/undo` (UND-4), `/redo`
   (UND-14), `/copy` or starts with `/copy ` (CLI-31), or is `/retry`
-  (CLI-33), is a command, not a prompt.
+  (CLI-33), or starts with `/save` (CLI-36), is a command, not a prompt.
 - CLI-20: `/model` prints the model answering, as SET-1 words it, and the
   saved chain, with the session's own when `--model` or an earlier `/model`
   set one. `/model <spec>` takes what `--model` takes and switches to it for
@@ -114,6 +114,15 @@
   xsel on Linux, clip on Windows. Over SSH it is the terminal's own, through
   OSC 52, so the copy lands on the computer the user sits at. With none of
   these it says no clipboard was found.
+- CLI-36: `/save <file>` writes navi's last answer, as `/copy` takes it, to
+  a file; `/save code <file>` and `/save code <n> <file>` write a code block
+  as `/copy code` does. The path is the directory's, with `~` for home and
+  quotes or backslashes as a dragged-in path has them (CLI-23). It ends
+  with one newline, and says what it saved, how many lines, and where.
+- CLI-37: A file that is already there is overwritten only when the user
+  says yes; a missing folder, a directory, or a write that fails is said,
+  and nothing is written. Saving is the user's own act, so it is not kept
+  for undo (UND-1).
 - CLI-33: `/retry` asks the last prompt of this run again, with the files
   attached to it, in place of the turn that answered it: the conversation
   goes back to how it was before that turn, so the answer it replaces is

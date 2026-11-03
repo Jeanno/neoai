@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { unshell } from './args.ts'
 
 /** The fenced code blocks of an answer, without their fences (CLI-31). */
 export function codeBlocks(text: string): string[] {
@@ -32,6 +33,17 @@ export function pickCopy(answer: string | undefined, args: string): { text: stri
   if (n > blocks.length) return { problem: `The last answer has ${blocks.length} code block${blocks.length === 1 ? '' : 's'}.` }
   const text = blocks[n - 1]
   return { text, said: `copied ${blocks.length === 1 ? 'the code block' : `code block ${n} of ${blocks.length}`} (${lines(text)})` }
+}
+
+/** CLI-36: what `/save [code [n]] <file>` writes, the path as typed, and what to say; or why nothing. */
+export function pickSave(answer: string | undefined, args: string): { text: string; path: string; said: string } | { problem: string } {
+  const code = /^code(?:\s+([1-9]\d*))?\s+(\S[\s\S]*)$/.exec(args.trim())
+  const path = unshell(code ? code[2] : args)
+  if (!path || (!code && /^code(\s+\d+)?$/.test(args.trim()))) return { problem: 'usage: /save <file>, /save code <file> or /save code <n> <file>' }
+  const got = pickCopy(answer, code ? `code ${code[1] ?? ''}` : '')
+  if ('problem' in got) return { problem: got.problem.replace('There is no answer to copy yet.', 'There is no answer to save yet.').replace('/copy copies', '/save <file> saves') }
+  const text = got.text.endsWith('\n') ? got.text.replace(/\n+$/, '\n') : `${got.text}\n`
+  return { text, path, said: got.said.replace(/^copied/, 'saved') }
 }
 
 /** The clipboard commands to try, in order, on this platform (CLI-32). */

@@ -24,7 +24,8 @@ prompt, `/attach <file>` (drag a file in) sends one with your next message,
 `/model <spec>` switches model for the rest of the conversation, `/copy`
 puts the last answer on the clipboard (`/copy code` just its last code
 block, `/copy code 2` the second; over SSH it goes to your own computer's
-clipboard), `/retry` asks your last message again in place of its answer
+clipboard), `/save notes.md` writes it to a file (`/save code run.sh` just
+its last code block; it asks before overwriting), `/retry` asks your last message again in place of its answer
 (after `/model best`, the better model answers; `/undo` first if it changed
 files), and `/help` lists these.
 

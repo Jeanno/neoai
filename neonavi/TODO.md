@@ -44,6 +44,8 @@ add the requirement there first.
       clipboard or over SSH the terminal's (OSC 52). (CLI-31, CLI-32)
 - [x] `navi -n -p "…"`: a question apart from the directory's conversation,
       which is neither read nor saved. (CLI-35)
+- [x] `/save [code [n]] <file>`: the last answer or a code block to a file,
+      asking before an overwrite. (CLI-36, CLI-37)
 - [x] `/retry` the last prompt in place of its answer, on the model answering
       now, counted as asked again. (CLI-33, CLI-34, LED-17)
 - [x] Image and PDF input: `-a`, `/attach`, and Raycast's Ask About Selected

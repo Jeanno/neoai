@@ -556,3 +556,23 @@ test('--new asks without the saved conversation and leaves it as it is', async (
   assert.equal(both.code, 1)
   assert.match(both.stderr, /--new and --resume: pick one\n.*usage: navi/s)
 })
+
+// CLI-36, CLI-37: saved, overwritten only on a yes, and a missing folder said.
+test('/save writes the last answer to a file, asking before it overwrites one', { skip: process.platform !== 'darwin' }, async () => {
+  const fake = await fakeModel()
+  let asked = 0
+  const r = await naviOnTerminal([], ['/save a.txt', 'what is here', '/save a.txt', '/save a.txt', '/save a.txt', '/save nope/b.txt', '/save .neoai', 'QUIT'], fake.config, (shown, type) => {
+    const seen = shown.split('overwrite?').length - 1
+    // No to the first overwrite, yes to the second.
+    while (asked < seen) type(asked++ === 0 ? 'n\n' : 'y\n')
+  })
+  fake.close()
+  assert.equal(r.code, 0, JSON.stringify(r.shown))
+  assert.match(r.shown, /There is no answer to save yet\./)
+  assert.match(r.shown, /· saved the answer \(1 line\) to a\.txt/)
+  assert.match(r.shown, /· not saved/)
+  assert.equal(asked, 2)
+  assert.equal(await readFile(join(r.home, 'a.txt'), 'utf8'), 'It holds .neoai.\n')
+  assert.match(r.shown, /Could not save to nope\/b\.txt: there is no such folder/)
+  assert.match(r.shown, /\.neoai is a folder; give a file name\./)
+})

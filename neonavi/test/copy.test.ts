@@ -4,7 +4,7 @@ import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { commandFrom } from '../src/args.ts'
-import { clipboardCommands, codeBlocks, lastAnswerIn, pickCopy, toClipboard } from '../src/copy.ts'
+import { clipboardCommands, codeBlocks, lastAnswerIn, pickCopy, toClipboard, pickSave } from '../src/copy.ts'
 
 const answer = 'Install it:\n\n```sh\nnpm i -g neoai\n```\n\nThen:\n\n~~~\nnavi setup\nnavi\n~~~\n'
 
@@ -78,4 +78,18 @@ test('the clipboard command is given the text', { skip: process.platform === 'wi
   } finally {
     process.env.PATH = path
   }
+})
+
+// CLI-36
+test('pickSave takes what /copy would, a path after it, and ends with one newline', () => {
+  const answer = 'Run:\n\n```sh\nnpm test\n```\n\nthen\n\n```\nnpm run build\n```'
+  assert.deepEqual(pickSave(answer, 'notes.md'), { text: `${answer}\n`, path: 'notes.md', said: 'saved the answer (11 lines)' })
+  assert.deepEqual(pickSave(answer, 'code run.sh'), { text: 'npm run build\n', path: 'run.sh', said: 'saved code block 2 of 2 (1 line)' })
+  assert.deepEqual(pickSave(answer, "code 1 '/tmp/my file.sh'"), { text: 'npm test\n', path: '/tmp/my file.sh', said: 'saved code block 1 of 2 (1 line)' })
+  assert.deepEqual(pickSave(answer, '~/My\\ Notes.md'), { text: `${answer}\n`, path: '~/My Notes.md', said: 'saved the answer (11 lines)' })
+  assert.match((pickSave(answer, '') as any).problem, /^usage: \/save <file>/)
+  assert.match((pickSave(answer, 'code') as any).problem, /^usage/)
+  assert.match((pickSave(answer, 'code 3 x.sh') as any).problem, /has 2 code blocks/)
+  assert.equal((pickSave(undefined, 'x.md') as any).problem, 'There is no answer to save yet.')
+  assert.match((pickSave('no code', 'code x.sh') as any).problem, /\/save <file> saves all of it/)
 })

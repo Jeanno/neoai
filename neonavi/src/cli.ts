@@ -2,7 +2,7 @@
 import { auto } from 'neorouter'
 import { homedir } from 'node:os'
 import { basename, resolve } from 'node:path'
-import { readFile, realpath, stat } from 'node:fs/promises'
+import { readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { commandFrom, promptFrom, startsFresh } from './args.ts'
 import { modelFor, parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
 import { colorDiff, makeApprover, makeLine } from './approve.ts'
@@ -23,7 +23,7 @@ import { LEVELS, notifyLevels, push, pushConfig, withLevels, type Level } from '
 import { addFact, forgetFact, memoryFile, projectRoot, readMemory } from './memory.ts'
 import { SUGGEST_AFTER, suggestFacts } from './suggest.ts'
 import { listUndo, namer, redo, redoneLines, takeNote, undo, undoneReport } from './undo.ts'
-import { lastAnswerIn, pickCopy, toClipboard } from './copy.ts'
+import { lastAnswerIn, pickCopy, pickSave, toClipboard } from './copy.ts'
 import { wall } from './clock.ts'
 import { makeQuietNotify, needsYou, parseQuiet } from './quiet.ts'
 import { makeSchedules, nextText, parseDays, parseEvery, runMarks, whenText } from './schedules.ts'
@@ -96,6 +96,7 @@ const HELP = [
   '/redo              bring back what the last /undo put back',
   '/copy [code [n]]   copy the last answer, or its last (or n-th) code block',
   '/retry             ask the last prompt again, on the model answering now',
+  '/save [code [n]] F save the last answer, or a code block of it, to file F',
   '/help              this list',
   '^C                 stop an answer; at an empty prompt, leave',
   'exit, quit         leave, maybe offering facts to remember',
@@ -1160,6 +1161,26 @@ async function main() {
     return false
   }
 
+  /** CLI-36, CLI-37: the last answer, or a code block of it, to a file, asking before overwriting. */
+  const save = async (args: string) => {
+    const got = pickSave(lastAnswer, args)
+    if ('problem' in got) return console.error(got.problem)
+    const path = resolve(cwd, got.path.replace(/^~(?=\/|$)/, homedir()))
+    const there = await stat(path).catch(() => null)
+    if (there?.isDirectory()) return console.error(`${got.path} is a folder; give a file name.`)
+    if (there) {
+      const answer = (await line.ask(`${bold('overwrite?')} ${got.path} ${dim('[y/N]')} `))?.trim().toLowerCase()
+      if (answer !== 'y' && answer !== 'yes') return console.error(dim('· not saved'))
+    }
+    try {
+      await writeFile(path, got.text)
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code
+      return console.error(`Could not save to ${got.path}: ${code === 'ENOENT' ? 'there is no such folder' : (e as Error).message}`)
+    }
+    console.error(dim(`· ${got.said} to ${got.path}`))
+  }
+
   /** CLI-33, CLI-34: the last turn again, from the conversation as it was before it. */
   const retry = async () => {
     if (!lastTurn) {
@@ -1219,6 +1240,7 @@ async function main() {
           console.error(problem ?? dim(`· ${got.said}`))
         }
       }
+      else if (command?.name === 'save') await save(command.args)
       else if (command?.name === 'retry') {
         if (await retry()) answeredHere++
       }
