@@ -851,7 +851,7 @@ test('JOB-42: a failed job has Try again, which runs it again in place', { skip 
   const page = await browser.newPage()
   await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/#${token}`)
   await page.getByText('check the backups').click()
-  await page.getByText('the backend is unreachable').first().waitFor()
+  await page.locator('p.err', { hasText: 'the backend is unreachable' }).waitFor()
   await page.getByRole('button', { name: 'Try again' }).click()
   await page.getByText('Answer to check the backups.').waitFor()
   assert.equal(await page.getByRole('button', { name: 'Try again' }).count(), 0)
