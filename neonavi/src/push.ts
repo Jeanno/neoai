@@ -8,12 +8,14 @@ export interface PushConfig {
   topic: string
   /** Whether the prompt and command may leave this computer (PSH-2). */
   detail: boolean
+  /** Only what needs the user is pushed (PSH-18). */
+  waiting: boolean
 }
 
 /** The push config, or nothing when there is none or it does not read (PSH-1). */
 export function pushConfig(config: { push?: unknown }): PushConfig | undefined {
   const raw = config.push
-  const o = typeof raw === 'string' ? { url: raw } : raw && typeof raw === 'object' ? (raw as { url?: unknown; detail?: unknown }) : undefined
+  const o = typeof raw === 'string' ? { url: raw } : raw && typeof raw === 'object' ? (raw as { url?: unknown; detail?: unknown; notify?: unknown }) : undefined
   if (typeof o?.url !== 'string') return
   let url: URL
   try {
@@ -24,7 +26,7 @@ export function pushConfig(config: { push?: unknown }): PushConfig | undefined {
   const parts = url.pathname.split('/').filter(Boolean)
   if (!['http:', 'https:'].includes(url.protocol) || !parts.length) return
   const topic = parts.pop()!
-  return { server: `${url.origin}${parts.length ? `/${parts.join('/')}` : ''}`, topic, detail: o.detail === true }
+  return { server: `${url.origin}${parts.length ? `/${parts.join('/')}` : ''}`, topic, detail: o.detail === true, waiting: o.notify === 'waiting' }
 }
 
 export interface PushMessage {

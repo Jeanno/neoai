@@ -27,6 +27,11 @@ terminal that started them closes.
 - JOB-5: On macOS a notification says when a job is waiting on an approval
   and when it ends, naming the job by the start of its prompt, unless
   `"notify": false` is in the config.
+- JOB-38: `"notify": "waiting"` keeps only the notifications that need the
+  user: a job waiting on an approval, a job that failed, a schedule navi
+  paused (SCH-26). A job done or stopped says nothing. A quiet hours summary
+  (PSH-12) is sent only when it holds one of those. The config is read for
+  each notification, so a change needs no restart.
 - JOB-6: Jobs are kept in `~/.neoai/jobs/<id>.json` (0600, in a 0700
   directory) as they change, with their conversation, so they survive navi
   serve restarting: one that was running or waiting is then `interrupted`,

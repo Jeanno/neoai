@@ -25,6 +25,17 @@ export function isQuiet(q: Quiet, now: Date, offset: Offset = localOffset): bool
   return q.from < q.to ? m >= q.from && m < q.to : m >= q.from || m < q.to
 }
 
+/**
+ * Whether a notification needs the user (JOB-38): a job waiting or failed, a
+ * schedule navi paused, or a quiet hours summary holding one of those.
+ */
+export function needsYou(title: string, text: string): boolean {
+  if (/\b(waiting|failed|paused)\b/.test(title)) return true
+  return title === SUMMARY && /\b(failed|waiting for you)\b/.test(text.split('\n')[0])
+}
+
+const SUMMARY = 'navi, during quiet hours'
+
 export interface Held {
   title: string
   text: string
@@ -51,7 +62,7 @@ export function digest(held: Held[]): Held {
   // A waiting change's lines (PSH-14) are for its own notification, not the summary.
   const lines = named.map((h) => `${h.title.replace(/^navi /, '')}: ${h.text.split('\n')[0]}`)
   return {
-    title: 'navi, during quiet hours',
+    title: SUMMARY,
     text: [counts, ...lines, ...(more > 0 ? [`and ${more} more`] : [])].join('\n'),
     job: held[held.length - 1].job,
   }

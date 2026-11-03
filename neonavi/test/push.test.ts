@@ -15,12 +15,16 @@ function recorder(status = 200) {
 }
 
 test('PSH-1: a topic URL, or one with detail, is the push config; anything else is not', () => {
-  assert.deepEqual(pushConfig({ push: 'https://ntfy.sh/navi-abc' }), { server: 'https://ntfy.sh', topic: 'navi-abc', detail: false })
+  assert.deepEqual(pushConfig({ push: 'https://ntfy.sh/navi-abc' }), { server: 'https://ntfy.sh', topic: 'navi-abc', detail: false, waiting: false })
   assert.deepEqual(pushConfig({ push: { url: 'http://box.tail:2586/ntfy/mine', detail: true } }), {
     server: 'http://box.tail:2586/ntfy',
     topic: 'mine',
     detail: true,
+    waiting: false,
   })
+  // PSH-18
+  assert.equal(pushConfig({ push: { url: 'https://ntfy.sh/t', notify: 'waiting' } })?.waiting, true)
+  assert.equal(pushConfig({ push: { url: 'https://ntfy.sh/t', notify: 'all' } })?.waiting, false)
   assert.equal(pushConfig({}), undefined)
   assert.equal(pushConfig({ push: 'https://ntfy.sh/' }), undefined)
   assert.equal(pushConfig({ push: 'ftp://ntfy.sh/x' }), undefined)
@@ -28,7 +32,7 @@ test('PSH-1: a topic URL, or one with detail, is the push config; anything else 
   assert.equal(pushConfig({ push: 42 }), undefined)
 })
 
-const plain: PushConfig = { server: 'https://ntfy.sh', topic: 't', detail: false }
+const plain: PushConfig = { server: 'https://ntfy.sh', topic: 't', detail: false, waiting: false }
 
 test('PSH-2: a push says what happened and the job id, and the prompt only with detail', async () => {
   const { sent, f } = recorder()

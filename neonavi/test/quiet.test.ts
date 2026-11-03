@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { fromWall, type Offset } from '../src/clock.ts'
-import { digest, isQuiet, makeQuietNotify, parseQuiet } from '../src/quiet.ts'
+import { digest, isQuiet, makeQuietNotify, needsYou, parseQuiet } from '../src/quiet.ts'
 
 /** UTC-7, as Vancouver now is all year. */
 const zone: Offset = () => -420
@@ -97,4 +97,19 @@ test('a glance at a change is its changed lines, a few, cut short; at an action,
   assert.equal(glancePage('https://example.com/'), 'on example.com')
   assert.equal(glancePage('https://example.com/a/b?secret=1#x'), 'on example.com/a/b')
   assert.equal(glancePage('not a url'), '')
+})
+
+test('JOB-38: only a job waiting or failed, a schedule paused, or a summary holding one, needs the user', () => {
+  assert.equal(needsYou('navi is waiting for you', 'Tidy: rm build'), true)
+  assert.equal(needsYou('navi failed', 'Tidy'), true)
+  assert.equal(needsYou('navi paused a schedule', 'Tidy: its last 3 runs failed.'), true)
+  assert.equal(needsYou('navi is done', 'Tidy'), false)
+  assert.equal(needsYou('navi was stopped', 'Tidy'), false)
+  // A summary, by what it holds.
+  const done = digest([{ title: 'navi is done', text: 'Tidy', job: 'a' }, { title: 'navi is done', text: 'Check', job: 'b' }])
+  const failed = digest([{ title: 'navi is done', text: 'Tidy', job: 'a' }, { title: 'navi failed', text: 'Check', job: 'b' }])
+  assert.equal(needsYou(done.title, done.text), false)
+  assert.equal(needsYou(failed.title, failed.text), true)
+  // A done job whose prompt says "waiting" is still only done.
+  assert.equal(needsYou(digest([{ title: 'navi is done', text: 'Is the parcel still waiting', job: 'a' }]).title, digest([{ title: 'navi is done', text: 'Is the parcel still waiting', job: 'a' }]).text), false)
 })

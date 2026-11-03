@@ -25,6 +25,10 @@ reaches you without the phone page open.
   job; navi serve logs that it failed, with the status, never the topic.
 - PSH-5: The phone page opens the job named by `#job=<id>` in its link,
   using the token it already holds.
+- PSH-18: `"push": { "url": …, "notify": "waiting" }` pushes only what
+  needs the user, as `"notify": "waiting"` does on the Mac (JOB-38). The two
+  are set apart: the Mac can say everything while the phone says only what
+  waits.
 - PSH-6: `navi push test` sends a test push and says whether it arrived
   at the server; with no `push` in the config it says how to set one up.
 

@@ -36,7 +36,8 @@ whether or not a terminal stays open. `navi job "<prompt>"` starts one here
 (`-C <dir>` elsewhere); `navi jobs` lists them, `navi jobs <id>` shows what one
 did and its answer, `navi jobs <id> y` or `n` answers what it is waiting on, and
 `stop` stops it. A macOS notification says when a job waits for you and when it
-ends (`"notify": false` turns that off). With `navi serve --tailnet` (or
+ends (`"notify": false` turns that off; `"notify": "waiting"` keeps only
+those that need you: waiting on you, failed, or a schedule navi paused). With `navi serve --tailnet` (or
 `navi serve --install --tailnet`) it also listens on this computer's Tailscale
 address, where every request needs the token in `~/.neoai/serve-token`, and
 serves a page for your phone: start jobs, follow them, answer Yes or No.
@@ -125,7 +126,8 @@ prompt and the command. With `detail` on, a push for a job waiting on you
 also has Yes and No buttons that answer it right from the notification; each
 carries a key good for that one question only, and your phone sends the
 answer straight to navi over the tailnet. The token never leaves this
-computer (`spec/push.md`).
+computer. `"notify": "waiting"` in `push` pushes only what needs you, apart
+from what the Mac shows (`spec/push.md`).
 
 A job waiting on a file change shows the changed lines in its notification
 (the first six, cut short), and one waiting on a browser action the page it

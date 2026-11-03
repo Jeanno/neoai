@@ -24,7 +24,7 @@ import { addFact, forgetFact, memoryFile, projectRoot, readMemory } from './memo
 import { SUGGEST_AFTER, suggestFacts } from './suggest.ts'
 import { listUndo, namer, redo, redoneLines, undo, undoneReport } from './undo.ts'
 import { wall } from './clock.ts'
-import { makeQuietNotify, parseQuiet } from './quiet.ts'
+import { makeQuietNotify, needsYou, parseQuiet } from './quiet.ts'
 import { makeSchedules, nextText, parseDays, parseEvery, runMarks, whenText } from './schedules.ts'
 import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -318,12 +318,14 @@ async function startJob({ job, directory, history, approve, answered }: Paramete
 function makeNotify(page: string | undefined, log: (line: string) => void): JobDeps['notify'] {
   return (title, text, job, urgent, key) =>
     void readConfig().then(async (config) => {
-      if (process.platform === 'darwin' && config.notify !== false) {
+      // JOB-38, PSH-18: "waiting" keeps only what needs the user.
+      const needed = needsYou(title, text)
+      if (process.platform === 'darwin' && config.notify !== false && (config.notify !== 'waiting' || needed)) {
         const quote = (s: string) => `"${s.replace(/[\\"]/g, '\\$&')}"`
         execFile('osascript', ['-e', `display notification ${quote(text)} with title ${quote(title)}`], () => {})
       }
       const p = pushConfig(config)
-      if (!p) return
+      if (!p || (p.waiting && !needed)) return
       const failed = await push(p, {
         title, job, detail: text, urgent,
         ...(page && { click: `${page}#job=${job}`, ...(key && { answer: `${page}answer/${job}/${key}` }) }),
