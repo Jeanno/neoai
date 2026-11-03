@@ -5,6 +5,7 @@
 //! reader around brush's own, which sends lines for navi to navi (NSH-4).
 
 mod navi;
+mod prompt;
 
 use std::io::IsTerminal as _;
 use std::path::PathBuf;
@@ -115,7 +116,7 @@ async fn run(args: Args) -> Result<u8, ShellError> {
     let profile = if args.login { brush_core::ProfileLoadBehavior::LoadDefault } else { brush_core::ProfileLoadBehavior::Skip };
     // NSH-10: the directory and `$`, unless a PS1 came with the environment; the rc can set its own.
     if interactive && std::env::var_os("PS1").is_none() {
-        shell.lock().await.env_mut().set_global("PS1", brush_core::ShellVariable::new(r"\w \$ "))?;
+        shell.lock().await.env_mut().set_global("PS1", brush_core::ShellVariable::new(prompt::DEFAULT_PS1))?;
     }
     shell.lock().await.load_config(&profile, &rc).await?;
 
@@ -161,7 +162,20 @@ impl<IB: InputBackend> InputBackend for WithNavi<IB> {
             if let (Some((line, dir)), Some(s)) = (self.handed.take(), guard.as_ref()) {
                 self.recent.push(navi::Ran { line, dir, status: s.last_exit_status() });
             }
-            let again = InteractivePrompt { prompt: prompt.prompt.clone(), alt_side_prompt: prompt.alt_side_prompt.clone(), continuation_prompt: prompt.continuation_prompt.clone() };
+            // NSH-12: drawn by neosh while PS1 is still its own.
+            let ours = guard.as_ref().filter(|s| s.env_str("PS1").as_deref() == Some(prompt::DEFAULT_PS1)).map(|s| {
+                let dir = s.working_dir().to_path_buf();
+                let home = std::env::var_os("HOME").map(PathBuf::from);
+                prompt::render(&prompt::Parts {
+                    dir: &dir,
+                    home: home.as_deref(),
+                    branch: prompt::branch(&dir),
+                    status: s.last_exit_status(),
+                    root: s.env_str("EUID").as_deref() == Some("0"),
+                    color: s.env_str("NO_COLOR").is_none(),
+                })
+            });
+            let again = InteractivePrompt { prompt: ours.unwrap_or_else(|| prompt.prompt.clone()), alt_side_prompt: prompt.alt_side_prompt.clone(), continuation_prompt: prompt.continuation_prompt.clone() };
             drop(guard.take());
             // NSH-11: ready to run with Enter, change, or clear with ^C.
             if let Some(command) = self.suggested.take() {

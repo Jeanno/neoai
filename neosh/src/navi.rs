@@ -87,11 +87,7 @@ impl Recent {
         self.ran
             .iter()
             .map(|r| {
-                let dir = match home.and_then(|h| r.dir.strip_prefix(h).ok()) {
-                    Some(rel) if rel.as_os_str().is_empty() => "~".to_string(),
-                    Some(rel) => format!("~/{}", rel.display()),
-                    None => r.dir.display().to_string(),
-                };
+                let dir = crate::prompt::tilde(&r.dir, home);
                 let how = if r.status == 0 { "ok".to_string() } else { format!("exit {}", r.status) };
                 format!("{dir} $ {} ({how})", r.line.replace('\n', " "))
             })

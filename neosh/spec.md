@@ -61,11 +61,15 @@ hands a line to another shell. What neosh adds is below.
 
 - NSH-10: The prompt is the directory, `~` for home, and `$` (`#` as root),
   unless `PS1` came with the environment or `~/.neoshrc` sets one.
+- NSH-12: In a git repository the prompt also shows its branch, or the
+  commit's short hash when none is checked out (`~/proj main $`), read from
+  `.git` without running git. After a command that failed, it shows the
+  status before the `$` (`~/proj main 1 $`), in red. Colour is left out
+  when `NO_COLOR` is set.
 
 ## Open
 
-- Syntax highlighting, hints from history, and a prompt that shows a failed
-  status or the git branch.
+- Whether the git tree has changes, which needs reading the index.
 - Telling navi a failed command's output: commands write straight to the
   terminal, so neosh sees only the status today.
 - neosh as a login shell: an installer that adds it to `/etc/shells`, asked

@@ -26,6 +26,10 @@ bash-compatible shell in Rust: pipelines, redirections, here-documents,
 functions, arrays, `[[ … ]]`, aliases, job control and bash's builtins.
 What neosh adds is specified in [spec.md](spec.md).
 
+The prompt shows where you are, the git branch, and the status of a command
+that failed, in red (`~/proj main 1 $`); set `PS1` in `~/.neoshrc` for your
+own, and `NO_COLOR` for none.
+
 ## Try it
 
 You need [Rust](https://rustup.rs) to build it and [navi](../README.md#navi-in-the-terminal)
