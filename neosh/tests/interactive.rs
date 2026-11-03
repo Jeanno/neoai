@@ -130,3 +130,17 @@ fn ctrl_c_stops_navi_and_never_the_shell() {
     assert!(screen.contains("here-too"), "{screen}");
     assert!(!screen.contains("never"), "{screen}");
 }
+
+// NSH-3, NSH-6
+#[test]
+fn job_control_and_a_command_of_several_lines_work_through_neosh() {
+    let home = Home::new("jobs");
+    let screen = home.run(
+        &["sleep 20", "@wait 1", "\x1a", "jobs", "fg", "@wait 1", "\x03", "for f in a b; do", "echo got-$f", "done", "? what ran", "exit"],
+        &[],
+    );
+    assert!(screen.contains("Stopped\tsleep 20"), "{screen}");
+    assert!(screen.contains("got-a") && screen.contains("got-b"), "{screen}");
+    let log = home.log();
+    assert!(log.contains("~/work $ for f in a b; do ↵ echo got-$f ↵ done (ok)"), "{log}");
+}

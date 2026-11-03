@@ -67,7 +67,8 @@ hands a line to another shell. What neosh adds is below.
   the line is kept in history as typed.
 - NSH-6: navi is told the commands run in this shell since its last answer,
   up to the last 10, each with its directory and exit status (CLI-40), so
-  "why did that fail" is about the right command.
+  "why did that fail" is about the right command. A command typed over
+  several lines is told on one, each line break shown as ` ↵ `.
 - NSH-7: One shell session is one conversation with navi, whichever
   directory it is asked from (CLI-39); a new neosh starts a new one.
 - NSH-8: A line sent to navi is kept in the shell's history as typed.

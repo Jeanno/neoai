@@ -160,7 +160,9 @@ impl Recent {
                 if let Some(took) = crate::prompt::long(r.took) {
                     how += &format!(", took {took}");
                 }
-                format!("{dir} $ {} ({how})", r.line.replace('\n', " "))
+                // NSH-6: one command a line; a command of several shows its breaks.
+                let line = r.line.lines().map(str::trim_end).collect::<Vec<_>>().join(" ↵ ");
+                format!("{dir} $ {line} ({how})")
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -346,7 +348,10 @@ mod tests {
         r.clear();
         assert_eq!(r.describe(None), "");
         r.push(Ran { line: "ls\n-l".into(), dir: PathBuf::from("/home/u"), status: 0, took: Default::default() });
-        assert_eq!(r.describe(Some(Path::new("/home/u"))), "~ $ ls -l (ok)");
+        assert_eq!(r.describe(Some(Path::new("/home/u"))), "~ $ ls ↵ -l (ok)");
+        r.clear();
+        r.push(Ran { line: "for f in a b; do\necho $f\ndone".into(), dir: PathBuf::from("/home/u"), status: 0, took: Default::default() });
+        assert_eq!(r.describe(Some(Path::new("/home/u"))), "~ $ for f in a b; do ↵ echo $f ↵ done (ok)");
         // NSH-15
         r.clear();
         r.push(Ran { line: "cargo build".into(), dir: PathBuf::from("/home/u"), status: 101, took: std::time::Duration::from_secs(64) });
