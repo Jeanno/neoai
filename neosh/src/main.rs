@@ -117,6 +117,10 @@ async fn run(args: Args) -> Result<u8, ShellError> {
         _ => brush_core::RcLoadBehavior::Skip,
     };
     let profile = if args.login { brush_core::ProfileLoadBehavior::LoadDefault } else { brush_core::ProfileLoadBehavior::Skip };
+    // NSH-5: ^C is for what runs, navi included, never the shell itself. A
+    // handler, unlike an ignored signal, is not inherited across exec, so
+    // children still get ^C as they expect.
+    let _interrupts = if interactive { Some(tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?) } else { None };
     // NSH-10: the directory and `$`, unless a PS1 came with the environment; the rc can set its own.
     if interactive && std::env::var_os("PS1").is_none() {
         shell.lock().await.env_mut().set_global("PS1", brush_core::ShellVariable::new(prompt::DEFAULT_PS1))?;

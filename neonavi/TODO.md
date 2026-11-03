@@ -66,6 +66,8 @@ add the requirement there first.
       command marks. (NSH-18)
 - [x] neosh says once a session that a sentence went to navi, and how not
       to (NSH-19); end-to-end tests on a pseudo-terminal.
+- [x] ^C during navi's answer stops navi, never neosh: before any command
+      had run, neosh had no SIGINT handler and died with navi. (NSH-5)
 - [x] `neosh/install.sh`, local or through curl, never touching the login
       shell. (NSH-14)
 - [x] Image and PDF input: `-a`, `/attach`, and Raycast's Ask About Selected

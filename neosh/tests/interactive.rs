@@ -119,3 +119,14 @@ fn the_prompt_shows_the_branch_and_history_outlives_the_session() {
     assert!(again.contains("echo from-the-first"), "{again}");
     assert!(home.0.join(".neosh_history").exists());
 }
+
+// NSH-5
+#[test]
+fn ctrl_c_stops_navi_and_never_the_shell() {
+    let home = Home::new("interrupt");
+    std::fs::write(home.0.join("bin/navi"), "#!/bin/sh\necho thinking\nsleep 30\necho never\n").unwrap();
+    let screen = home.run(&["? a slow one", "\x03", "echo still-here", "? again", "\x03", "echo here-too", "exit"], &[]);
+    assert!(screen.contains("still-here"), "{screen}");
+    assert!(screen.contains("here-too"), "{screen}");
+    assert!(!screen.contains("never"), "{screen}");
+}
