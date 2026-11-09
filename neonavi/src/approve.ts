@@ -292,6 +292,30 @@ const CHANGES = new Set(['rm', 'rmdir', 'unlink', 'shred', 'trash', 'mv', 'trunc
 const WRAPPERS = new Set(['env', 'xargs', 'nice', 'nohup', 'time', 'command', 'exec', 'caffeinate'])
 const SHELLS = new Set(['sh', 'bash', 'zsh'])
 
+/**
+ * TL-47: what is malicious on sight, asked whatever was asked for and
+ * whatever the judge says: a model can be talked round, a pattern cannot.
+ */
+const SECRET = /(~|\$HOME|\$\{HOME\})\/\.(ssh|aws|gnupg|kube|docker|config\/gh|netrc|npmrc|pypirc|git-credentials)\b|\bid_(rsa|dsa|ecdsa|ed25519)\b|(^|[\s/@'"=<])\.env(\.\w+)?\b|\bcredentials\b|\.pem\b|\bkeychain\b|\bprintenv\b|(^|[;&|(]\s*)(env|set|export -p)\s*(\||$)/
+const SENDS = /\b(curl|wget|nc|ncat|netcat|socat|scp|sftp|rsync|ssh|ftp|tftp|telnet|mail|mailx|sendmail|http|https|aws\s+s3|gsutil|rclone)\b/
+const MALICIOUS: [RegExp, string][] = [
+  [/\/dev\/(tcp|udp)\//, 'it opens a raw network connection from the shell'],
+  [/\b(nc|ncat|netcat)\b[^;&|]*\s-[a-z]*[ec]\b/, 'it hands a shell to a network connection'],
+  [/\bsocat\b[^;&|]*\bexec:/i, 'it hands a shell to a network connection'],
+  [/\bmkfifo\b[^;&]*\b(nc|ncat|netcat|telnet)\b/, 'it hands a shell to a network connection'],
+  [/\b(sh|bash|zsh)\b[^;&|]*(<\(|\$\()\s*(curl|wget)\b/, 'it runs what it downloads'],
+  [/\b(base64|xxd|openssl)\b[^;&]*(-d|--decode|-r)\b[^;&]*\|\s*(sh|bash|zsh|python3?|perl|ruby|node)\b/, 'it runs a hidden, decoded command'],
+  [/\bauthorized_keys\b/, 'it touches the keys that let others log in'],
+  [/\bhistory\s+-[a-z]*c|(_|\.)history\b[^;&|]*(rm|shred|>|truncate)|(rm|shred|truncate)\b[^;&|]*\.\w*_?history\b/, 'it erases shell history'],
+  [/\b(csrutil|spctl|setenforce|ufw\s+disable|pfctl\s+-d)\b/, 'it turns off a system protection'],
+  [/\bgh\s+repo\s+delete\b|\bgh\s+api\b[^;&|]*-X\s*DELETE/, 'it deletes on GitHub'],
+  [/\b(docker|podman)\b[^;&|]*((-v|--volume)[\s=]+(\/|~|\$HOME|\$\{HOME\})(:|\s|$)|--mount[^;&|]*source=(\/|~|\$HOME)(,|\s|$)|--privileged)/, 'it gives a container the whole disk or the machine'],
+  [/\b(curl|wget)\b[^;&|]*(-o|-O|--output)\s*(\S+)[^]*?\b(sh|bash|zsh|source|\.|chmod\s+\+?[0-7]*x?)\s+\3\b/, 'it runs what it downloads'],
+  [/\brm\b[^;&|]*(\s|\/)\.git(\/?)(\s|$|;|&)/, 'it deletes the git history'],
+]
+/** An address on the internet, not this machine or its network: a send there is to someone nobody named. */
+const PUBLIC_IP = /(^|[\s@\/:=])(?!(127|10|0)\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/
+
 /** A command's name without its directory or a leading backslash: `/bin/rm`, `\rm`. */
 const bare = (word: string) => word.replace(/^\\/, '').replace(/^.*\//, '')
 
@@ -321,6 +345,10 @@ export function outside(path: string, cwd?: string): boolean {
  * move or overwrite must stay in.
  */
 export function drastic(command: string, cwd?: string): string | undefined {
+  for (const [pattern, why] of MALICIOUS) if (pattern.test(command)) return why
+  // A secret and a way to send it, in one command, is how secrets leave.
+  if (SECRET.test(command) && SENDS.test(command)) return 'it reads a secret and sends something off the machine'
+  if (SENDS.test(command) && PUBLIC_IP.test(command)) return 'it sends to a bare internet address'
   // Into a file outside; `2>&1`, `>&2` and /dev/null are not files.
   for (const m of command.matchAll(/(?<![<&])>>?(?!&)\s*([^\s;&|)]+)/g))
     if (m[1] !== '/dev/null' && outside(m[1], cwd)) return `it writes into ${m[1]}, outside the working directory`
@@ -404,4 +432,23 @@ export function gated({
     if (answer === 'always' && allowable(command)) await remember?.(command)
     return answer === true || answer === 'always'
   }
+}
+
+/** What a file change adds, as malicious on sight as a command (TL-47). */
+const PLANTED: [RegExp, string][] = [
+  [/\|\s*(sh|bash|zsh)\b|\b(sh|bash)\s+-c\s*["']?\$\(\s*(curl|wget)/, 'it adds a command that runs what it downloads'],
+  [/\/dev\/(tcp|udp)\/|\b(nc|ncat|netcat)\b[^\n]*\s-[a-z]*e\b/, 'it adds a raw network connection'],
+  [/"(pre|post)?install"\s*:/, 'it adds a script that runs on install'],
+  [/\bauthorized_keys\b/, 'it adds to the keys that let others log in'],
+  [/\b(AI|LLM|language model)s?\s*(agents?|assistants?|models?)?\s*[:,]|ignore\s+(all\s+)?(the\s+)?(previous|prior|above|earlier)\s+(instructions|rules)|\b(system prompt|you are now)\b/i, 'it adds words aimed at an AI'],
+]
+
+/** Files whose change is the user's to see: secrets, and what lets others in. */
+const GUARDED = /(^|\/)(\.env(\.\w+)?|\.npmrc|\.pypirc|\.netrc|\.git-credentials|authorized_keys|known_hosts|id_\w+|[^/]*\.pem)$|(^|\/)\.(ssh|aws|gnupg|git)\//
+
+/** Why a file change must ask whatever was asked for (TL-47), from its path and the lines it adds, or nothing. */
+export function plantedIn(diff: string, path?: string): string | undefined {
+  if (path && GUARDED.test(path)) return `it changes ${path}, which holds secrets or access`
+  const added = diff.split('\n').filter((l) => l.startsWith('+')).join('\n')
+  for (const [pattern, why] of PLANTED) if (pattern.test(added)) return why
 }

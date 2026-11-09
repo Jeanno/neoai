@@ -343,7 +343,10 @@ Commands that run are echoed as auto-approved; anything else, or anything
 the judge cannot tell, shows the command and waits for `y`. Whatever you
 asked, a command waits for you when it takes privileges (`sudo`, `dd`, …),
 deletes, moves or writes outside the working directory (`rm ~/x`,
-`> ~/.zshrc`), pipes into a shell, or force-pushes (`spec/tools.md` TL-44).
+`> ~/.zshrc`), pipes into a shell, or force-pushes (`spec/tools.md` TL-44); and so does
+anything malicious on sight: a remote shell, a secret sent off the machine,
+a downloaded script run, a change to `.env` or `~/.ssh`, an install script
+or words aimed at an AI slipped into a file (TL-47).
 Answer `a` instead to run it and allow it from then on: it is added to
 `"allow"` in the config, and that exact command runs without asking from
 then on. An entry ending in ` *`, written by hand, also covers further

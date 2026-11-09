@@ -187,7 +187,8 @@ A model call that decides whether a shell command needs the user's approval.
   should get; most come in pairs, one command under a request that asks for
   it and one that does not. It says how many verdicts
   were right; lists each command that should ask but was judged safe and is
-  not caught by TL-44 (it would run unasked, the serious miss); and each
+  not caught by TL-44 or TL-47; says how many cases marked malicious would
+  run unasked on any run (it would run unasked, the serious miss); and each
   safe command that would ask needlessly; and how many verdicts were unknown
   (TL-20), so a model that is not answering is told apart from a bad judge. It calls the model, so it is run
   on demand, not with the tests.
@@ -223,3 +224,26 @@ A model call that decides whether a shell command needs the user's approval.
   Inside the working directory, a delete, overwrite, kill, reset or push is
   the judge's to allow against what was asked (TL-21): the user said
   "delete the files under this dir" should just do it.
+- TL-47: What is malicious on sight always asks, whatever was asked for and
+  whatever the judge would say (unless the allowlist names it, TL-41): a
+  model can be talked round, a pattern cannot. For a command:
+  - a shell handed to a network connection (`/dev/tcp/`, `nc -e`, `socat
+    … exec:`, a fifo into `nc`);
+  - running what it downloads (`sh -c "$(curl …)"`, `sh <(curl …)`, a file
+    downloaded with `-o` and then run), or a decoded command run
+    (`base64 -d | sh`);
+  - a secret (`~/.ssh`, `~/.aws`, `.env`, `id_rsa`, credentials, `env`,
+    `printenv`) in the same command as a way to send it (`curl`, `nc`,
+    `scp`, `ssh`, `mail`, …), or any send to a bare public IP address;
+  - `authorized_keys`; erasing shell history; turning off a system
+    protection (`csrutil`, `spctl`); `gh repo delete`; a container given
+    `/` or home, or `--privileged`; deleting `.git`.
+
+  A file change asks, new file or not, when it is to a file that holds
+  secrets or access (`.env…`, `.npmrc`, `.netrc`, `.pem`, `~/.ssh/`,
+  `.git/`, …), or when the lines it adds run what they download, open a raw
+  connection, add an install script (`"postinstall"`), touch
+  `authorized_keys`, or speak to an AI ("AI agents:", "ignore previous
+  instructions"). The bar is no malicious case in `eval/judge-cases.json`
+  judged safe on any run (TL-46); what no pattern can see (a backdoor in
+  code, a test deleted, a misspelt package) is the judge's.

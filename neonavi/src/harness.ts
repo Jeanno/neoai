@@ -7,7 +7,7 @@ import { systemPrompt, today } from './args.ts'
 import { collectContext } from './context.ts'
 import { memorySection, projectRoot, readMemory } from './memory.ts'
 import { makeRecorder, takeNote } from './undo.ts'
-import { allowCommand, gated, type Answer } from './approve.ts'
+import { allowCommand, gated, plantedIn, type Answer } from './approve.ts'
 import { judge, MAX_JUDGED_DIFF } from './judge.ts'
 import { makeTools } from './tools.ts'
 import { summarize, type FileChange } from './diff.ts'
@@ -333,7 +333,8 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       const change = async ({ inside, ...c }: FileChange & { inside: boolean }, toolSignal?: AbortSignal, id?: string) => {
         await after(id)
         const judged = () => c.diff.length <= MAX_JUDGED_DIFF && judge(o.model, summarize(c), prompt, { diff: c.diff }, before.text || undefined).then((v) => v === 'safe')
-        if (config.approve !== 'ask' && inside && (c.created || (await judged()))) {
+        // TL-47: what a change plants is the user's to see, new file or not.
+        if (config.approve !== 'ask' && inside && !plantedIn(c.diff, c.path) && (c.created || (await judged()))) {
           emit({ type: 'auto-approved', command: summarize(c), change: c })
           return true
         }
