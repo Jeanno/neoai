@@ -10,7 +10,7 @@ Run language models locally with no configuration.
   as input, a browser of its own that it reads as text and drives with your approval,
   `navi serve`, which gives any app that takes an OpenAI base URL the same model, and
   `navi mcp`, which lets Claude Code or any MCP client hand navi a task.
-- **[neosh](neosh/README.md)** — a bash-compatible shell, in Rust, with navi inside it: type a
+- **[neosh](https://github.com/Jeanno/neosh)**, in its own repository — a bash-compatible shell, in Rust, with navi inside it: type a
   command and it runs, exactly as in bash; start a line with `?` ("? why did that fail") and navi
   answers, knowing what you just ran.
 - **[jack-ins](jackins/NAVI.md)** — navi jacked into the apps you already use, starting with
@@ -60,10 +60,10 @@ git diff | navi -a - -p "write a commit message"
 Needs [Rust](https://rustup.rs) to build. One line:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Jeanno/neoai/master/neosh/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Jeanno/neosh/main/install.sh | sh
 ```
 
-Then type `neosh`. See [neosh/README.md](neosh/README.md).
+Then type `neosh`. See [Jeanno/neosh](https://github.com/Jeanno/neosh).
 
 ### navi in Raycast
 

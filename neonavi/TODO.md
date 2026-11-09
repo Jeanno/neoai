@@ -37,6 +37,9 @@ add the requirement there first.
 
 ### 2. Daily driver: the agent I reach for first
 
+neosh moved to [Jeanno/neosh](https://github.com/Jeanno/neosh) on 2026-11-08;
+its NSH items below are kept as the record, and its spec is there now.
+
 - [x] `write_file` and `edit_file`, each change shown as a diff; a new file
       here is made without asking, any other change asks. (TL-36 to TL-40)
 - [x] `/model` mid-session, without leaving the loop, and `/help`. (CLI-19 to CLI-21)

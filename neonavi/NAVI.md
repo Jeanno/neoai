@@ -386,7 +386,7 @@ directory's, so scripts can `navi -n -p "…"` without joining yours),
 `--session NAME` (a conversation kept by that name, whichever directory it is
 asked from), `--once` (with `-p` on a terminal: answer, then exit instead of
 staying in the loop; 0 when it answered, 130 when ^C stopped it), `--max-steps N` (default 32). A program that runs navi
-for its user, as [neosh](../neosh/README.md) does, can put what they did
+for its user, as [neosh](https://github.com/Jeanno/neosh) does, can put what they did
 before in `NAVI_RECENT`; navi is told it ahead of the prompt. With
 `NAVI_COMMAND_FILE` set, a one-line command the answer ends with is written
 to that file, for the shell to put at its prompt (CLI-38 to CLI-41).

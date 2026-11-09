@@ -32,29 +32,3 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
-
-  # neosh, the shell, is Rust.
-  neosh:
-    runs-on: macos-latest
-    defaults:
-      run:
-        working-directory: neosh
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            neosh/target
-          key: neosh-${{ hashFiles('neosh/Cargo.lock') }}
-
-      - run: cargo test
-
-      # The installer builds the release and installs only over a neosh.
-      - name: Install
-        run: |
-          NEOSH_BIN_DIR="$RUNNER_TEMP/bin" ./install.sh
-          "$RUNNER_TEMP/bin/neosh" -c 'test "$((6 * 7))" = 42'
-          NEOSH_BIN_DIR="$RUNNER_TEMP/bin" ./install.sh --uninstall
-          test ! -e "$RUNNER_TEMP/bin/neosh"
