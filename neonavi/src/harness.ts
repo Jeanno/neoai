@@ -358,11 +358,11 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           web, fetch, write, cwd: o.cwd, ripgrep: o.ripgrep, search: searchBackend(config.search), browser,
           look: (config.browser as { look?: unknown } | undefined)?.look !== false,
           // BRW-18: a picture shown apart, so the conversation stays text and tool calls go on.
-          see: async (jpeg, question, toolSignal) =>
+          see: async (picture, question, toolSignal, mediaType = 'image/jpeg') =>
             (
               await generateText({
                 model,
-                messages: [{ role: 'user', content: [{ type: 'image', image: jpeg, mediaType: 'image/jpeg' }, { type: 'text', text: question }] }],
+                messages: [{ role: 'user', content: [{ type: 'image', image: picture, mediaType }, { type: 'text', text: question }] }],
                 maxOutputTokens: 1500,
                 abortSignal: toolSignal ?? signal,
               })

@@ -65,3 +65,28 @@ test('a file cut by size still says how to see the rest', async () => {
   assert.match(out, /read again with offset \d+/)
   assert.doesNotMatch(out, /…\[truncated\]/)
 })
+
+// TL-45
+test('an image is looked at, not read as text', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'navi-r-'))
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+  await writeFile(join(dir, 'shot.png'), png)
+  let shown: { question: string; mediaType?: string; bytes: number } | undefined
+  const seeing = makeTools({ approve: async () => false }, {
+    see: async (picture, question, _signal, mediaType) => {
+      shown = { question, mediaType, bytes: picture.length }
+      return 'a single dot'
+    },
+  })
+  const out = await seeing.read_file.execute!({ path: join(dir, 'shot.png'), question: 'what colour?' }, {} as any)
+  assert.match(String(out), /as it looks:\na single dot$/)
+  assert.equal(shown?.mediaType, 'image/png')
+  assert.equal(shown?.bytes, png.length)
+  assert.match(shown!.question, /shot\.png\. what colour\?/)
+  // With no way to see apart, the picture is the output; a model without sight is told so.
+  const plain: any = await tools.read_file.execute!({ path: join(dir, 'shot.png') }, {} as any)
+  assert.deepEqual(plain, { name: 'shot.png', mediaType: 'image/png', data: png.toString('base64') })
+  assert.deepEqual((tools.read_file as any).toModelOutput(plain).value[1], { type: 'media', data: png.toString('base64'), mediaType: 'image/png' })
+  const blind = makeTools({ approve: async () => false }, { look: false })
+  assert.match(String(await blind.read_file.execute!({ path: join(dir, 'shot.png') }, {} as any)), /cannot see images/)
+})

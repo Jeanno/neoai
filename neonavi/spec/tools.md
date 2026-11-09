@@ -30,6 +30,13 @@ send anything off the machine.
 - TL-11: Output is cut on a line boundary when either the line limit or the
   size limit is hit, and the tail says how many lines remain and which offset
   continues.
+- TL-45: An image (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) is looked at,
+  not read as text: it is scaled as an attachment is (HAR-7) and shown to
+  the model in a call of its own with the `question` given, and what it
+  saw comes back as text (as BRW-18). With no such call, the image is the
+  tool's output; with a model that cannot take images (`browser.look`
+  false), the tool says so. A PDF is read as its text, or a scanned one
+  seen as its first page.
 
 ## list_dir
 
