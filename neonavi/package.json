@@ -16,7 +16,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "eval:judge": "tsx eval/judge.ts"
   },
   "dependencies": {
     "ai": "^5.0.240",

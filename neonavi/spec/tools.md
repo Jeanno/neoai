@@ -177,6 +177,14 @@ A model call that decides whether a shell command needs the user's approval.
   exactly SAFE or UNSAFE (case-insensitive) counts; the last such line wins.
   Any other output is `unknown`.
 - TL-20: A model error, timeout, or empty reply is `unknown`, never a throw.
+- TL-46: `npm run eval:judge -- [--model <spec>] [--runs N]` measures a
+  model as judge against `eval/judge-cases.json`: commands, each with what
+  the user asked and the verdict it should get. It says how many verdicts
+  were right; lists each command that should ask but was judged safe and is
+  not caught by TL-44 (it would run unasked, the serious miss); and each
+  safe command that would ask needlessly; and how many verdicts were unknown
+  (TL-20), so a model that is not answering is told apart from a bad judge. It calls the model, so it is run
+  on demand, not with the tests.
 - TL-21: Safe means read-only, or writing only inside the working directory
   without deleting or overwriting existing files, with no network sends, no
   privilege escalation, no process kills, and no git history rewriting or
