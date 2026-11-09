@@ -306,11 +306,13 @@ another's, `clear --all` every one.
 `navi sessions show [<directory>]` prints one as Markdown, prompts, answers
 and the tools used between them, to read or keep:
 `navi sessions show > notes.md` (`spec/session.md` SES-15 to SES-17).
+`navi sessions --json` lists them for a program, a line each, with the
+`--session` name and the last question (SES-18); neosh's `?/resume` uses it.
 
 When stdin is not a terminal (a pipe, a script) navi answers once and exits, so
 it still composes: `echo | navi -p "summarize this"` prints one answer.
 
-Tools: `grep`, `glob`, `read_file` (numbered lines, pageable), `list_dir`,
+Tools: `grep`, `glob`, `read_file` (numbered lines, pageable; an image is looked at, a PDF read as text), `list_dir`,
 `write_file`, `edit_file`, `web_search`, `fetch_url`, `run_shell`, and the
 browser's `browser_open`, `browser_tabs`, `browser_switch`,
 `browser_close_tab`, `browser_read`, `browser_back`, `browser_click`,

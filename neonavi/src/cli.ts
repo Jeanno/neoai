@@ -12,7 +12,7 @@ import { describeCall, makeGutter } from './gutter.ts'
 import { serveMcp, type Ask } from './mcp.ts'
 import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } from './serve.ts'
 import { ago, clearAllSessions, clearSession, listSessions, addPrompt, loadPrompts, loadSession, saveSession, sessionFile } from './session.ts'
-import { exchangesMarkdown, transcript } from './transcript.ts'
+import { exchanges, exchangesMarkdown, transcript } from './transcript.ts'
 import { attachStdin, MAX_UPLOAD } from './attach.ts'
 import { attach, createHarness, CUT_NOTE, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
 import { drawAnnouncements, readConfig, reset } from 'neorouter'
@@ -862,6 +862,14 @@ async function sessions(argv: string[]) {
   const home = homedir()
   const cwd = process.cwd()
   const tilde = (p: string) => (p === home || p.startsWith(`${home}/`) ? `~${p.slice(home.length)}` : p)
+  // SES-18: for a program to offer one to resume, a line of JSON each.
+  if (argv.length === 1 && argv[0] === '--json') {
+    for (const s of await listSessions(home)) {
+      const last = exchanges(await loadSession(s.file)).at(-1)?.prompt
+      console.log(JSON.stringify({ ...(s.name && { name: s.name }), ...(s.cwd && { cwd: s.cwd }), messages: s.messages, used: s.used.toISOString(), ago: ago(s.used), ...(last && { last }) }))
+    }
+    return 0
+  }
   if (!argv.length) {
     const all = await listSessions(home)
     if (!all.length) {
@@ -1192,7 +1200,7 @@ async function main() {
     lastTurn = { prompt, attachments, before, model: session.answered, ...(changed !== kept && { changed }) }
     // Saved even when the answer came out empty: the tool results are the part
     // worth carrying forward, and a follow-up is how you recover from a bad turn.
-    if (!apart) await saveSession(file, done!.history, cwd)
+    if (!apart) await saveSession(file, done!.history, cwd, named.value)
     stoppedLast = done!.stopped
     if (done!.stopped) {
       if (!done!.empty) lastAnswer = done!.text

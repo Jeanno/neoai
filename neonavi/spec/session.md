@@ -58,3 +58,9 @@ summarised, in place, by the session's model.
   from what the user typed. Reasoning is not shown.
 - SES-17: With no conversation saved for the directory it says so on stderr
   and exits 1.
+- SES-18: A conversation kept under `--session <name>` (CLI-39) keeps the
+  name in its file. `navi sessions --json` prints, most recently used first,
+  a line of JSON for each saved conversation: `name` (when it has one),
+  `cwd` (when known), `messages`, `used` (ISO time), `ago` (as SES-13 says
+  it) and `last`, the last thing the user asked (navi's notes left out), so
+  a program such as neosh can offer one to resume (NSH-55).

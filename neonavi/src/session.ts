@@ -15,12 +15,16 @@ export function sessionFile(cwd: string, home: string): string {
 }
 
 /** A history file's contents: today's shape, or a bare array from before (SES-12). */
-function parse(text: string): { cwd?: string; messages: ModelMessage[] } {
+function parse(text: string): { cwd?: string; name?: string; messages: ModelMessage[] } {
   try {
     const parsed = JSON.parse(text)
     if (Array.isArray(parsed)) return { messages: parsed }
     if (parsed && Array.isArray(parsed.messages))
-      return { ...(typeof parsed.cwd === 'string' && { cwd: parsed.cwd }), messages: parsed.messages }
+      return {
+        ...(typeof parsed.cwd === 'string' && { cwd: parsed.cwd }),
+        ...(typeof parsed.name === 'string' && { name: parsed.name }),
+        messages: parsed.messages,
+      }
   } catch {}
   // Missing, half-written, or hand-edited: none of it is worth a crash.
   return { messages: [] }
@@ -30,18 +34,20 @@ export async function loadSession(file: string): Promise<ModelMessage[]> {
   return parse(await readFile(file, 'utf8').catch(() => '')).messages
 }
 
-/** Saves a directory's history; `cwd` is kept in it so a listing can name it (SES-12). */
-export async function saveSession(file: string, messages: ModelMessage[], cwd?: string): Promise<void> {
+/** Saves a directory's history; `cwd` is kept in it so a listing can name it (SES-12), and a `--session` name (SES-18). */
+export async function saveSession(file: string, messages: ModelMessage[], cwd?: string, name?: string): Promise<void> {
   // 0700: these files hold whatever navi has read — file contents, shell
   // output — so they are nobody else's business on a shared machine.
   await mkdir(dirname(file), { recursive: true, mode: 0o700 })
-  await writeFile(file, JSON.stringify(cwd ? { cwd, messages } : messages, null, 2), { mode: 0o600 })
+  await writeFile(file, JSON.stringify(cwd || name ? { ...(cwd && { cwd }), ...(name && { name }), messages } : messages, null, 2), { mode: 0o600 })
 }
 
 export interface SavedSession {
   file: string
   /** Unknown for a file written before directories were kept (SES-12). */
   cwd?: string
+  /** The `--session` name it was saved under (SES-18). */
+  name?: string
   messages: number
   used: Date
 }
@@ -55,8 +61,8 @@ export async function listSessions(home: string): Promise<SavedSession[]> {
       const file = join(dir, name)
       // Another navi may clear it between the listing and this.
       const [text, info] = await Promise.all([readFile(file, 'utf8').catch(() => ''), stat(file).catch(() => null)])
-      const { cwd, messages } = parse(text)
-      return info && { file, ...(cwd && { cwd }), messages: messages.length, used: info.mtime }
+      const { cwd, name: named, messages } = parse(text)
+      return info && { file, ...(cwd && { cwd }), ...(named && { name: named }), messages: messages.length, used: info.mtime }
     }),
   )
   return all.filter((s): s is SavedSession => !!s).sort((a, b) => b.used.getTime() - a.used.getTime())

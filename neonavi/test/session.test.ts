@@ -115,3 +115,14 @@ test('how long ago reads like a person would say it', () => {
   assert.equal(ago(before(180), now), '3 h ago')
   assert.equal(ago(before(3 * 24 * 60), now), '3 days ago')
 })
+
+// SES-18
+test('a conversation under a name keeps it, for a listing to offer', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-s-'))
+  const file = sessionFile('session:neosh-1-2', home)
+  await saveSession(file, [{ role: 'user', content: 'hi' }], '/work', 'neosh-1-2')
+  const [one] = await listSessions(home)
+  assert.equal(one.name, 'neosh-1-2')
+  assert.equal(one.cwd, '/work')
+  assert.equal(one.messages, 1)
+})
