@@ -3,11 +3,12 @@ import { auto } from 'neorouter'
 import { homedir } from 'node:os'
 import { basename, resolve } from 'node:path'
 import { readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { commandFrom, promptFrom, startsFresh } from './args.ts'
 import { modelFor, parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
 import { colorDiff, makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
-import { makeGutter } from './gutter.ts'
+import { describeCall, makeGutter } from './gutter.ts'
 import { serveMcp, type Ask } from './mcp.ts'
 import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } from './serve.ts'
 import { ago, clearAllSessions, clearSession, listSessions, addPrompt, loadPrompts, loadSession, saveSession, sessionFile } from './session.ts'
@@ -38,6 +39,16 @@ function echo(input: unknown): string {
   return JSON.stringify(input, (_, v) => (typeof v === 'string' && v.length > 80 ? `${v.slice(0, 77)}…` : v))
 }
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
+/** The command whose output the shell kept in this file, from its index (CLI-42). */
+function printedBy(index: string | undefined, path: string): string | undefined {
+  if (!index) return
+  try {
+    for (const line of readFileSync(index, 'utf8').split('\n')) {
+      const m = / \$ (.*) -> (.+)$/.exec(line)
+      if (m && m[2] === path) return m[1]
+    }
+  } catch {}
+}
 // CLI-43: asked from a shell, the notes before the answer are in its gutter too.
 const asked = process.env.NAVI_GUTTER === '1' && process.stdout.isTTY ? makeGutter(80, !process.env.NO_COLOR) : undefined
 if (asked) drawAnnouncements(asked.note)
@@ -1129,6 +1140,8 @@ async function main() {
     ]
       .filter(Boolean)
       .join('; ') || undefined
+  // CLI-44: what a tool call is, in words, for the gutter.
+  const where = { cwd: process.cwd(), home: homedir(), printedBy: (path: string) => printedBy(shellIndex, path) }
   const turn = async (prompt: string, again?: { attachments: Attachment[]; model?: string }) => {
     let done: Extract<HarnessEvent, { type: 'done' }> | undefined
     const stop = new AbortController()
@@ -1154,7 +1167,7 @@ async function main() {
         } else {
           spin.stop()
           if (e.type === 'compacted') note(`· compacted ${e.messages} messages`)
-          else if (e.type === 'tool-call') note(`· ${e.name}(${echo(e.input)})`)
+          else if (e.type === 'tool-call') note(`· ${(gutter && describeCall(e.name, e.input, where)) || `${e.name}(${echo(e.input)})`}`)
           else if (e.type === 'auto-approved') note(`· ${e.allowed ? 'allowed' : 'auto-approved'}: ${e.command}`)
           else if (e.type === 'remembered')
             note(

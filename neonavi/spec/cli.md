@@ -111,6 +111,16 @@
   gutter to the terminal's width. A fenced code block is drawn without the
   gutter, its fences left out and its lines indented four spaces and never
   wrapped, so they copy as they are. Piped, the answer is as before.
+- CLI-44: In that gutter, with colour on (not `NO_COLOR`), the answer's
+  markdown is drawn rather than shown as typed: `**bold**` in bold,
+  `` `code` `` in cyan, `*italic*` in italics (a `*` or `_` inside a word,
+  as in `snake_case` or `2 * 3`, stays as written), a `#` heading in bold
+  without its hashes, and a `-`, `*` or `+` bullet as `•`. A style never
+  runs past the end of its line. Tool calls are told in words: `· read
+  app.py`, `· run ls -la`, `· search the web for "…"`, a path from the
+  working directory or `~`, and a file the shell keeps a command's output in
+  (CLI-42) as `· read what \`python3 app.py\` printed`. A call with no words
+  is shown as its input, as in CLI-10.
 - CLI-41: `NAVI_COMMAND_FILE` in the environment names a file for the
   command the answer suggests, for a shell to put at its prompt. The model
   is told so in the same note; when the answer's last code block is a shell

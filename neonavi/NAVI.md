@@ -390,9 +390,10 @@ for its user, as [neosh](https://github.com/Jeanno/neosh) does, can put what the
 before in `NAVI_RECENT`, and in `NAVI_SHELL_INDEX` an index of what each
 command printed, which navi reads only when the question needs it; navi is
 told both ahead of the prompt. `NAVI_GUTTER=1` draws the answer in a dim
-`│` gutter, code blocks outside it so they copy clean (CLI-43). With
+`│` gutter, code blocks outside it so they copy clean (CLI-43), its
+markdown drawn and its tool calls told in words (`· read app.py`, CLI-44). With
 `NAVI_COMMAND_FILE` set, a one-line command the answer ends with is written
-to that file, for the shell to put at its prompt (CLI-38 to CLI-43).
+to that file, for the shell to put at its prompt (CLI-38 to CLI-44).
 
 Prompts leave the machine only for a provider or custom link; the backend that
 answered is announced on stderr every run.

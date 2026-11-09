@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { makeGutter } from '../src/gutter.ts'
+import { describeCall, makeGutter } from '../src/gutter.ts'
 
 /** The answer drawn as it streams, in pieces of `size` characters. */
 function draw(answer: string, width: number, size = 3) {
@@ -35,4 +35,45 @@ test('a code block is drawn without the gutter, so it copies clean', () => {
 test("navi's notes are in the gutter too, dim on a terminal", () => {
   assert.equal(makeGutter(40, false).note('· read app.py'), '│ · read app.py')
   assert.equal(makeGutter(40).note('x'), '\x1b[2m│\x1b[0m \x1b[2mx\x1b[0m')
+})
+
+// CLI-44
+test('markdown is drawn as it reads, across words, wraps and pieces', () => {
+  const g = (answer: string, width = 40, size = 2) => {
+    const gut = makeGutter(width)
+    let out = ''
+    for (let i = 0; i < answer.length; i += size) out += gut.text(answer.slice(i, i + size))
+    return (out + gut.end()).replaceAll('\x1b[2m│\x1b[0m ', '| ').replaceAll('\x1b[2m│\x1b[0m', '|')
+  }
+  assert.equal(g('The **exact error** is `JSONDecodeError`.'), '| The \x1b[1mexact\x1b[22m'.replace('\x1b[22m', ' error\x1b[22m') + ' is \x1b[36mJSONDecodeError\x1b[39m.\n')
+  // Styles carry over a wrap, and stop at the end of the line.
+  assert.equal(g('**one two three four five six**', 20), '| \x1b[1mone two three four\n| \x1b[1mfive six\x1b[22m\n')
+  assert.equal(g('**open\nnext'), '| \x1b[1mopen\x1b[0m\n| next\n')
+  // A heading in bold, a bullet as one; snake_case and 2 * 3 stay as written.
+  assert.equal(g('## Fix it\n- run `ls`\n'), '| \x1b[1mFix it\x1b[0m\n| • run \x1b[36mls\x1b[39m\n')
+  assert.equal(g('use read_file, 2 * 3, *really*'), '| use read_file, 2 * 3, \x1b[3mreally\x1b[23m\n')
+  // ** inside code is code.
+  assert.equal(g('`a**b`'), '| \x1b[36ma**b\x1b[39m\n')
+})
+
+// CLI-44
+test('a tool call reads in plain words', () => {
+  const where = {
+    cwd: '/home/u/proj',
+    home: '/home/u',
+    printedBy: (p: string) => (p === '/tmp/rec/1-3.txt' ? 'python3 app.py' : undefined),
+  }
+  const d = (name: string, input: unknown) => describeCall(name, input, where)
+  assert.equal(d('read_file', { path: '/home/u/proj/app.py' }), 'read app.py')
+  assert.equal(d('read_file', { path: '/home/u/notes.md', offset: 200, limit: 100 }), 'read ~/notes.md, lines 200–299')
+  assert.equal(d('read_file', { path: '/tmp/rec/1-3.txt' }), 'read what `python3 app.py` printed')
+  assert.equal(d('list_dir', { path: '/home/u/proj' }), 'list .')
+  assert.equal(d('grep', { pattern: 'load_config', path: '/home/u/proj/src' }), 'search for "load_config" in src')
+  assert.equal(d('run_shell', { command: 'ls -la\npwd' }), 'run ls -la ↵ pwd')
+  assert.equal(d('web_search', { query: 'json decode error' }), 'search the web for "json decode error"')
+  assert.equal(d('fetch_url', { url: 'https://example.com/a' }), 'fetch https://example.com/a')
+  // A path outside both stays whole; a call with no words is undefined.
+  assert.equal(d('edit_file', { path: '/etc/hosts', old_text: 'a', new_text: 'b' }), 'edit /etc/hosts')
+  assert.equal(d('browser_click', { ref: 'e3' }), undefined)
+  assert.equal(d('read_file', {}), undefined)
 })
