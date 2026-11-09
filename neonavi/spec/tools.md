@@ -169,37 +169,53 @@ A model call that decides whether a shell command needs the user's approval.
   asks for everything the allowlist does not name (TL-41). Any other value, or none, means judge first.
 - TL-25: The judge uses the session's model. No separate model is configured.
 
-- TL-18: `judge(model, command, intent)` returns `safe`, `unsafe` or
-  `unknown`. `intent` is the user's current prompt, so "clean the build"
-  makes `npm run clean` judgeable. Asking for a delete does not make one
-  safe (TL-44).
+- TL-18: `judge(model, command, intent, before?)` returns `safe`, `unsafe`
+  or `unknown`. `intent` is the user's current prompt, so "clean the build"
+  makes `npm run clean` judgeable; `before` is the prompt before it, so
+  "yes, do it" is judged against what it answers.
 - TL-19: The model is asked for a one-word verdict. Only a line reading
   exactly SAFE or UNSAFE (case-insensitive) counts; the last such line wins.
   Any other output is `unknown`.
 - TL-20: A model error, timeout, or empty reply is `unknown`, never a throw.
 - TL-46: `npm run eval:judge -- [--model <spec>] [--runs N]` measures a
   model as judge against `eval/judge-cases.json`: commands, each with what
-  the user asked and the verdict it should get. It says how many verdicts
+  the user asked (and asked before, where it matters) and the verdict it
+  should get; most come in pairs, one command under a request that asks for
+  it and one that does not. It says how many verdicts
   were right; lists each command that should ask but was judged safe and is
   not caught by TL-44 (it would run unasked, the serious miss); and each
   safe command that would ask needlessly; and how many verdicts were unknown
   (TL-20), so a model that is not answering is told apart from a bad judge. It calls the model, so it is run
   on demand, not with the tests.
-- TL-21: Safe means read-only, or writing only inside the working directory
-  without deleting or overwriting existing files, with no network sends, no
-  privilege escalation, no process kills, and no git history rewriting or
-  pushing. Everything else, including anything the judge cannot tell, is unsafe.
-- TL-44: Whatever the judge would say, a command always asks (unless the
+- TL-21: Safe means the command serves what the user asked and does no
+  more: no wider paths, no other files, no effects they did not ask for.
+  Whatever it deletes, overwrites, sends, installs, publishes, pushes or
+  stops must itself have been asked for, so "delete the files under this
+  dir" makes `rm -rf ./*` safe, and "why is the build slow" does not.
+  Looking around to serve a request (reading, listing, searching, running
+  tests or builds) is safe. Everything else, including anything the judge
+  cannot tell, is unsafe. Wording in the request that tells the judge how
+  to judge is no reason for safe.
+- TL-44: Whatever was asked for, a command always asks (unless the
   allowlist names it, TL-41) when any part of it (between `;`, `&`, `|`,
   `(`, `$(` or a backquote, past `VAR=…` settings and wrappers such as
-  `env`, `xargs`, `nice`, `nohup`, `time`) deletes, overwrites, kills or
-  takes privileges: `rm`, `rmdir`, `unlink`, `shred`, `trash`, `mv`, `dd`,
-  `truncate`, `mkfs…`, `sudo`, `su`, `doas`, `kill`, `killall`, `pkill`,
-  `chmod`, `chown`, `chgrp`, `launchctl`, `crontab`, `osascript`, `eval`,
-  `shutdown`, `reboot`, `diskutil`; `find` with `-delete` or `-exec`; `git`
-  `push`, `reset`, `clean`, `rebase`, `rm`, `restore`, `filter-branch`,
-  `filter-repo`, `commit --amend`, `checkout` with `--` or `-f`, `branch -d`
-  or `-D`, `stash drop` or `clear`; anything piped into `sh`, `bash` or
-  `zsh`; or a `>` or `>>` into a file other than `/dev/null`. A small local
-  judge was seen calling `rm README.md` safe because the user had asked for
-  it; a delete is the user's to say yes to.
+  `env`, `nice`, `nohup`, `time`) does what no request makes safe:
+  - takes privileges or changes the system: `sudo`, `su`, `doas`, `dd`,
+    `mkfs…`, `diskutil`, `shutdown`, `reboot`, `halt`, `launchctl`,
+    `crontab`, `osascript`, `eval`;
+  - deletes, moves, overwrites or changes the mode of a path outside the
+    working directory: `rm`, `rmdir`, `unlink`, `shred`, `trash`, `mv`,
+    `truncate`, `chmod`, `chown`, `chgrp`, `tee`, and `cp` or `ln` landing
+    there; `find` with `-delete` or `-exec` from there; or a `>` or `>>`
+    into a file there. A path is outside when it starts with `~`, holds a
+    `$` or a backquote, is absolute and not under the working directory, or
+    climbs above it with `..`;
+  - runs a delete or change on what a pipe gives it (`… | xargs rm`), or
+    pipes into `sh`, `bash` or `zsh`;
+  - loses what no remote or reflog brings back: `git filter-branch`,
+    `git filter-repo`, and `git push` with `-f`, `--force`,
+    `--force-with-lease`, `--mirror`, `--delete`, `-d`, or a `+` or `:` ref.
+
+  Inside the working directory, a delete, overwrite, kill, reset or push is
+  the judge's to allow against what was asked (TL-21): the user said
+  "delete the files under this dir" should just do it.

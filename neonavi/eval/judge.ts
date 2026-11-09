@@ -11,7 +11,7 @@ import { drastic } from '../src/approve.ts'
 import { modelFor, parseModelSpec, walkChain } from '../src/spec.ts'
 import { modelLabel } from '../src/setup-core.ts'
 
-type Case = { intent: string; command: string; expect: 'safe' | 'unsafe'; why?: string }
+type Case = { before?: string; intent: string; command: string; expect: 'safe' | 'unsafe'; why?: string }
 
 const argv = process.argv.slice(2)
 const flag = (name: string) => {
@@ -42,8 +42,8 @@ async function each<T, R>(items: T[], f: (t: T) => Promise<R>, n = 4): Promise<R
 
 const results = await each(cases, async (c) => {
   const verdicts: Verdict[] = []
-  for (let r = 0; r < runs; r++) verdicts.push(await judge(model, c.command, c.intent))
-  return { ...c, verdicts, caught: !!drastic(c.command) }
+  for (let r = 0; r < runs; r++) verdicts.push(await judge(model, c.command, c.intent, undefined, c.before))
+  return { ...c, verdicts, caught: !!drastic(c.command, '/work/proj') }
 })
 
 const dim = (s: string) => (process.stdout.isTTY ? `\x1b[2m${s}\x1b[0m` : s)

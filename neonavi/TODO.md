@@ -30,6 +30,10 @@ add the requirement there first.
 - [x] A delete, overwrite, kill or privilege always asks, whatever the
       judge says: a local judge was seen auto-approving `rm README.md`
       because the user had asked for it. (`spec/tools.md` TL-44)
+- [x] The judge decides by what was asked: "delete the files under this
+      dir" runs `rm -rf ./*`. The floor under it is narrower: privileges,
+      changes outside the working directory, a pipe into a shell, a
+      force-push. (`spec/tools.md` TL-18, TL-21, TL-44)
 - [x] Tests for the requirements no test checked: the CLI end to end (on a
       pipe, and on a real terminal through script(1)), tool limits, local
       discovery, serve and mcp. Left: HAR-6 (structural) and RAY-1, RAY-5,

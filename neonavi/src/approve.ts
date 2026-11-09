@@ -285,29 +285,52 @@ export async function allowCommand(command: string, dir: string): Promise<void> 
   }, dir)
 }
 
-const DRASTIC = new Set([
-  'rm', 'rmdir', 'unlink', 'shred', 'trash', 'mv', 'dd', 'truncate', 'sudo', 'su', 'doas', 'kill', 'killall', 'pkill',
-  'chmod', 'chown', 'chgrp', 'launchctl', 'crontab', 'osascript', 'eval', 'shutdown', 'reboot', 'diskutil',
-])
+/** Asked whatever was asked for (TL-44): privilege, the disk, the machine itself, code run unseen. */
+const DRASTIC = new Set(['sudo', 'su', 'doas', 'dd', 'diskutil', 'shutdown', 'reboot', 'halt', 'launchctl', 'crontab', 'osascript', 'eval'])
+/** Deletes, moves and overwrites: the user's to ask for, inside the working directory only (TL-44). */
+const CHANGES = new Set(['rm', 'rmdir', 'unlink', 'shred', 'trash', 'mv', 'truncate', 'chmod', 'chown', 'chgrp', 'cp', 'ln', 'tee'])
 const WRAPPERS = new Set(['env', 'xargs', 'nice', 'nohup', 'time', 'command', 'exec', 'caffeinate'])
-const GIT = /^(push|reset|clean|rebase|rm|restore|filter-branch|filter-repo)$/
 const SHELLS = new Set(['sh', 'bash', 'zsh'])
 
 /** A command's name without its directory or a leading backslash: `/bin/rm`, `\rm`. */
 const bare = (word: string) => word.replace(/^\\/, '').replace(/^.*\//, '')
 
 /**
- * Why a command must ask whatever the judge says (TL-44), or nothing. Read
- * plainly, part by part: a floor under the judge, not a shell parser, so it
- * errs towards asking.
+ * Whether a path, as written, may lead out of `cwd`: absolute and elsewhere,
+ * from home, through `..`, or decided only when it runs (`$VAR`, a backquote).
  */
-export function drastic(command: string): string | undefined {
-  // Into a file; `2>&1`, `>&2` and /dev/null are not.
-  for (const m of command.matchAll(/(?<![<&])>>?(?!&)\s*([^\s;&|)]+)/g)) if (m[1] !== '/dev/null') return `it writes into ${m[1]}`
+export function outside(path: string, cwd?: string): boolean {
+  const p = path.replace(/^['"]|['"]$/g, '')
+  if (/^~|\$|`/.test(p)) return true
+  const root = cwd?.replace(/\/+$/, '')
+  if (p.startsWith('/')) return !root || !(p === root || p.startsWith(`${root}/`))
+  // `a/../../b`: walked, it must not climb above where it started.
+  let depth = 0
+  for (const step of p.split('/')) {
+    if (step === '..') depth--
+    else if (step && step !== '.') depth++
+    if (depth < 0) return true
+  }
+  return false
+}
+
+/**
+ * Why a command must ask whatever was asked for (TL-44), or nothing. Read
+ * plainly, part by part: a floor under the judge, not a shell parser, so it
+ * errs towards asking. `cwd` is the working directory, which a delete,
+ * move or overwrite must stay in.
+ */
+export function drastic(command: string, cwd?: string): string | undefined {
+  // Into a file outside; `2>&1`, `>&2` and /dev/null are not files.
+  for (const m of command.matchAll(/(?<![<&])>>?(?!&)\s*([^\s;&|)]+)/g))
+    if (m[1] !== '/dev/null' && outside(m[1], cwd)) return `it writes into ${m[1]}, outside the working directory`
   for (const seg of command.split(/;|&&|\n/))
     for (const part of seg.split(/\|\|?/).slice(1)) {
       const word = bare(part.trim().split(/\s+/)[0] ?? '')
       if (SHELLS.has(word)) return `it pipes into ${word}`
+      // What a delete gets from a pipe is not known before it runs.
+      const after = part.trim().split(/\s+/).filter((w) => !WRAPPERS.has(w) && !w.startsWith('-'))
+      if (bare(part.trim().split(/\s+/)[0] ?? '') === 'xargs' && CHANGES.has(bare(after[0] ?? ''))) return `it runs ${bare(after[0])} on what a pipe gives it`
     }
   for (const part of command.split(/;|&&?|\|\|?|\(|\)|\$\(|`|\n/)) {
     const words = part.trim().split(/\s+/).filter(Boolean)
@@ -315,20 +338,28 @@ export function drastic(command: string): string | undefined {
     if (!words.length) continue
     const name = bare(words[0])
     const rest = words.slice(1)
+    const paths = rest.filter((w) => !w.startsWith('-'))
     if (DRASTIC.has(name) || name.startsWith('mkfs')) return `it runs ${name}`
-    if (name === 'find' && rest.some((w) => ['-delete', '-exec', '-execdir', '-ok'].includes(w))) return 'it runs find with -delete or -exec'
+    if (CHANGES.has(name)) {
+      // A copy or link only writes where it lands, its last path.
+      const away = (name === 'cp' || name === 'ln' ? paths.slice(-1) : paths).find((w) => outside(w, cwd))
+      if (away) return `it runs ${name} on ${away}, outside the working directory`
+    }
+    if (name === 'find' && rest.some((w) => ['-delete', '-exec', '-execdir', '-ok'].includes(w))) {
+      const from = rest.find((w) => !w.startsWith('-')) ?? '.'
+      if (outside(from, cwd)) return `it runs find with -delete or -exec on ${from}, outside the working directory`
+    }
     if (name !== 'git') continue
-    // Past git's own options, and the values of those that take one: `git -C repo reset`.
+    // Past git's own options, and the values of those that take one: `git -C repo push`.
     let at = 0
     while (at < rest.length && rest[at].startsWith('-')) at += ['-C', '-c', '--git-dir', '--work-tree', '--namespace'].includes(rest[at]) ? 2 : 1
     if (at >= rest.length) continue
     const sub = rest[at]
     const after = rest.slice(at + 1)
-    if (GIT.test(sub)) return `it runs git ${sub}`
-    if (sub === 'commit' && after.includes('--amend')) return 'it runs git commit --amend'
-    if (sub === 'checkout' && after.some((w) => ['--', '-f', '--force'].includes(w))) return 'it runs git checkout over changes'
-    if (sub === 'branch' && after.some((w) => ['-d', '-D', '--delete'].includes(w))) return 'it deletes a git branch'
-    if (sub === 'stash' && ['drop', 'clear'].includes(after[0] ?? '')) return `it runs git stash ${after[0]}`
+    // What no remote or reflog brings back.
+    if (sub === 'filter-branch' || sub === 'filter-repo') return `it runs git ${sub}`
+    if (sub === 'push' && after.some((w) => /^(-f|--force|--force-with-lease|--mirror|--delete|-d)(=|$)/.test(w) || w.startsWith('+') || w.startsWith(':')))
+      return 'it force-pushes or deletes on a remote'
   }
 }
 
@@ -344,9 +375,12 @@ export function gated({
   allow,
   remember,
   onAuto,
+  cwd,
 }: {
   judge: (command: string) => Promise<Verdict>
   ask: (command: string) => Promise<Answer>
+  /** The working directory, which a delete or overwrite must stay in (TL-44). */
+  cwd?: string
   /** 'ask' never consults the judge. */
   mode?: string
   /** The allowlist now: read on each command, so an "always" counts at once. */
@@ -360,8 +394,8 @@ export function gated({
       onAuto?.(command, 'allowed')
       return true
     }
-    // TL-44: a delete, overwrite, kill or privilege is the user's to allow.
-    if (mode !== 'ask' && !drastic(command) && (await judge(command)) === 'safe') {
+    // TL-44: what no request makes safe is the user's to allow.
+    if (mode !== 'ask' && !drastic(command, cwd) && (await judge(command)) === 'safe') {
       onAuto?.(command, 'judged')
       return true
     }

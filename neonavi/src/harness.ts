@@ -306,8 +306,9 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       const approve = async (command: string, toolSignal?: AbortSignal, id?: string) => {
         await after(id)
         const ok = await gated({
-          // The judge reads the command in the light of what was asked (TL-18).
-          judge: (c) => judge(o.model, c, prompt),
+          // The judge reads the command in the light of what was asked, and before (TL-18).
+          judge: (c) => judge(o.model, c, prompt, undefined, before.text || undefined),
+          cwd: o.cwd,
           mode: config.approve,
           allow: () => config.allow,
           // Kept for this session at once, and in the config file for the next.
