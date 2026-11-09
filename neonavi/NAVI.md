@@ -329,8 +329,10 @@ otherwise (`src/search.ts`), honouring `.gitignore` either way, so nothing
 needs installing.
 
 `write_file` and `edit_file` show each change as a diff first. A new file in
-the working directory is made without asking; changing an existing file, or
-anything outside the directory, waits for `y` (`src/diff.ts`). `"write":
+the working directory is made without asking. Changing one that exists there
+is judged, diff and all, like a shell command: "fix the typo in README" just
+edits it, and a change wider than you asked waits for `y`. Anything outside
+the directory always waits (`spec/tools.md` TL-38). `"write":
 false` in the config removes both.
 
 Before a shell command runs, the session's model is asked whether it is

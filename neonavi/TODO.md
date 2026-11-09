@@ -34,6 +34,8 @@ add the requirement there first.
       dir" runs `rm -rf ./*`. The floor under it is narrower: privileges,
       changes outside the working directory, a pipe into a shell, a
       force-push. (`spec/tools.md` TL-18, TL-21, TL-44)
+- [x] A change to a file in the working directory is judged the same way,
+      diff and all; outside it always asks. (`spec/tools.md` TL-38)
 - [x] Tests for the requirements no test checked: the CLI end to end (on a
       pipe, and on a real terminal through script(1)), tool limits, local
       discovery, serve and mcp. Left: HAR-6 (structural) and RAY-1, RAY-5,

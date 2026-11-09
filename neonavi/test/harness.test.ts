@@ -283,8 +283,8 @@ test('only commands not judged safe reach the approval callback', async () => {
 })
 
 // HAR-4, TL-38: a new file in the working directory is made without asking;
-// changing one that exists asks, with the change attached.
-test('file changes ask unless they create a file here', async () => {
+// changing one that exists asks, with the change attached, unless judged safe.
+test('file changes the judge does not pass ask, unless they create a file here', async () => {
   const asked: { command: string; diff?: string }[] = []
   const model = fake([
     [
@@ -303,6 +303,35 @@ test('file changes ask unless they create a file here', async () => {
   const cwd = h.system.match(/The working directory is (\S+)/)![1]
   assert.equal(await readFile(join(cwd, 'a.txt'), 'utf8'), 'bye\n')
   assert.equal(await readFile(join(cwd, 'new.txt'), 'utf8'), 'fresh\n')
+})
+
+// TL-38: the judge sees the diff and what was asked; outside the working directory it is never asked.
+test('a change to a file here that the judge passes is made without asking', async () => {
+  const asked: string[] = []
+  const judged: string[] = []
+  const base = fake([
+    [
+      call('c1', 'edit_file', { path: 'a.txt', old_text: 'hello', new_text: 'safe-cmd' }),
+      call('c2', 'write_file', { path: '../away.txt', content: 'safe-cmd' }),
+      finish('tool-calls'),
+    ],
+    [...text('t', 'done'), finish('stop')],
+  ])
+  const model = new MockLanguageModelV2({
+    provider: 'fake',
+    doStream: (o) => base.doStream(o),
+    doGenerate: (o) => (judged.push(JSON.stringify(o.prompt)), base.doGenerate(o)),
+  })
+  const h = await harness(model, { approve: async (c) => (asked.push(c), false) })
+  const events = await collect(h.session().turn('change hello'))
+  assert.ok(events.some((e) => e.type === 'auto-approved' && e.command === 'edit a.txt (+1 -1)'))
+  assert.equal(asked.length, 1)
+  assert.match(asked[0], /^create .*away\.txt/)
+  assert.equal(judged.length, 1)
+  assert.match(judged[0], /change hello/)
+  assert.match(judged[0], /- hello/)
+  const cwd = h.system.match(/The working directory is (\S+)/)![1]
+  assert.equal(await readFile(join(cwd, 'a.txt'), 'utf8'), 'safe-cmd\n')
 })
 
 test('approve: "ask" asks about a new file too', async () => {

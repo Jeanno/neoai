@@ -68,11 +68,15 @@ send anything off the machine.
 - TL-38: Every change is shown as a diff before it is made: the changed lines
   marked `-` and `+`, with up to 3 unchanged lines around them. The diff is
   never cut short, and control characters in it are shown as symbols, so what
-  is approved is all of what is shown. Creating a new file inside the working
-  directory is what TL-21 calls safe, so with judging on (TL-24) it runs
-  without asking and is reported as auto-approved like a command (TL-22).
-  Changing an existing file, or writing anywhere outside the working
-  directory, always asks, and so does every change under `"approve": "ask"`.
+  is approved is all of what is shown. With judging on (TL-24), creating a new
+  file inside the working directory is made without asking, and changing
+  one that exists there is judged like a command (TL-21): the judge is
+  shown what was asked, the one-line summary and the whole diff, so "fix
+  the typo in README" edits README.md, and a change wider than the request
+  asks. A diff longer than 6,000 characters is not judged, and asks. Each
+  change made without asking is reported as auto-approved (TL-22). Writing
+  anywhere outside the working directory always asks, and so does every
+  change under `"approve": "ask"`.
   Only `y` approves (TL-14); a file change is never offered `a`. A path that leads out of the working directory
   through a symbolic link counts as outside. So does a hidden one, a name
   starting with `.` anywhere in the path (`.git/hooks/…`,

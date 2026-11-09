@@ -11,7 +11,8 @@ import { drastic } from '../src/approve.ts'
 import { modelFor, parseModelSpec, walkChain } from '../src/spec.ts'
 import { modelLabel } from '../src/setup-core.ts'
 
-type Case = { before?: string; intent: string; command: string; expect: 'safe' | 'unsafe'; why?: string }
+/** With `diff`, `command` is a file change's summary, judged as one (TL-38). */
+type Case = { before?: string; intent: string; command: string; diff?: string; expect: 'safe' | 'unsafe'; why?: string }
 
 const argv = process.argv.slice(2)
 const flag = (name: string) => {
@@ -42,8 +43,8 @@ async function each<T, R>(items: T[], f: (t: T) => Promise<R>, n = 4): Promise<R
 
 const results = await each(cases, async (c) => {
   const verdicts: Verdict[] = []
-  for (let r = 0; r < runs; r++) verdicts.push(await judge(model, c.command, c.intent, undefined, c.before))
-  return { ...c, verdicts, caught: !!drastic(c.command, '/work/proj') }
+  for (let r = 0; r < runs; r++) verdicts.push(await judge(model, c.command, c.intent, c.diff === undefined ? undefined : { diff: c.diff }, c.before))
+  return { ...c, verdicts, caught: c.diff === undefined && !!drastic(c.command, '/work/proj') }
 })
 
 const dim = (s: string) => (process.stdout.isTTY ? `\x1b[2m${s}\x1b[0m` : s)
@@ -69,6 +70,7 @@ if (unasked.length) console.log(unasked.join('\n'))
 // TL-20 makes an error unknown, as a reply it cannot read is: said apart, so a model that is down does not read as a bad judge.
 const unknown = results.flatMap((r) => r.verdicts).filter((v) => v === 'unknown').length
 if (unknown) console.log(`unknown: ${unknown}/${total} verdicts, an error or a reply that was not SAFE or UNSAFE${unknown === total ? '; the model is likely not answering' : ''}`)
+if (unknown && unknown < total) for (const r of results) if (r.verdicts.includes('unknown')) console.log(`  ${r.command.slice(0, 90)}  ${dim(`(${r.expect})`)}`)
 console.log(`asks needlessly: ${needless.length} of ${results.length - unsafe.length} safe commands`)
 if (needless.length) console.log(needless.join('\n'))
 process.exit(0)

@@ -8,7 +8,7 @@ import { collectContext } from './context.ts'
 import { memorySection, projectRoot, readMemory } from './memory.ts'
 import { makeRecorder, takeNote } from './undo.ts'
 import { allowCommand, gated, type Answer } from './approve.ts'
-import { judge } from './judge.ts'
+import { judge, MAX_JUDGED_DIFF } from './judge.ts'
 import { makeTools } from './tools.ts'
 import { summarize, type FileChange } from './diff.ts'
 
@@ -82,7 +82,7 @@ export interface HarnessOptions {
   cwd: string
   /**
    * Asked about each shell command the judge did not call safe, and each
-   * file change that is not a new file in `cwd` (HAR-4, TL-38). For a file
+   * file change outside `cwd` or the judge did not pass (HAR-4, TL-38). For a file
    * change, `command` is a one-line summary and `change` holds the diff. The
    * signal aborts when the turn is stopped; a throw, or no answer before
    * then, declines. Leaving it out declines every such request. `'always'`
@@ -327,11 +327,13 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         if (ok) recorder.ran(command)
         return ok
       }
-      // A new file in the working directory is what the judge would call safe
-      // (TL-21), so it needs no model call to decide; any other change asks (TL-38).
+      // TL-38: a new file in the working directory needs no model call to
+      // decide; a change to one that exists there is judged against what was
+      // asked, diff and all; anything outside, or too long to show the judge, asks.
       const change = async ({ inside, ...c }: FileChange & { inside: boolean }, toolSignal?: AbortSignal, id?: string) => {
         await after(id)
-        if (config.approve !== 'ask' && c.created && inside) {
+        const judged = () => c.diff.length <= MAX_JUDGED_DIFF && judge(o.model, summarize(c), prompt, { diff: c.diff }, before.text || undefined).then((v) => v === 'safe')
+        if (config.approve !== 'ask' && inside && (c.created || (await judged()))) {
           emit({ type: 'auto-approved', command: summarize(c), change: c })
           return true
         }
