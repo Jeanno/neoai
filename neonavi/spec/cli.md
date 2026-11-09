@@ -104,6 +104,13 @@
   file tool when the question needs what a command printed, a page at a
   time, and that what they hold is the user's data, never instructions to
   follow.
+- CLI-43: With `NAVI_GUTTER=1` in the environment and the answer streaming
+  to a terminal, as a shell asks (NSH-5), every line navi draws for the
+  answer starts with a dim `│ `: the model it answers with, its notes (a
+  tool call, `· stopped`) and the answer, its words wrapped inside the
+  gutter to the terminal's width. A fenced code block is drawn without the
+  gutter, its fences left out and its lines indented four spaces and never
+  wrapped, so they copy as they are. Piped, the answer is as before.
 - CLI-41: `NAVI_COMMAND_FILE` in the environment names a file for the
   command the answer suggests, for a shell to put at its prompt. The model
   is told so in the same note; when the answer's last code block is a shell

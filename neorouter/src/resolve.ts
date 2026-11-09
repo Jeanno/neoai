@@ -256,6 +256,12 @@ async function keylessResolution(
   }
 }
 
+/** How the announcement is drawn: a front end with its own look sets it (CLI-43). */
+let drawn = (line: string) => line
+export function drawAnnouncements(draw: (line: string) => string): void {
+  drawn = draw
+}
+
 /**
  * The caller never picked this model, so they are told which one answered —
  * once, on stderr, where it cannot corrupt piped stdout.
@@ -278,7 +284,7 @@ export function announce(r: Pick<Resolved, 'backend' | 'modelId' | 'rung' | 'loc
       writeFileSync(seen, line)
     } catch {}
   }
-  console.error(line)
+  console.error(drawn(line))
 }
 
 // Keyed by preference: 'fast' and the default resolve to different models, so a

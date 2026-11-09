@@ -2,7 +2,7 @@ export { auto, diagnose, probe, route, type AutoOptions, type Route } from './pr
 export { generate, stream, inspect } from './helpers.ts'
 export { shutdown } from './launch.ts'
 export { configDir, sessionsDir, readKey, readConfig, envFor, customEndpoints, type Custom } from './config.ts'
-export { diagnoseBackend, probeBackend, reset, type Scope } from './resolve.ts'
+export { diagnoseBackend, drawAnnouncements, probeBackend, reset, type Scope } from './resolve.ts'
 export type { Resolution, Hardware, Candidate, Prefer } from './types.ts'
 export { localModels } from './discover.ts'
 export { PROVIDERS, providerById, type Provider } from './providers.ts'

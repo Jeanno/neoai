@@ -7,13 +7,14 @@ import { commandFrom, promptFrom, startsFresh } from './args.ts'
 import { modelFor, parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
 import { colorDiff, makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
+import { makeGutter } from './gutter.ts'
 import { serveMcp, type Ask } from './mcp.ts'
 import { DEFAULT_PORT, installAgent, listen, realServeDeps, uninstallAgent } from './serve.ts'
 import { ago, clearAllSessions, clearSession, listSessions, addPrompt, loadPrompts, loadSession, saveSession, sessionFile } from './session.ts'
 import { exchangesMarkdown, transcript } from './transcript.ts'
 import { attachStdin, MAX_UPLOAD } from './attach.ts'
 import { attach, createHarness, CUT_NOTE, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
-import { readConfig, reset } from 'neorouter'
+import { drawAnnouncements, readConfig, reset } from 'neorouter'
 import { configuredBrowser, disconnect, findBrowser, installBrowser, makeTab, showBrowser } from './browser.ts'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 import { describe, entryLabel, escalationFor, modelLabel, updateConfig } from './setup-core.ts'
@@ -37,6 +38,9 @@ function echo(input: unknown): string {
   return JSON.stringify(input, (_, v) => (typeof v === 'string' && v.length > 80 ? `${v.slice(0, 77)}…` : v))
 }
 const bold = (s: string) => `\x1b[1m${s}\x1b[0m`
+// CLI-43: asked from a shell, the notes before the answer are in its gutter too.
+const asked = process.env.NAVI_GUTTER === '1' && process.stdout.isTTY ? makeGutter(80, !process.env.NO_COLOR) : undefined
+if (asked) drawAnnouncements(asked.note)
 const highlight = (s: string) => `\x1b[100;97m${s}\x1b[0m`
 
 /** Pulls `--flag value` (or a bare `--flag`) out of argv, leaving the prompt. */
@@ -981,7 +985,7 @@ async function main() {
   const anew = apart || startsFresh({ prompt: first, resume: resuming })
   const stored = anew ? [] : await loadSession(file)
   // A shell asking each time (CLI-38) has no need to hear it.
-  if (stored.length && !once) console.error(dim(`· continuing (${stored.length} messages)`))
+  if (stored.length && !once) console.error(asked ? asked.note(`· continuing (${stored.length} messages)`) : dim(`· continuing (${stored.length} messages)`))
 
   let adding: Promise<void> = Promise.resolve()
   // The turn running now, which ^C stops (CLI-25).
@@ -1012,8 +1016,11 @@ async function main() {
   // Streamed text not yet ended by a newline: anything else drawn now would
   // land on the end of it.
   let midLine = false
+  // CLI-43: asked from a shell, the answer is drawn in a gutter.
+  const gutter = streaming && process.env.NAVI_GUTTER === '1' ? makeGutter((process.stdout.columns || 80) - 1, !process.env.NO_COLOR) : undefined
   const endLine = () => {
-    if (midLine) process.stdout.write('\n')
+    if (gutter) process.stdout.write(gutter.end())
+    else if (midLine) process.stdout.write('\n')
     midLine = false
   }
   const harnessFor = (chosen: Chosen) => createHarness({
@@ -1103,7 +1110,7 @@ async function main() {
   /** A note on stderr, never over a spinner frame or the end of streamed text. */
   const note = (s: string) => {
     endLine()
-    console.error(dim(s))
+    console.error(gutter ? gutter.note(s) : dim(s))
   }
 
   /** One question in, one answer out. Returns whether the model said anything. */
@@ -1142,7 +1149,7 @@ async function main() {
           if (!streaming || !e.text) continue
           // Never restarted while text is streaming: the frame would draw over it.
           spin.stop()
-          process.stdout.write(e.text)
+          process.stdout.write(gutter ? gutter.text(e.text) : e.text)
           midLine = !e.text.endsWith('\n')
         } else {
           spin.stop()
@@ -1177,17 +1184,17 @@ async function main() {
     if (done!.stopped) {
       if (!done!.empty) lastAnswer = done!.text
       if (!streaming && !done!.empty) console.log(done!.text)
-      console.error(dim('· stopped'))
+      note('· stopped')
       return !done!.empty
     }
     if (!done!.empty) {
       lastAnswer = done!.text
       if (!streaming) console.log(done!.text)
       // HAR-11: an answer that ends mid-thought says why.
-      if (done!.cut) console.error(dim(CUT_NOTE))
+      if (done!.cut) note(CUT_NOTE)
       return true
     }
-    console.error(dim('the model returned no answer; ask again'))
+    note('the model returned no answer; ask again')
     return false
   }
 
