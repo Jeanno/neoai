@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cells, columns, describeCall, makeGutter } from '../src/gutter.ts'
+import { cells, columns, describeCall, learnRefs, makeGutter } from '../src/gutter.ts'
+import { makeTools } from '../src/tools.ts'
 
 /** The answer drawn as it streams, in pieces of `size` characters. */
 function draw(answer: string, width: number, size = 3) {
@@ -74,7 +75,7 @@ test('a tool call reads in plain words', () => {
   assert.equal(d('fetch_url', { url: 'https://example.com/a' }), 'fetch https://example.com/a')
   // A path outside both stays whole; a call with no words is undefined.
   assert.equal(d('edit_file', { path: '/etc/hosts', old_text: 'a', new_text: 'b' }), 'edit /etc/hosts')
-  assert.equal(d('browser_click', { ref: 'e3' }), undefined)
+  assert.equal(d('no_such_tool', { ref: 'e3' }), undefined)
   assert.equal(d('read_file', {}), undefined)
 })
 
@@ -108,4 +109,49 @@ test('with colour, a table header is bold and its rule dim', () => {
   assert.ok(out.includes('\x1b[2m─'), JSON.stringify(out))
   assert.ok(out.includes('\x1b[36mx\x1b[39m'), JSON.stringify(out))
   assert.ok(!out.includes('|'), JSON.stringify(out))
+})
+
+// CLI-61
+test('a browser call reads in words, naming the element as the page showed it', () => {
+  const refs = new Map<string, string>()
+  learnRefs('Shop\nhttp://x/\n\nbutton "Sign in" [ref=e3]\n12: searchbox "Search" [ref=e7] (under navigation)\n+ combobox "Size" [ref=e9]: Small', refs)
+  const where = { cwd: '/home/u/proj', home: '/home/u', element: (r: string) => refs.get(r) }
+  const d = (name: string, input: unknown) => describeCall(name, input, where)
+  assert.equal(d('browser_open', { url: 'https://example.com' }), 'open https://example.com in the browser')
+  assert.equal(d('browser_open', { url: 'https://example.com', new_tab: true }), 'open https://example.com in a new browser tab')
+  assert.equal(d('browser_click', { ref: 'e3' }), 'click button "Sign in"')
+  assert.equal(d('browser_type', { ref: 'e7', text: 'socks', submit: true }), 'type "socks" into searchbox "Search", then press Enter')
+  assert.equal(d('browser_select', { ref: 'e9', option: 'Large' }), 'choose "Large" in combobox "Size"')
+  assert.equal(d('browser_hover', { ref: 'e3' }), 'point at button "Sign in"')
+  assert.equal(d('browser_upload', { ref: 'e3', path: '/home/u/proj/cv.pdf' }), 'upload cv.pdf into button "Sign in"')
+  assert.equal(d('browser_press', { key: 'Escape' }), 'press Escape in the browser')
+  assert.equal(d('browser_read', { find: 'price' }), 'look for "price" on the browser page')
+  assert.equal(d('browser_read', { offset: 80 }), 'read the browser page from line 80')
+  assert.equal(d('browser_look', {}), 'look at the browser page')
+  assert.equal(d('browser_back', {}), 'go back a page in the browser')
+  assert.equal(d('browser_tabs', {}), 'list the browser tabs')
+  assert.equal(d('browser_switch', { tab: '2' }), 'switch to browser tab 2')
+  assert.equal(d('browser_close_tab', { tab: '2' }), 'close browser tab 2')
+  // A ref the page never showed is still said plainly.
+  assert.equal(d('browser_click', { ref: 'e99' }), 'click an element on the browser page')
+})
+
+// CLI-61: so a new tool cannot be added without them.
+test('every tool navi offers has words for its call', () => {
+  const tools = makeTools({ approve: async () => true }, { browser: () => ({}) as any, memory: '/tmp/none', project: 'p' })
+  const sample = (schema: any) => {
+    const input: Record<string, unknown> = {}
+    for (const [key, field] of Object.entries<any>(schema.shape ?? {})) {
+      const type = field.unwrap?.()?.def?.type ?? field.def?.type
+      input[key] = type === 'number' ? 1 : type === 'boolean' ? true : 'x'
+    }
+    return input
+  }
+  const names = Object.keys(tools)
+  assert.ok(names.includes('browser_click') && names.includes('remember') && names.includes('web_search'), names.join(' '))
+  for (const [name, t] of Object.entries<any>(tools)) {
+    const words = describeCall(name, sample(t.inputSchema), { cwd: '/w', home: '/h' })
+    assert.ok(words, `${name} has no words`)
+    assert.ok(!words.includes('undefined'), `${name}: ${words}`)
+  }
 })

@@ -624,6 +624,22 @@ test('NAVI_COMMAND_FILE gets the one-line command the answer ends with, and the 
   await assert.rejects(stat(none))
 })
 
+// CLI-60: a placeholder, or what a command printed, is not handed over; the model is told so.
+test('NAVI_COMMAND_FILE gets nothing that would not run as it is', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-cli-'))
+  for (const [i, answer] of ['Run:\n\n```sh\nyour-command-here\n```', 'It is:\n\n```\nMon Nov  9 10:02:11 PST 2026\n```'].entries()) {
+    const fake = await fakeModel({ answer })
+    const file = join(home, `command-${i}`)
+    assert.equal((await navi(['-n', '-p', 'what time is it'], { config: fake.config, home, env: { NAVI_COMMAND_FILE: file } })).code, 0)
+    if (i === 0) {
+      const asked = fake.bodies.at(-1).messages.filter((m: any) => m.role === 'user').at(-1).content
+      assert.match(asked, /no placeholders[^]*never what a command printed/)
+    }
+    fake.close()
+    await assert.rejects(stat(file))
+  }
+})
+
 // CLI-39, CLI-40: one conversation by name from any directory, told what the shell ran.
 test('--session keeps one conversation by name, and NAVI_RECENT is told before the prompt', async () => {
   const fake = await fakeModel()

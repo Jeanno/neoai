@@ -9,6 +9,8 @@
  * table is held whole, then drawn in aligned columns (CLI-46).
  */
 
+import { element } from './page.ts'
+
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 export const BAR = '│'
 const FENCE = /^\s*(```|~~~)/
@@ -336,6 +338,24 @@ export interface Where {
   home?: string
   /** The command whose output a file holds, when the shell kept it (CLI-42). */
   printedBy?: (path: string) => string | undefined
+  /** CLI-61: the element a browser ref names, as the page last read showed it (`button "Sign in"`). */
+  element?: (ref: string) => string | undefined
+}
+
+/**
+ * CLI-61: the elements a browser tool's output names by ref, so a later
+ * call on one can say which (`click button "Sign in"`). Lines may come
+ * numbered (`12: …`) or marked as changes (`+ …`); later ones replace earlier.
+ */
+export function learnRefs(output: unknown, known: Map<string, string>): void {
+  if (typeof output !== 'string') return
+  for (const raw of output.split('\n')) {
+    const ref = /\[ref=([\w-]+)\]/.exec(raw)?.[1]
+    if (!ref) continue
+    const line = raw.replace(/^\s*(?:\d+: |[+-] )/, '').replace(/ \(under [^)]*\)$/, '')
+    const what = element([line], ref)
+    if (what) known.set(ref, what)
+  }
 }
 
 /** A path as the user would say it: from here, or from home. */
@@ -362,6 +382,11 @@ export function describeCall(name: string, input: unknown, where: Where): string
   const str = (k: string) => (typeof i[k] === 'string' ? (i[k] as string) : undefined)
   const path = str('path')
   const shown = path && shortPath(path, where)
+  /** The element a ref names, or a plain stand-in when the page never showed it. */
+  const on = () => {
+    const el = str('ref') && where.element?.(str('ref')!)
+    return el ? cut(el, 50) : 'an element on the browser page'
+  }
   switch (name) {
     case 'read_file': {
       if (!path) return
@@ -387,10 +412,34 @@ export function describeCall(name: string, input: unknown, where: Where): string
       return str('query') && `search the web for "${cut(str('query')!, 50)}"`
     case 'fetch_url':
       return str('url') && `fetch ${cut(str('url')!)}`
+    // CLI-61: every browser tool, the element named as the page showed it.
     case 'browser_open':
-      return str('url') && `open ${cut(str('url')!)} in the browser`
+      return str('url') && `open ${cut(str('url')!)} in ${i.new_tab === true ? 'a new browser tab' : 'the browser'}`
+    case 'browser_tabs':
+      return 'list the browser tabs'
+    case 'browser_switch':
+      return str('tab') && `switch to browser tab ${cut(str('tab')!, 20)}`
+    case 'browser_close_tab':
+      return str('tab') && `close browser tab ${cut(str('tab')!, 20)}`
     case 'browser_read':
-      return 'read the browser page'
+      if (str('find')) return `look for "${cut(str('find')!, 40)}" on the browser page`
+      return typeof i.offset === 'number' && i.offset > 1 ? `read the browser page from line ${i.offset}` : 'read the browser page'
+    case 'browser_look':
+      return 'look at the browser page'
+    case 'browser_back':
+      return 'go back a page in the browser'
+    case 'browser_hover':
+      return `point at ${on()}`
+    case 'browser_click':
+      return `click ${on()}`
+    case 'browser_type':
+      return typeof i.text === 'string' ? `type "${cut(i.text, 40)}" into ${on()}${i.submit === true ? ', then press Enter' : ''}` : undefined
+    case 'browser_select':
+      return str('option') && `choose "${cut(str('option')!, 40)}" in ${on()}`
+    case 'browser_upload':
+      return path && `upload ${shown} into ${on()}`
+    case 'browser_press':
+      return str('key') && `press ${cut(str('key')!, 20)} in the browser`
     case 'remember':
       return 'remember a fact'
   }

@@ -23,6 +23,11 @@ first unless judged safe), searches the web, reads pages and drives a browser of
 - `--max-steps N`: model responses per turn (default 32).
 - `--model SPEC`: another model chain for this run (see Models).
 - `navi -h`, `navi --help` or `navi help` prints usage and what each form does.
+- Asked from neosh, an answer that ends with one command in a `sh` block puts it at your
+  next prompt. Only a command that runs as it stands goes there: never a placeholder
+  (`<file>`, `your-command-here`) or what a command printed, and its first word must be a
+  builtin, a path or a program on your PATH. Tool calls are said in words beside the answer
+  (`· read app.py`, `· click button "Sign in"`).
 
 Examples:
 
@@ -235,6 +240,8 @@ does every file change and every browser action.
 - Always asks: anything outside the working directory; a hidden path (a part starting with
   `.`, such as `.github/workflows/…`); context files (`NAVI.md`, `CLAUDE.md`, `AGENTS.md`,
   `GEMINI.md`); files holding secrets (`.env…`, `.npmrc`, `.pem`, `~/.ssh/`, …).
+- A path starting with `~` is in your home, as in a shell: `~/notes.md` is never a `~` folder
+  here, and, being outside the working directory, it asks.
 - Only `y` approves a file change; `a` is never offered. `"write": false` removes the tools.
 
 Undo and redo:

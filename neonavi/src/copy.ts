@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process'
+import { readdirSync, statSync } from 'node:fs'
+import { delimiter, join } from 'node:path'
 import { unshell } from './args.ts'
 
 /** The fenced code blocks of an answer, without their fences (CLI-31). */
@@ -22,13 +24,70 @@ function fenced(text: string): { lang: string; body: string }[] {
 }
 
 /** CLI-41: the one-line shell command an answer ends with, for the user's prompt; or none. */
-export function suggestedCommand(text: string): string | undefined {
+export function suggestedCommand(text: string, onPath: (name: string) => boolean = onSearchPath): string | undefined {
   const last = fenced(text).at(-1)
   if (!last || !['', 'sh', 'bash', 'zsh', 'shell', 'console', 'shell-session'].includes(last.lang)) return
   const lines = last.body.split('\n').map((l) => l.trim()).filter(Boolean)
   if (lines.length !== 1) return
   const command = lines[0].replace(/^\$\s+/, '')
-  return command && !command.startsWith('#') ? command : undefined
+  return command && !command.startsWith('#') && runnable(command, onPath) ? command : undefined
+}
+
+/** Words a shell runs itself, so they are on no PATH (CLI-60). */
+const SHELL_WORDS = new Set(
+  (
+    '. : [ [[ ! { ( alias autoload bg bindkey break builtin cd command compdef continue declare dirs disown echo emulate ' +
+    'enable eval exec exit export false fc fg function getopts hash help history if for while until case select jobs kill ' +
+    'let local logout noglob popd print printf pushd pwd read readonly rehash return set setopt shift shopt source ' +
+    'suspend test time times trap true type typeset ulimit umask unalias unfunction unset unsetopt wait whence where which'
+  ).split(' '),
+)
+
+/**
+ * CLI-60: whether a one-line command could run as it is: no placeholder for
+ * the user to fill in (`<file>`, `your-command-here`, `YOUR_TOKEN`, `...`),
+ * and a first word, past `VAR=value` settings, that is a shell builtin or
+ * keyword, a path (`./x`, `~/bin/x`, `/usr/bin/x`, `bin/rails`), or a program on PATH. A
+ * line a command printed (`Mon Nov  9 …` from `date`) starts with none of these.
+ */
+export function runnable(command: string, onPath: (name: string) => boolean = onSearchPath): boolean {
+  if (/<[A-Za-z][\w.-]*(?: [\w.-]+)*>/.test(command)) return false
+  if (/\byour[-_ ]?[\w-]*?[-_ ]?here\b/i.test(command) || /\bYOUR_[A-Z0-9_]*/.test(command)) return false
+  if (/…|(?:^|\s)\.{3}(?:\s|$)/.test(command)) return false
+  const words = command.split(/\s+/)
+  let i = 0
+  while (i < words.length && /^[A-Za-z_]\w*=/.test(words[i])) i++
+  // Only settings: a command in itself.
+  if (i === words.length) return i > 0
+  const first = words[i].replace(/^[({]+(?=.)/, '').replace(/^(['"])(.*)\1$/, '$2')
+  if (SHELL_WORDS.has(first) || SHELL_WORDS.has(words[i])) return true
+  // A path: from here, home or the root, or down a folder (`bin/rails`), but not `3000/tcp`.
+  if (/^[/.~]/.test(first) || /^[A-Za-z_][\w.-]*\/[\w./-]*$/.test(first)) return true
+  return /^[\w.+-]+$/.test(first) && onPath(first)
+}
+
+/**
+ * Whether a program by exactly this name is on PATH. Names are matched as
+ * listed, not looked up, so a case-insensitive disk does not take `Mon` for `mon`.
+ */
+function onSearchPath(name: string): boolean {
+  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+    if (!dir) continue
+    let names: string[]
+    try {
+      names = readdirSync(dir)
+    } catch {
+      continue
+    }
+    if (!names.includes(name)) continue
+    try {
+      const s = statSync(join(dir, name))
+      if (s.isFile() && s.mode & 0o111) return true
+    } catch {
+      // A dangling link runs nothing.
+    }
+  }
+  return false
 }
 
 /** What `/copy [code [n]]` takes from the last answer, with what to say; or why nothing (CLI-31). */

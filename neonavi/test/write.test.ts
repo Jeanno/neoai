@@ -189,3 +189,46 @@ test('the prompt steers file changes to the file tools only when they are there'
   assert.match(systemPrompt('/x', [], '', false, false, true), /edit_file[^]*write_file[^]*never run_shell[^]*do not retry/)
   assert.doesNotMatch(systemPrompt('/x', [], '', false, false, false), /edit_file/)
 })
+
+// TL-48: `~/x` is home, as a shell has it, never a folder named `~` here; and outside, so it asks (TL-38).
+test('a path starting with ~ is in home, and asks as outside', async () => {
+  const w = await setup()
+  const home = await mkdtemp(join(tmpdir(), 'navi-home-'))
+  const was = process.env.HOME
+  process.env.HOME = home
+  try {
+    assert.equal(await w.call('write_file', { path: '~/notes/x.md', content: 'hi\n' }), 'created ~/notes/x.md: +1 -0 lines')
+    assert.equal(await readFile(join(home, 'notes/x.md'), 'utf8'), 'hi\n')
+    assert.equal(w.asked[0].inside, false)
+    assert.equal(await w.call('edit_file', { path: '~/notes/x.md', old_text: 'hi', new_text: 'ho' }), 'edited ~/notes/x.md: +1 -1 lines')
+    assert.equal(await readFile(join(home, 'notes/x.md'), 'utf8'), 'ho\n')
+    // Nothing named `~` was made in the working directory.
+    await assert.rejects(readFile(join(w.cwd, '~/notes/x.md'), 'utf8'))
+  } finally {
+    process.env.HOME = was
+  }
+})
+
+// TL-48: every tool that takes a path; `~user` stays as written.
+test('the reading tools take ~ as home too', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'navi-home-'))
+  const cwd = await mkdtemp(join(tmpdir(), 'navi-w-'))
+  await writeFile(join(home, 'a.txt'), 'needle\n')
+  const { tilde } = await import('../src/tools.ts')
+  assert.equal(tilde('~', '/h'), '/h')
+  assert.equal(tilde('~/x', '/h'), '/h/x')
+  assert.equal(tilde('~bob/x', '/h'), '~bob/x')
+  assert.equal(tilde('a/~/x', '/h'), 'a/~/x')
+  const was = process.env.HOME
+  process.env.HOME = home
+  try {
+    const tools = makeTools({ approve: async () => true }, { cwd, web: false, ripgrep: false })
+    const call = (name: keyof typeof tools, input: any) => ((tools as any)[name].execute)(input, { toolCallId: 't', messages: [] })
+    assert.equal(await call('read_file', { path: '~/a.txt' }), '1→needle\n2→')
+    assert.match(await call('list_dir', { path: '~' }), /a\.txt/)
+    assert.match(await call('grep', { pattern: 'needle', path: '~' }), /a\.txt:1:needle/)
+    assert.match(await call('glob', { pattern: '*.txt', path: '~/' }), /a\.txt/)
+  } finally {
+    process.env.HOME = was
+  }
+})

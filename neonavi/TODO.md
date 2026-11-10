@@ -68,6 +68,13 @@ its NSH items below are kept as the record, and its spec is there now.
       run. (NSH-11, CLI-41)
 - [x] neosh's prompt: the directory, the git branch and a failed status.
       (NSH-10, NSH-12)
+- [x] `~/x` in the file tools is home, not a `~` folder here (seen from neosh:
+      the model then guessed a home path). (`spec/tools.md` TL-48)
+- [x] Only a runnable command goes to neosh's prompt: no placeholders
+      (`your-command-here`) and no command output (`Mon Nov  9 …`, seen).
+      (`spec/cli.md` CLI-60)
+- [x] Every tool call is said in words in neosh's gutter, the browser's
+      included, and a test keeps new tools from missing them. (CLI-61)
 - [x] neosh keeps history between sessions in its own file. (NSH-13)
 - [x] neosh shows how long a slow command took, and tells navi. (NSH-15)
 - [x] `<command> | ? [question]` in neosh hands navi the command's output

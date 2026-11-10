@@ -107,3 +107,20 @@ test('the command for the shell is the last code block, when it is shell and one
   // The last block decides, even when an earlier one is shell.
   assert.equal(suggestedCommand('```sh\nls\n```\n```json\n{}\n```'), undefined)
 })
+
+// CLI-60
+test('only a command that runs as it is goes to the shell', () => {
+  const onPath = (name: string) => ['ls', 'git', 'du', 'npm', 'date', 'make', 'sort', 'diff', 'cat', 'curl'].includes(name)
+  const s = (cmd: string) => suggestedCommand(`\`\`\`sh\n${cmd}\n\`\`\``, onPath)
+  for (const ok of ['bin/rails s', 'ls -la', 'cd ~/proj', 'export FOO=1', 'FOO=1 npm test', 'A=1 B=2', './build.sh', '~/bin/x', '/usr/bin/env ls',
+    'git diff main...feature', 'du -sh * | sort -h', '(cd x && make)', 'source .venv/bin/activate', 'sort <in >out', 'diff <(ls a) <(ls b)'])
+    assert.equal(s(ok), ok, ok)
+  // Placeholders for the user to fill in.
+  for (const no of ['your-command-here', 'cat <file>', 'git checkout <branch name>', 'curl -H "Authorization: YOUR_TOKEN" x', 'ls ...', 'git log …'])
+    assert.equal(s(no), undefined, no)
+  // What a command printed, not a command: its first word runs nothing.
+  for (const no of ['Mon Nov  9 10:02:11 PST 2026', 'drwxr-xr-x  5 u staff 160 Nov 9 .', '{"ok": true}', '3000/tcp open', 'Date: today'])
+    assert.equal(s(no), undefined, no)
+  // A name is matched exactly, so `Date` is not `date`, even on a case-blind disk.
+  assert.equal(s('Date'), undefined)
+})

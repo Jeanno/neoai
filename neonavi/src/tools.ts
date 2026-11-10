@@ -4,6 +4,7 @@ import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/pr
 import { exec } from 'node:child_process'
 import { basename, dirname, join, relative, resolve, isAbsolute, sep } from 'node:path'
 import { promisify } from 'node:util'
+import { homedir } from 'node:os'
 import { fetchUrl, webSearch, type SearchBackend } from './web.ts'
 import { makeSearch } from './search.ts'
 import { diffLines, hasUnseen, summarize, type FileChange } from './diff.ts'
@@ -36,6 +37,14 @@ export interface Gate {
   act?: (action: { line: string; url: string; shot?: () => Promise<Buffer>; always?: boolean }, signal?: AbortSignal, toolCallId?: string) => Promise<boolean>
   /** Returns true to let a fact be remembered (MEM-7). Left out, every fact declines. */
   remember?: (fact: string, signal?: AbortSignal, toolCallId?: string, project?: string) => Promise<boolean>
+}
+
+/**
+ * TL-48: a leading `~` or `~/` is home, as in a shell, so `~/notes.md` is
+ * never a folder named `~` in the working directory. `~user` stays as written.
+ */
+export function tilde(path: string, home = homedir()): string {
+  return path.replace(/^~(?=\/|$)/, () => home)
 }
 
 const MAX_OUTPUT = 8000
@@ -98,7 +107,7 @@ export function makeTools(
   { web = true, fetch = true, cwd = process.cwd(), ripgrep, write = true, search: backend, browser, look = true, see, memory, project, wrote }: ToolOptions = {},
 ) {
   const search = makeSearch({ cwd, ripgrep })
-  const at = (path: string) => resolve(cwd, path)
+  const at = (path: string) => resolve(cwd, tilde(path))
 
   /**
    * Where `file` really lands, and whether that is a place a new file is safe
@@ -182,7 +191,7 @@ export function makeTools(
         path: z.string().optional(),
       }),
       execute: async ({ pattern, path }) => {
-        const hits = await search.grep(pattern, path ?? '.')
+        const hits = await search.grep(pattern, tilde(path ?? '.'))
         if (!hits.length) return `no matches for ${pattern}`
         const shown = clip(hits.slice(0, MAX_MATCHES).join('\n'))
         return hits.length > MAX_MATCHES
@@ -198,7 +207,7 @@ export function makeTools(
         path: z.string().optional(),
       }),
       execute: async ({ pattern, path }) => {
-        const files = await search.files(pattern, path ?? '.')
+        const files = await search.files(pattern, tilde(path ?? '.'))
         if (!files.length) return `no files matching ${pattern}`
         const shown = clip(files.slice(0, MAX_MATCHES).join('\n'))
         return files.length > MAX_MATCHES

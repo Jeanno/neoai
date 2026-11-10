@@ -94,6 +94,15 @@ send anything off the machine.
   removed.
 - TL-40: `"write": false` in `~/.neoai/config.json` removes both tools.
 
+## Paths
+
+- TL-48: In every tool that takes a path (read_file, list_dir, grep, glob,
+  write_file, edit_file, browser_upload), a leading `~` or `~/` is the
+  user's home, as a shell has it, so `~/notes.md` is never a folder named
+  `~` in the working directory; `~user` and a `~` later in the path stay as
+  written. What TL-38 says of outside the working directory holds for the
+  path once `~` is home: writing to `~/x` from a project asks.
+
 ## web_search
 
 - TL-26: `web_search(query)` returns up to 8 results, each a title, URL and

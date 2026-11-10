@@ -121,6 +121,12 @@
   working directory or `~`, and a file the shell keeps a command's output in
   (CLI-42) as `· read what \`python3 app.py\` printed`. A call with no words
   is shown as its input, as in CLI-10.
+- CLI-61: Every tool has words, browser tools included: `· open
+  https://example.com in the browser`, `· click button "Sign in"`, `· type
+  "socks" into searchbox "Search"`, `· press Escape in the browser`, `· look
+  at the browser page`. An element is named by its ref as the page navi last
+  read showed it, or as `an element on the browser page` when it never did. A
+  test calls every tool navi offers, so a new tool cannot come without words.
 - CLI-46: In that gutter a markdown table is drawn as a table: its rows
   are held until the table ends, then drawn in columns two spaces apart,
   each as wide as its widest cell (East Asian wide characters counting
@@ -156,6 +162,15 @@
   one (`sh`, `bash`, `zsh`, `shell`, `console` or untagged) holding one
   command on one line, a leading `$ ` taken off, navi writes it there once it
   has answered. Otherwise the file is left alone.
+- CLI-60: Only a command that would run as it stands is written there: one
+  with no placeholder left for the user to fill in (`<file>`,
+  `your-command-here`, `YOUR_TOKEN`, a `...` or `…` word), and whose first
+  word, past `VAR=value` settings, is a shell builtin or keyword (`cd`,
+  `export`, `source`, `(`), a path (`./x`, `~/bin/x`, `/usr/bin/x`,
+  `bin/rails`), or a program by exactly that name on PATH. A line a command
+  printed (`Mon Nov  9 …` from `date`) is none of these, and is not written.
+  The note (CLI-41) tells the model the same: only a real command, never a
+  placeholder or what a command printed, which goes in a `text` block.
 - CLI-35: `-n` or `--new` starts with no conversation and saves none: the
   directory's saved conversation is neither read nor changed, so a script's
   `navi -n -p "…"` never joins or alters the one you are having there. Undo
