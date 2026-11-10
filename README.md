@@ -57,7 +57,8 @@ git diff | navi -a - -p "write a commit message"
 
 ### neosh, the shell
 
-Needs [Rust](https://rustup.rs) to build. One line:
+Needs [Rust](https://rustup.rs) to build, and Node 22+ for navi, which it
+installs too when it is missing. One line:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Jeanno/neosh/main/install.sh | sh
