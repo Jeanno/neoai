@@ -141,6 +141,12 @@
   stopped), with `ESC ] 6974 ; A BEL`. A terminal shows nothing of them; a
   shell holding navi in the background (neosh NSH-62) says from them
   whether navi is waiting for an answer.
+- CLI-49: `NAVI_AWAY_FILE` in the environment names a file that is there
+  while the shell holding navi has sent it to the background (neosh
+  NSH-62). Then a question navi opens, and the end of a `-p` answer, are
+  said by notification, as a job's are (JOB-5, JOB-38, PSH-1): "navi is
+  waiting for you" with what it asks, and "navi is done" (or "navi
+  failed") with the start of the prompt.
 - CLI-47: `NAVI_SHELL_MANUAL` in the environment, when it names a file that
   is there, is the manual of the shell navi is asked from (neosh), named to
   the model as PRM-15 says.

@@ -3,7 +3,7 @@ import { auto } from 'neorouter'
 import { homedir } from 'node:os'
 import { basename, resolve } from 'node:path'
 import { readFile, realpath, stat, writeFile } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { commandFrom, promptFrom, shellManualFrom, startsFresh } from './args.ts'
 import { modelFor, parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
 import { colorDiff, makeApprover, makeLine } from './approve.ts'
@@ -341,14 +341,15 @@ async function startJob({ job, directory, history, approve, answered }: Paramete
  * at `page` when there is one (PSH-3). The config is read each time, so a
  * change needs no restart.
  */
-function makeNotify(page: string | undefined, log: (line: string) => void): JobDeps['notify'] {
+function makeNotify(page: string | undefined, log: (line: string) => void): (...a: Parameters<JobDeps['notify']>) => Promise<void> {
+  // Settled once sent, for a navi about to exit to wait on (CLI-49).
   return (title, text, job, urgent, key) =>
-    void readConfig().then(async (config) => {
+    readConfig().then(async (config) => {
       // JOB-38, PSH-18: "waiting" keeps only what needs the user.
       const needed = needsYou(title, text)
       if (process.platform === 'darwin' && config.notify !== false && (config.notify !== 'waiting' || needed)) {
         const quote = (s: string) => `"${s.replace(/[\\"]/g, '\\$&')}"`
-        execFile('osascript', ['-e', `display notification ${quote(text)} with title ${quote(title)}`], () => {})
+        await new Promise((sent) => execFile('osascript', ['-e', `display notification ${quote(text)} with title ${quote(title)}`], { timeout: 5000 }, sent))
       }
       const p = pushConfig(config)
       if (!p || p.off || (p.waiting && !needed)) return
@@ -1049,6 +1050,12 @@ async function main() {
   let asking = 0
   const spin = { start: () => asking === 0 && spinner.start(), stop: () => spinner.stop() }
   const asker = makeApprover({ line })
+  // CLI-49: sent to the background by the shell, navi says by notification
+  // what would otherwise wait unseen: a question, and its answer being done.
+  const awayFile = process.env.NAVI_AWAY_FILE?.trim()
+  const away = () => !!awayFile && existsSync(awayFile)
+  const notify = makeNotify(undefined, () => {})
+  const short = (s: string) => (s.length > 80 ? `${s.slice(0, 80)}…` : s)
   // On a terminal the answer is written as it arrives; a pipe gets exactly the
   // final answer, as before streaming.
   const streaming = process.stdout.isTTY === true
@@ -1080,6 +1087,7 @@ async function main() {
       asking++
       spin.stop()
       endLine()
+      if (away()) void notify('navi is waiting for you', short(change ? `write ${command}` : memory !== undefined ? `remember ${memory}` : action ? command : `run ${command}`), named.value ?? 'navi', true)
       try {
         return change
           ? await asker.approveChange(command, change, signal)
@@ -1294,6 +1302,7 @@ async function main() {
     if (first) {
       const answered = await turn(first)
       if (answered) answeredHere++
+      if (away()) await notify(answered ? 'navi is done' : 'navi failed', short(first), named.value ?? 'navi', false)
       if (commandFile && answered) {
         const command = suggestedCommand(lastAnswer ?? '')
         if (command) await writeFile(commandFile, `${command}\n`).catch((e) => console.error(dim(`· could not hand the command to the shell: ${(e as Error).message}`)))
