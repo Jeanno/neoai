@@ -380,8 +380,9 @@ Each link resolves the backend it names or fails so the next is tried, and if
 none resolve navi says so and exits 1. There is no keyless tier.
 
 A link can have options of its own, keyed as the chain names it: a cap on
-each answer, a temperature, or `think` to let a reasoning model think
-(navi asks it not to otherwise). They apply to turns, jobs, escalation,
+each answer, a temperature, or `think: false` to ask a reasoning model not
+to think (every model thinks by default, MOD-50; the judge always asks it
+not to, MOD-53). They apply to turns, jobs, escalation,
 Raycast, and apps using `navi serve`, where a cap or temperature the app
 sends itself wins (`spec/models.md`, MOD-24; SRV-9):
 

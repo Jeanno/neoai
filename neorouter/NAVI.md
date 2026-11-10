@@ -13,7 +13,10 @@ Resolution goes down three rungs, in order:
 
 It then ranks the models that backend offers and picks the largest that fits the
 machine's memory, or the smallest usable one with `auto({ prefer: 'fast' })`.
-`auto({ think: false })` asks a reasoning model to skip thinking.
+Models think as their server would by default; `auto({ think: false })`, or
+`providerOptions: { neorouter: { think: false } }` on one call, asks a
+reasoning model to skip thinking. Thinking a server streams apart from the
+answer (`reasoning_content`) comes back as reasoning parts, not text.
 
 `auto({ provider, model })` skips the rungs and talks to one hosted provider or
 custom endpoint, failing rather than falling anywhere else. The providers

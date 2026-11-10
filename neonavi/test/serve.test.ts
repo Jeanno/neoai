@@ -21,9 +21,9 @@ async function serving(links: (Backend | null)[], options?: (LinkOptions | Error
     route: async (entry, think) => {
       const i = CHAIN.indexOf(entry)
       thinks.push(think)
-      // A link asked to think gets no hint not to, as neorouter's route does.
+      // Only a link asked not to think gets the hint, as neorouter's route does (MOD-50).
       return links[i]
-        ? { url: `http://link${i}/chat/completions`, headers: { authorization: `Bearer key${i}` }, model: `model${i}`, backend: `b${i}`, local: i === 1, extra: i === 1 && think !== true ? { reasoning_effort: 'none' } : {} }
+        ? { url: `http://link${i}/chat/completions`, headers: { authorization: `Bearer key${i}` }, model: `model${i}`, backend: `b${i}`, local: i === 1, extra: i === 1 && think === false ? { reasoning_effort: 'none' } : {} }
         : null
     },
     ...(options && {
@@ -80,9 +80,9 @@ test('streams pass through unchanged', async () => {
   s.close()
 })
 
-// SRV-4, MOD-11
+// SRV-4, MOD-50
 test('a link that is busy or down falls to the next, which adds what navi would', async () => {
-  const s = await serving([() => new Response('busy', { status: 503 }), ok])
+  const s = await serving([() => new Response('busy', { status: 503 }), ok], [{}, { think: false }])
   const r = await post(s.base, { model: 'x', messages: [] })
   assert.equal((await r.json()).choices[0].message.content, 'hi from model1')
   assert.deepEqual(s.sent[1].body, { reasoning_effort: 'none', model: 'model1', messages: [] })
@@ -217,12 +217,24 @@ test('an app that leaves mid-answer stops the link answering', async () => {
   s.close()
 })
 
-// SRV-3, MOD-11: a link refusing the reasoning hint navi added is asked again without it.
+// MOD-50: left alone, a link thinks; nothing is added to ask it not to.
+test('a link with no options gets no hint not to think', async () => {
+  const s = await serving([null, ok])
+  await post(s.base, { model: 'x', messages: [] })
+  assert.deepEqual(s.sent[0].body, { model: 'model1', messages: [] })
+  assert.deepEqual(s.thinks, [undefined, undefined])
+  s.close()
+})
+
+// SRV-3, MOD-50: a link refusing the reasoning hint navi added is asked again without it.
 test('a 400 over the reasoning hint is retried without it', async () => {
-  const s = await serving([
-    null,
-    (body) => ('reasoning_effort' in body ? Response.json({ error: { message: 'unknown field reasoning_effort' } }, { status: 400 }) : ok(body)),
-  ])
+  const s = await serving(
+    [
+      null,
+      (body) => ('reasoning_effort' in body ? Response.json({ error: { message: 'unknown field reasoning_effort' } }, { status: 400 }) : ok(body)),
+    ],
+    [{}, { think: false }],
+  )
   const r = await post(s.base, { messages: [] })
   assert.equal(r.status, 200)
   assert.deepEqual(s.sent.map((x) => 'reasoning_effort' in x.body), [true, false])
@@ -272,7 +284,7 @@ test("a link's options fill in what the app left out, and what it asked for wins
   const s = await serving([() => new Response('busy', { status: 503 }), ok], [{ maxTokens: 500, temperature: 0.3 }, { maxTokens: 900, think: true }])
   await post(s.base, { model: 'x', messages: [] })
   assert.deepEqual(s.sent[0].body, { max_tokens: 500, temperature: 0.3, model: 'model0', messages: [] })
-  // Thinking asked for: no hint not to.
+  // Thinking asked for (as it is by default): no hint not to.
   assert.deepEqual(s.sent[1].body, { max_tokens: 900, model: 'model1', messages: [] })
   assert.deepEqual(s.thinks, [undefined, true])
   await post(s.base, { model: 'x', messages: [], max_completion_tokens: 50, temperature: 1 })

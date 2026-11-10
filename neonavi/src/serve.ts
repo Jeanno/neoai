@@ -29,7 +29,7 @@ import { LEVELS, notifyLevels, withLevels, type Level } from './push.ts'
 
 /** What the server needs from the world; the real ones by default, fakes in tests. */
 export interface ServeDeps {
-  /** `think` from the link's options (SRV-9) overrides navi's ask not to (MOD-11). */
+  /** `think` from the link's options (SRV-9): false asks the model not to think (MOD-50). */
   route: (entry: Entry, think?: boolean) => Promise<Route | null>
   /** The link's options in `"modelOptions"`, read afresh each request (SRV-9); none when left out. */
   options?: (entry: Entry) => Promise<LinkOptions>
@@ -360,7 +360,7 @@ async function jobsRoute(req: IncomingMessage, res: ServerResponse, path: string
  * where every request needs the token.
  */
 export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptions; remote?: boolean } = {}) {
-  /** Posts to one link; a 400 over what navi added (the reasoning hint, a second cap) is asked once more without it, as navi does. */
+  /** Posts to one link; a 400 over what navi added (the switch that turns thinking off, a second cap) is asked once more without it, as navi does. */
   async function send(r: Route, body: Record<string, unknown>, signal: AbortSignal, o: LinkOptions = {}): Promise<Response> {
     // SRV-9: the link's cap and temperature where the app asked for none; what it asked for wins.
     const capped = 'max_tokens' in body || 'max_completion_tokens' in body
@@ -372,7 +372,12 @@ export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptio
       model: r.model,
     }
     // What navi added that a server may refuse, and the word its refusal would use.
-    const added: [string, RegExp][] = r.extra.reasoning_effort && !('reasoning_effort' in body) ? [['reasoning_effort', /reasoning/i]] : []
+    const added: [string, RegExp][] = (
+      [
+        ['reasoning_effort', /reasoning/i],
+        ['thinking', /thinking/i],
+      ] as [string, RegExp][]
+    ).filter(([k]) => k in r.extra && !(k in body))
     // SRV-10: but never past the link's hard cap, however the app asks.
     if (o.tokenCap !== undefined) {
       for (const k of ['max_tokens', 'max_completion_tokens'])

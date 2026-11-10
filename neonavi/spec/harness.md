@@ -60,6 +60,12 @@ jack-ins are others (`jackins/NAVI.md`).
   might see is an event or a callback, so a front end with no terminal works.
 - HAR-6: The CLI is built on the library, with its behaviour in `cli.md`
   unchanged.
+- HAR-16: A turn whose last step reached the token cap is `cut` even when
+  it has no answer, as thinking may have spent the whole cap (MOD-54); the
+  CLI then says so rather than that the model returned no answer.
+- HAR-17: A step that thinks streams one `thinking` event when it starts to
+  think, before its text or tool calls; it carries nothing of what the
+  model thought (MOD-51, MOD-52).
 
 ## Attachments
 

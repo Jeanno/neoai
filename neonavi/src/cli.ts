@@ -1055,7 +1055,7 @@ async function main() {
   // CLI-45: while a question waits for y/n, nothing starts the spinner over it,
   // not even a note for the call being asked about, which can arrive after.
   let asking = 0
-  const spin = { start: () => asking === 0 && spinner.start(), stop: () => spinner.stop() }
+  const spin = { start: (label?: string) => asking === 0 && spinner.start(label), stop: () => spinner.stop() }
   const asker = makeApprover({ line })
   // CLI-49: sent to the background by the shell, navi says by notification
   // what would otherwise wait unseen: a question, and its answer being done.
@@ -1213,9 +1213,15 @@ async function main() {
       shellNote = undefined
       for await (const e of session.turn(prompt, { attachments, signal: stop.signal, again: again?.model, note: told })) {
         if (e.type === 'done') done = e
+        // MOD-51: said beside the spinner, never what it thinks; text or a tool call clears it.
+        else if (e.type === 'thinking') spin.start('thinking…')
         else if (e.type === 'text') {
           // Unstreamed text waits for the end; the spinner keeps going meanwhile.
-          if (!streaming || !e.text) continue
+          if (!streaming || !e.text) {
+            // The answer has begun: no longer thinking (MOD-51).
+            if (e.text) spin.start()
+            continue
+          }
           // Never restarted while text is streaming: the frame would draw over it.
           spin.stop()
           process.stdout.write(gutter ? gutter.text(e.text) : e.text)
@@ -1268,7 +1274,8 @@ async function main() {
       if (done!.cut) note(CUT_NOTE)
       return true
     }
-    note('the model returned no answer; ask again')
+    // HAR-16: thinking may have spent the whole cap.
+    note(done!.cut ? CUT_NOTE : 'the model returned no answer; ask again')
     return false
   }
 

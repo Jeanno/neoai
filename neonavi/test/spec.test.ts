@@ -76,11 +76,10 @@ test('free is not the keyless tier', () => {
   assert.deepEqual(parseModelSpec('free'), [{ where: 'local', id: 'free' }])
 })
 
-// MOD-6: each link is scoped to what it names.
+// MOD-6: each link is scoped to what it names. MOD-50: and nothing asks it not to think.
 test('a local link is scoped to the machine, a remote one to its provider', () => {
-  assert.deepEqual(optionsFor(LOCAL as any), { prefer: 'fast', think: false, model: undefined, scope: 'local' })
+  assert.deepEqual(optionsFor(LOCAL as any), { prefer: 'fast', model: undefined, scope: 'local' })
   assert.deepEqual(optionsFor({ where: 'remote', provider: 'groq', id: 'm' }), {
-    think: false,
     model: 'm',
     provider: 'groq',
   })

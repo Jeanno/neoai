@@ -40,9 +40,9 @@ of its models is picked. The harness must not write to stdout or stderr here
 (HAR-5), so `src/lib/quiet.ts` turns off neorouter's line and the AI SDK's
 warnings before either is used.
 
-Reasoning models are asked not to think, as navi does; any `<think>` output
-that still arrives is hidden unless _Show the model's reasoning_ is on, and is
-never saved into history.
+Models think, as they do in navi (MOD-50): thinking the server sends apart
+shows only as _Thinking…_ (RAY-21); any `<think>` output in the text is hidden
+unless _Show the model's reasoning_ is on, and is never saved into history.
 
     cd jackins/raycast
     npm run dev     # load into Raycast with hot reload

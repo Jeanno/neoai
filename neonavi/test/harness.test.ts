@@ -129,6 +129,28 @@ test('a turn streams text, tool calls and results in order, then done', async ()
   assert.equal(end.stopped, false)
 })
 
+// MOD-51, MOD-52: thinking is said once per step, never as text, and not kept.
+test('a step that thinks says so once, and its thinking is neither text nor history', async () => {
+  const thought = (id: string, ...deltas: string[]): Part[] => [
+    { type: 'reasoning-start', id },
+    ...deltas.map((delta): Part => ({ type: 'reasoning-delta', id, delta })),
+    { type: 'reasoning-end', id },
+  ]
+  const model = fake([
+    [...thought('r0', 'secret ', 'plan'), call('c1', 'list_dir', { path: '.' }), finish('tool-calls')],
+    [...thought('r1', 'more secrets'), ...text('t1', 'There is a.txt.'), finish('stop')],
+  ])
+  const h = await harness(model)
+  const events = await collect(h.session().turn('what is here'))
+  assert.deepEqual(
+    events.map((e) => e.type),
+    ['thinking', 'tool-call', 'tool-result', 'thinking', 'text', 'done'],
+  )
+  const end = done(events)
+  assert.equal(end.text, 'There is a.txt.')
+  assert.doesNotMatch(JSON.stringify(events), /secret/)
+})
+
 // HAR-1: the harness supplies the system prompt and the tools.
 test('every turn gets navi\'s system prompt and tools, rooted at the front end\'s directory', async () => {
   const model = fake([[...text('t', 'ok'), finish('stop')]])
@@ -209,6 +231,15 @@ test('an answer cut at the token cap is marked cut, and one that finished is not
   const whole = (await collect(s.turn('thanks'))).at(-1) as any
   assert.equal(whole.cut, undefined)
   assert.deepEqual((await ledgerOf(home)).map((e) => e.cut), [true, undefined])
+})
+
+// HAR-16: thinking that spends the whole cap leaves no answer, and that is said to be cut.
+test('a step that only thought before the cap is cut, with no answer', async () => {
+  const model = fake([[{ type: 'reasoning-start', id: 'r' }, { type: 'reasoning-delta', id: 'r', delta: 'long thought' }, { type: 'reasoning-end', id: 'r' }, finish('length')]])
+  const h = await harness(model)
+  const end = done(await collect(h.session().turn('a hard one')))
+  assert.equal(end.empty, true)
+  assert.equal(end.cut, true)
 })
 
 // MEM-7: declined, nothing is written and the model is told not to ask again.

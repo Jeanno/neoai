@@ -77,3 +77,14 @@ test('a browser action is judged with its page, under its own rules', async () =
   assert.match(system, /signed in/)
   assert.match(system, /may lie/)
 })
+
+// MOD-53: the judge asks for its verdict with thinking off.
+test('the judge asks not to think', async () => {
+  let asked: unknown
+  const model = fake(async (o) => {
+    asked = o.providerOptions
+    return { content: [{ type: 'text', text: 'SAFE' }], finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, warnings: [] }
+  })
+  assert.equal(await judge(model, 'ls', 'list files'), 'safe')
+  assert.deepEqual(asked, { neorouter: { think: false } })
+})

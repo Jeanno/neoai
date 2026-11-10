@@ -67,6 +67,9 @@ JSON by hand. Everything it writes goes to `~/.neoai/config.json`.
   failed, after the line saying what answers and where (REMOTE included). The list drawn
   again had pushed a dim "Saved." and the reply off the screen, so a switch
   looked like nothing happened.
+- SET-35: The test question is asked as a turn would be, thinking and all
+  (MOD-55), within 120 seconds: a model that thinks takes longer to say
+  hello, and answering is what is being tested.
 - SET-18: Changing a slot first offers three groups: Providers, Local and
   Custom. The fallback also offers "none", and never the primary's pick.
 - SET-29: Each group says in a line what it is: a hosted model with your

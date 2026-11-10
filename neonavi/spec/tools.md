@@ -190,6 +190,10 @@ A model call that decides whether a shell command needs the user's approval.
   exactly SAFE or UNSAFE (case-insensitive) counts; the last such line wins.
   Any other output is `unknown`.
 - TL-20: A model error, timeout, or empty reply is `unknown`, never a throw.
+- TL-49: The judge asks with thinking off (MOD-53), whatever the link's
+  `think`: a one-word verdict on every command must not wait on thinking
+  (on Qwen3.8-27B ~0.8s a verdict, against 2.7–5.5s thinking). A model that
+  thinks anyway (one that cannot stop) still has TL-20's 60 seconds.
 - TL-46: `npm run eval:judge -- [--model <spec>] [--runs N]` measures a
   model as judge against `eval/judge-cases.json`: commands, each with what
   the user asked (and asked before, where it matters) and the verdict it

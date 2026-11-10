@@ -71,6 +71,9 @@ and to setup (`neonavi/spec/setup.md`); it adds only what Raycast needs.
   (CLI-34).
 - RAY-20: navi's own notes inside a turn (a `(navi: …)` message, ESC-3) are
   part of that turn, never a question of their own.
+- RAY-21: While the model thinks (a `thinking` event, HAR-17) and has not yet
+  said or called anything since, the turn ends with _Thinking…_; what it
+  thinks is not shown (MOD-51).
 
 ## Jobs
 

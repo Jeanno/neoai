@@ -1,4 +1,5 @@
 import { generateText, type LanguageModel } from 'ai'
+import { THINK_OFF } from './think.ts'
 
 export type Verdict = 'safe' | 'unsafe' | 'unknown'
 
@@ -89,6 +90,8 @@ export async function judge(
         : 'diff' in action
           ? changePrompt(command, action.diff, intent, before)
           : actionPrompt(command, action.url, intent),
+      // MOD-53: a one-word verdict wants no thinking, or every command waits on it.
+      providerOptions: THINK_OFF,
       abortSignal: AbortSignal.timeout(60_000),
     })
     return parseVerdict(text)

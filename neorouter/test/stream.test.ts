@@ -68,3 +68,27 @@ test('cached prompt tokens are reported too', async () => {
   )
   assert.deepEqual((parts.at(-1) as { usage: unknown }).usage, { inputTokens: 30, outputTokens: 1, totalTokens: 31, cachedInputTokens: 20 })
 })
+
+// navi MOD-52: thinking a server streams apart from the answer is reasoning, not text.
+test('reasoning_content streams as reasoning, then the answer as text', async () => {
+  const parts = await collect(
+    sse([
+      { choices: [{ delta: { role: 'assistant' } }] },
+      { choices: [{ delta: { reasoning: 'Let', reasoning_content: 'Let' } }] },
+      { choices: [{ delta: { reasoning_content: ' me see' } }] },
+      { choices: [{ delta: { content: '391' } }] },
+      { choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 9, completion_tokens: 70, completion_tokens_details: { reasoning_tokens: 66 } } },
+    ]),
+  )
+  const types = parts.map((p) => p.type)
+  assert.deepEqual(types, ['text-start', 'reasoning-start', 'reasoning-delta', 'reasoning-delta', 'reasoning-end', 'text-delta', 'text-end', 'finish'])
+  assert.equal(parts.filter((p) => p.type === 'reasoning-delta').map((p) => (p as { delta: string }).delta).join(''), 'Let me see')
+  assert.equal(parts.filter((p) => p.type === 'text-delta').map((p) => (p as { delta: string }).delta).join(''), '391')
+  // MOD-54: thinking is part of the output count, and said apart.
+  assert.deepEqual((parts.at(-1) as { usage: unknown }).usage, { inputTokens: 9, outputTokens: 70, totalTokens: undefined, reasoningTokens: 66 })
+})
+
+test('thinking with no answer yet still ends its reasoning part', async () => {
+  const parts = await collect(sse([{ choices: [{ delta: { reasoning_content: 'hmm' }, finish_reason: 'length' }] }]))
+  assert.deepEqual(parts.map((p) => p.type), ['text-start', 'reasoning-start', 'reasoning-delta', 'reasoning-end', 'text-end', 'finish'])
+})

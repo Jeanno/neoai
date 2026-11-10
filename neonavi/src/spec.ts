@@ -54,7 +54,7 @@ export interface Chosen {
   entry: Entry
   /** Which link answered: 0 is the primary, 1 the fallback. */
   index: number
-  options: Pick<AutoOptions, 'prefer' | 'model' | 'scope' | 'provider'> & { think: boolean }
+  options: Pick<AutoOptions, 'prefer' | 'model' | 'scope' | 'provider' | 'think'>
   /** What the resolved backend can hold, in tokens. */
   contextWindow: number
   backend: string
@@ -67,9 +67,9 @@ export interface Chosen {
 
 /** What auto() is given for one link: scoped to the backend it names (MOD-6). */
 export function optionsFor(entry: Entry): Chosen['options'] {
-  // navi asks local reasoning models not to think (MOD-11).
-  if (entry.where === 'local') return { prefer: entry.prefer, think: false, model: entry.id, scope: 'local' }
-  return { think: false, model: entry.id, provider: entry.provider }
+  // Every model thinks as its server would (MOD-50); `think` in its options may say otherwise.
+  if (entry.where === 'local') return { prefer: entry.prefer, model: entry.id, scope: 'local' }
+  return { model: entry.id, provider: entry.provider }
 }
 
 /** A link that did not answer, and why (MOD-21). */
@@ -130,7 +130,7 @@ export interface LinkOptions {
   /** At most this many tokens in each answer, whatever a caller asks (MOD-27). */
   tokenCap?: number
   temperature?: number
-  /** true lets a reasoning model think (MOD-11 asks it not to). */
+  /** false asks a reasoning model not to think, where its server has a way (MOD-50). */
   think?: boolean
 }
 

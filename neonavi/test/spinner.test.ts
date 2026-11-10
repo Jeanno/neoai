@@ -46,3 +46,18 @@ test('stop without start, and double stop, write nothing', () => {
   s.stop()
   assert.equal(chunks.filter((c) => c === '\r\x1b[K').length, 1)
 })
+
+// MOD-51: a label beside the frame, changed in place and gone on a plain start.
+test('says thinking beside the frame, and stops saying it', async () => {
+  const { out, chunks } = sink(true)
+  const s = makeSpinner(out)
+  s.start()
+  s.start('thinking…')
+  await new Promise((r) => setTimeout(r, 120))
+  assert.match(chunks.at(-1)!, /thinking…/)
+  s.start()
+  await new Promise((r) => setTimeout(r, 120))
+  assert.doesNotMatch(chunks.at(-1)!, /thinking/)
+  assert.ok(chunks.at(-1)!.endsWith('\x1b[K'), 'clears what a longer label left')
+  s.stop()
+})

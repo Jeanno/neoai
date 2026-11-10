@@ -21,6 +21,8 @@ export interface Turn {
   /** The final step's answer, once the turn is over. */
   final?: string
   stopped?: boolean
+  /** The model is thinking, and has not yet said or called anything since (RAY-21). */
+  thinking?: boolean
 }
 
 export const emptyTurn = (): Turn => ({ items: [], errors: [] })
@@ -50,16 +52,19 @@ export function toolLine(name: string, input: unknown): string {
 export function applyEvent(turn: Turn, e: HarnessEvent): Turn {
   const items = [...turn.items]
   switch (e.type) {
+    // RAY-21: said, never what it thinks.
+    case 'thinking':
+      return { ...turn, thinking: true }
     case 'text': {
       if (!e.text) return turn
       const last = items.at(-1)
       if (last?.kind === 'text') items[items.length - 1] = { kind: 'text', text: last.text + e.text }
       else items.push({ kind: 'text', text: e.text })
-      return { ...turn, items }
+      return { ...turn, items, thinking: false }
     }
     case 'tool-call':
       items.push({ kind: 'tool', id: e.id, line: toolLine(e.name, e.input), state: 'running' })
-      return { ...turn, items }
+      return { ...turn, items, thinking: false }
     case 'auto-approved': {
       // The event names the command, not the call: mark the latest shell call still running.
       const tool = e.change ? /^(write_file|edit_file)/ : /^run_shell/
@@ -110,6 +115,7 @@ export function applyEvent(turn: Turn, e: HarnessEvent): Turn {
         ],
         final: e.text,
         stopped: e.stopped,
+        thinking: false,
       }
   }
 }
@@ -160,6 +166,7 @@ export function turnMarkdown(
     else if (reasoning && o.streaming && n === turn.items.length - 1) blocks.push('_Thinking…_')
   })
   flush()
+  if (turn.thinking && o.streaming && blocks.at(-1) !== '_Thinking…_') blocks.push('_Thinking…_')
   if (turn.errors.length) blocks.push(turn.errors.map((e) => `**Error:** ${e}`).join('\n\n'))
   if (turn.stopped) blocks.push('_Stopped._')
   if (o.approval?.change)

@@ -86,7 +86,8 @@ export function toMessages(prompt: LanguageModelV2CallOptions['prompt']): {
           })
           return ''
         }
-        warnings.push({ type: 'other', message: `dropped unsupported ${p.type} part` })
+        // Thinking is the model's own and not sent back (navi MOD-52).
+        if (p.type !== 'reasoning') warnings.push({ type: 'other', message: `dropped unsupported ${p.type} part` })
         return ''
       })
       .join('')
@@ -148,21 +149,42 @@ export function fromChoice(choice: any): LanguageModelV2Content[] {
       // Raw JSON text, not parsed: the SDK validates it against the tool schema.
       input: typeof c.function?.arguments === 'string' ? c.function.arguments : JSON.stringify(c.function?.arguments ?? {}),
     }))
-  return [{ type: 'text' as const, text: choice?.message?.content ?? '' }]
+  const thought = reasoningOf(choice?.message)
+  return [...(thought ? [{ type: 'reasoning' as const, text: thought }] : []), { type: 'text' as const, text: choice?.message?.content ?? '' }]
+}
+
+/** Thinking a server sends apart from the answer (navi MOD-52): vLLM-style servers name it reasoning_content, others reasoning. */
+function reasoningOf(m: any): string {
+  const r = m?.reasoning_content ?? m?.reasoning
+  return typeof r === 'string' ? r : ''
 }
 
 /**
- * Measured on ollama 0.32.15 / qwen3.5:2b: a reasoning model spends ~120 tokens
- * of thinking per token of answer, and in an agent loop it will exhaust its
- * budget mid-thought and return nothing at all. 'none' is the only knob that
- * works here — `think: false` is silently ignored on the OpenAI-shaped endpoint.
- * Ollama and custom endpoints are asked: a custom endpoint is usually a
- * self-hosted open model (Darkbloom serving Qwen thinks ~15s per answer
- * otherwise). One that rejects the field is retried without it (see send).
+ * What a request adds when `think` is false: the switch that asks a reasoning
+ * model not to think, where its server has one. Nothing otherwise, so every
+ * model thinks as its server would (navi MOD-50).
+ *
+ * Measured on ollama 0.32.15 / qwen3.5:2b: reasoning_effort 'none' is the only
+ * knob that works there — `think: false` is silently ignored on the
+ * OpenAI-shaped endpoint. Ollama and custom endpoints are asked: a custom
+ * endpoint is usually a self-hosted open model (Darkbloom serving Qwen3.8
+ * thinks unless sent 'none'). Measured 2026-11 on Anthropic's compatibility
+ * layer: reasoning_effort is ignored, Claude Sonnet 5.5 thinks unless sent
+ * `thinking: {type: "between_tools"}`, and models that cannot stop thinking
+ * (Opus 5.5) refuse that with a 400. One that refuses the field is asked
+ * again without it (see send).
  */
-export function reasoningEffort(server: Server, think: boolean | undefined): 'none' | undefined {
-  if (think !== false) return undefined
-  return server.native === 'ollama' || server.custom ? 'none' : undefined
+export function thinkingOff(server: Server, think: boolean | undefined): Record<string, unknown> {
+  if (think !== false) return {}
+  if (server.native === 'ollama' || server.custom) return { reasoning_effort: 'none' }
+  if (server.backend === 'anthropic') return { thinking: { type: 'between_tools' } }
+  return {}
+}
+
+/** `think` for one call: the caller's `providerOptions.neorouter.think` wins over the model's own (navi MOD-53). */
+function thinkFor(o: LanguageModelV2CallOptions, own: boolean | undefined): boolean | undefined {
+  const asked = (o.providerOptions?.neorouter as { think?: unknown } | undefined)?.think
+  return typeof asked === 'boolean' ? asked : own
 }
 
 function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean, think?: boolean) {
@@ -182,7 +204,7 @@ function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean, think
       ...(o.stopSequences?.length && { stop: o.stopSequences }),
       ...(tools?.length && { tools }),
       ...(o.toolChoice?.type === 'required' && { tool_choice: 'required' }),
-      ...(reasoningEffort(r.server, think) && { reasoning_effort: reasoningEffort(r.server, think) }),
+      ...thinkingOff(r.server, thinkFor(o, think)),
       ...(responseFormat(o) && { response_format: responseFormat(o) }),
       // Pollinations asks callers to identify themselves; harmless elsewhere.
       ...(r.backend === 'pollinations' && { referrer: 'neorouter' }),
@@ -193,11 +215,14 @@ function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean, think
 /** An OpenAI-style usage object as the SDK's; cached prompt tokens are part of the prompt's. */
 function usageOf(u: any): LanguageModelV2Usage {
   const cached = u?.prompt_tokens_details?.cached_tokens
+  // Part of completion_tokens already, as servers count them (navi MOD-54).
+  const thought = u?.completion_tokens_details?.reasoning_tokens
   return {
     inputTokens: u?.prompt_tokens,
     outputTokens: u?.completion_tokens,
     totalTokens: u?.total_tokens,
     ...(typeof cached === 'number' && { cachedInputTokens: cached }),
+    ...(typeof thought === 'number' && { reasoningTokens: thought }),
   }
 }
 
@@ -348,12 +373,16 @@ async function send(
     return send(url, payload, hosted, auth, caller, attempt + 1, retries)
   }
   const text = await res.text()
-  // A strict server may refuse a field it does not know; reasoning_effort is
-  // only ever a hint, so ask once more without it.
-  const p = payload as { reasoning_effort?: string; stream_options?: unknown }
+  // A strict server may refuse a field it does not know; the switch that
+  // turns thinking off is only ever a hint, so ask once more without it.
+  const p = payload as { reasoning_effort?: string; thinking?: unknown; stream_options?: unknown }
   if (res.status === 400 && p?.reasoning_effort && /reasoning/i.test(text)) {
     const { reasoning_effort: _, ...rest } = p
     return send(url, rest, hosted, auth, caller, attempt, retries)
+  }
+  if (res.status === 400 && p?.thinking && /thinking/i.test(text)) {
+    const { thinking: _, ...rest } = p
+    return send(url, rest, hosted, auth, caller, attempt)
   }
   // So is asking for token counts on a stream.
   if (res.status === 400 && p?.stream_options && /stream_options|include_usage/i.test(text)) {
@@ -487,6 +516,8 @@ export async function* sseParts(
   providerMetadata?: ReturnType<typeof metadata>,
 ): AsyncGenerator<LanguageModelV2StreamPart> {
   const id = 'txt-0'
+  const think = 'reasoning-0'
+  let thinking = false
   yield { type: 'text-start', id }
   let finishReason: LanguageModelV2FinishReason = 'stop'
   let usage: LanguageModelV2Usage = {
@@ -513,7 +544,18 @@ export async function* sseParts(
         continue
       }
       const choice = json.choices?.[0]
+      // Thinking goes on as reasoning, never as answer text (navi MOD-52).
+      const thought = reasoningOf(choice?.delta)
+      if (thought) {
+        if (!thinking) yield { type: 'reasoning-start', id: think }
+        thinking = true
+        yield { type: 'reasoning-delta', id: think, delta: thought }
+      }
       const delta = choice?.delta?.content
+      if (delta && thinking) {
+        yield { type: 'reasoning-end', id: think }
+        thinking = false
+      }
       if (delta) yield { type: 'text-delta', id, delta }
       for (const t of choice?.delta?.tool_calls ?? []) {
         const call = calls.get(t.index ?? 0) ?? { id: '', name: '', args: '' }
@@ -526,6 +568,7 @@ export async function* sseParts(
       if (json.usage) usage = usageOf(json.usage)
     }
   }
+  if (thinking) yield { type: 'reasoning-end', id: think }
   yield { type: 'text-end', id }
   for (const [i, c] of calls)
     yield { type: 'tool-call', toolCallId: c.id || `call-${i}`, toolName: c.name, input: c.args || '{}' }
@@ -537,7 +580,7 @@ export async function* sseParts(
 export interface AutoOptions {
   /** 'fast' picks the smallest usable model instead of the largest that fits. */
   prefer?: Prefer
-  /** false asks a reasoning model to skip thinking. Left alone by default. */
+  /** false asks a reasoning model to skip thinking; left out, it thinks as its server would (navi MOD-50). */
   think?: boolean
   /** true tries the hosted rung before the local ones, still falling back. */
   remote?: boolean
@@ -573,7 +616,7 @@ export interface Route {
   model: string
   backend: string
   local: boolean
-  /** Fields neorouter would add to the body itself, such as reasoning_effort. */
+  /** Fields neorouter would add to the body itself: the switch that turns thinking off. */
   extra: Record<string, unknown>
 }
 
@@ -581,14 +624,13 @@ export interface Route {
 export async function route(options: AutoOptions = {}): Promise<Route | null> {
   const r = await probe(options)
   if (!r) return null
-  const effort = reasoningEffort(r.server, options.think)
   return {
     url: chatEndpoint(r.server, r.backend),
     headers: { 'content-type': 'application/json', ...(r.server.auth && { authorization: `Bearer ${r.server.auth}` }) },
     model: r.modelId,
     backend: r.backend,
     local: r.local,
-    extra: effort ? { reasoning_effort: effort } : {},
+    extra: thinkingOff(r.server, options.think),
   }
 }
 

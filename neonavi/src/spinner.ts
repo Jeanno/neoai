@@ -5,7 +5,8 @@ const INTERVAL_MS = 80
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`
 
 export interface Spinner {
-  start: () => void
+  /** Starts it, or changes what it says beside the frame when it runs; `label` is dim, as the frame is (MOD-51). */
+  start: (label?: string) => void
   /** Erases the spinner. Safe to call when not running. */
   stop: () => void
 }
@@ -18,11 +19,14 @@ export interface Spinner {
 export function makeSpinner(output: Writable & { isTTY?: boolean }): Spinner {
   let timer: NodeJS.Timeout | null = null
   let i = 0
+  let said = ''
   if (!output.isTTY) return { start() {}, stop() {} }
   return {
-    start() {
+    start(label) {
+      said = label ? ` ${label}` : ''
       if (timer) return
-      const draw = () => output.write(`\r${dim(FRAMES[i++ % FRAMES.length])}`)
+      // Cleared to the end, so a shorter label leaves nothing of a longer one.
+      const draw = () => output.write(`\r${dim(FRAMES[i++ % FRAMES.length] + said)}\x1b[K`)
       draw()
       timer = setInterval(draw, INTERVAL_MS)
       timer.unref()

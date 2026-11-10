@@ -11,6 +11,7 @@ import { memorySection, projectRoot, readMemory } from './memory.ts'
 import { makeRecorder, takeNote } from './undo.ts'
 import { allowCommand, gated, plantedIn, type Answer } from './approve.ts'
 import { judge, MAX_JUDGED_DIFF } from './judge.ts'
+import { THINK_OFF, withoutThinking } from './think.ts'
 import { makeTools } from './tools.ts'
 import { summarize, type FileChange } from './diff.ts'
 
@@ -140,6 +141,8 @@ export type HarnessEvent =
   | { type: 'compacted'; messages: number }
   /** Answer text as it arrives. */
   | { type: 'text'; text: string }
+  /** The model has begun thinking, once per step that thinks; what it thinks is never passed on (MOD-51). */
+  | { type: 'thinking' }
   /** A tool call about to run (CLI-10, RAY-2). */
   | { type: 'tool-call'; id: string; name: string; input: unknown }
   /**
@@ -402,6 +405,8 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
                 model,
                 messages: [{ role: 'user', content: [{ type: 'image', image: picture, mediaType }, { type: 'text', text: question }] }],
                 maxOutputTokens: 1500,
+                // MOD-53: a description, asked quickly; thinking would also spend the 1500.
+                providerOptions: THINK_OFF,
                 abortSignal: toolSignal ?? signal,
               })
             ).text.trim() || 'Nothing could be made out of the picture.',
@@ -476,6 +481,9 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
                   partial = ''
                   cut = part.finishReason === 'length'
                   break
+                case 'reasoning-start':
+                  emit({ type: 'thinking' })
+                  break
                 case 'text-delta':
                   partial += part.text
                   emit({ type: 'text', text: part.text })
@@ -534,7 +542,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           if (taken >= maxSteps && lastCalledTools) trouble = `it used all ${maxSteps} steps still calling tools`
           else if (!text.trim()) trouble = 'it gave no answer'
         }
-        return { messages: [...finished, ...kept], text, stopped, trouble, cut: cut && !stopped && !trouble, called, tokens }
+        return { messages: withoutThinking([...finished, ...kept]), text, stopped, trouble, cut: cut && !stopped && !trouble, called, tokens }
       }
 
       const kind = kindOf(prompt, attachments?.length ?? 0)
@@ -617,7 +625,8 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       // On disk before done, so an undo straight after finds it.
       recorder.answeredBy(answering.model)
       await recorder.saved()
-      emit({ type: 'done', history, text, empty: !text.trim(), stopped, ...(done.cut && text.trim() && { cut: true as const }) })
+      // HAR-16: cut even with no answer, as thinking may have spent the whole cap.
+      emit({ type: 'done', history, text, empty: !text.trim(), stopped, ...(done.cut && { cut: true as const }) })
     }
 
     return {

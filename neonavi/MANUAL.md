@@ -169,8 +169,10 @@ Providers: `openai`, `anthropic`, `google` (Gemini), `openrouter`, `groq`, `deep
 
 - `maxTokens`: a default limit on each answer's tokens.
 - `temperature`: 0 to 2.
-- `think`: true lets a reasoning model think (navi asks local models and custom endpoints
-  not to, by default).
+- `think`: false asks a reasoning model not to think. Every model thinks by default; while it
+  does, the spinner says `thinking…` (the thinking itself is never shown). Thinking counts
+  against `maxTokens` and `tokenCap`, so keep a cap roomy. The approval judge always asks
+  for thinking off, so a verdict stays quick.
 - `tokenCap`: a hard ceiling no caller (navi, a job, an app through `navi serve`) gets past.
 
 Example: `"modelOptions": { "local": { "maxTokens": 4096, "temperature": 0.2 } }`. Invalid

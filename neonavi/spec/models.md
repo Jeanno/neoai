@@ -127,10 +127,46 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
 
 ## Reasoning
 
-- MOD-11: navi asks local reasoning models and custom endpoints not to think
+- ~~MOD-11: navi asks local reasoning models and custom endpoints not to think
   (they exhaust the step budget otherwise, and are slow). A custom endpoint
   that rejects the request is asked again without it. Provider models are left
-  as they are; reasoning is kept on.
+  as they are; reasoning is kept on.~~ Replaced by MOD-50: thinking is worth
+  its wait (Qwen3.8-27B scores ~49% on Terminal-Bench 2.1 without it, ~80%
+  with it).
+- MOD-50: Every model thinks by default: local, custom endpoint and
+  provider alike, as its server would when not told otherwise. navi sends
+  nothing to turn thinking off unless `think` is false in the link's options
+  (MOD-24) or a call asks (MOD-53). Then a local server (Ollama) or custom
+  endpoint is sent `reasoning_effort: "none"`, and Anthropic
+  `thinking: {type: "between_tools"}` (its compatibility API ignores
+  `reasoning_effort`); other providers are sent nothing. A server that
+  refuses that field with a 400 naming it is asked again without it, so a
+  model that cannot stop thinking (Claude Opus 5.5) still answers.
+- MOD-51: While a model thinks, the user sees that it is thinking, never what
+  it thinks: the CLI's spinner says "thinking…" beside its frame (dim, on a
+  terminal only) from the first thinking of each step until text or a tool
+  call; Raycast shows _Thinking…_ (RAY-21). The harness says so with one
+  `thinking` event per step that thinks (HAR-17). A model whose server keeps
+  its thinking to itself (Anthropic's) shows the plain spinner.
+- MOD-52: Thinking a server sends apart from the answer
+  (`reasoning_content`, or `reasoning`, streamed or whole) is passed on as
+  reasoning, never as text, as MOD-26 does for thinking written into the
+  text. It is not kept in the conversation: it is never sent back, and kept
+  it would fill the window and bring compaction on early (SES-8). An answer
+  that was only thinking is dropped from it.
+- MOD-53: A call that wants a quick answer more than a considered one asks
+  for thinking off, over the link's own `think`: the judge (TL-49) and a
+  picture's description (BRW-18), which would otherwise also spend its
+  1500-token cap thinking. Measured on Qwen3.8-27B on Darkbloom: a verdict
+  in ~0.8s rather than 2.7–5.5s; on Claude Sonnet 5.5 the verdicts on the
+  TL-46 cases were the same either way.
+- MOD-54: Thinking counts as output: servers count it in an answer's output
+  tokens, so `maxTokens` and `tokenCap` (MOD-24, MOD-27) hold thinking and
+  answer together, and a low cap is reached sooner; a turn whose thinking
+  spent the whole cap is cut (HAR-16). The ledger's token counts (LED-18), and
+  `navi usage`'s cost from them, include thinking as the server counted it.
+- MOD-55: Asked as a turn asks, the setup test question (SET-11) thinks too
+  (SET-35), so it shows what the model will do in use.
 
 ## Options per link
 
@@ -138,8 +174,8 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
   link as the chain would name it (`"Darkbloom:qwen3.6"`, `"local"`, …; keys
   naming the same model are one, so `"local"` is `"fast"`): `maxTokens`, at
   most that many tokens in each answer; `temperature`, from 0 to 2; and
-  `think`, true to let a reasoning model think where MOD-11 would ask it not
-  to. They apply wherever navi uses that link: a turn, a job, an escalation,
+  `think`, false to ask a reasoning model not to think (MOD-50; true, the
+  default, leaves it to think). They apply wherever navi uses that link: a turn, a job, an escalation,
   Raycast. What a caller asks for itself still wins.
 - MOD-25: A value that is not one of these, or out of range, is left out;
   the chain itself (`"model"`) is unchanged, so setup and older readers are

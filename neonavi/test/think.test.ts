@@ -60,3 +60,19 @@ test('generated answers, as the judge gets them, lose their thinking too', async
   const got = await thinkTags.wrapGenerate!({ doGenerate, doStream: undefined, params: {}, model: undefined } as any)
   assert.deepEqual(got.content, [{ type: 'reasoning', text: 'is it safe?' }, { type: 'text', text: 'SAFE' }])
 })
+
+// MOD-52: thinking is not kept in the conversation.
+test('the conversation is kept without thinking, and an answer that was only thinking goes', async () => {
+  const { withoutThinking } = await import('../src/think.ts')
+  const kept = withoutThinking([
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', content: [{ type: 'reasoning', text: 'hmm' }, { type: 'text', text: 'Hello.' }] },
+    { role: 'assistant', content: [{ type: 'reasoning', text: 'only this' }] },
+    { role: 'assistant', content: 'plain' },
+  ])
+  assert.deepEqual(kept, [
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', content: [{ type: 'text', text: 'Hello.' }] },
+    { role: 'assistant', content: 'plain' },
+  ])
+})

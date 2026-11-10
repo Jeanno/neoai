@@ -95,6 +95,15 @@ test('reasoning is hidden unless asked for, and the copied answer never has it',
   assert.equal(md(fold([{ type: 'text', text: '<think>still going' }]), { streaming: true }), '_Thinking…_')
 })
 
+// RAY-21
+test('thinking the server sends apart is shown as Thinking… until the answer or a tool call', () => {
+  assert.equal(md(fold([{ type: 'thinking' }]), { streaming: true }), '_Thinking…_')
+  assert.equal(md(fold([{ type: 'thinking' }, { type: 'text', text: 'Hi' }]), { streaming: true }), 'Hi')
+  const t = fold([{ type: 'text', text: 'Looking.' }, { type: 'tool-call', id: 'a', name: 'list_dir', input: {} }, { type: 'thinking' }])
+  assert.match(md(t, { streaming: true }), /_Thinking…_$/)
+  assert.equal(md(fold([{ type: 'thinking' }, { type: 'done', history: [], text: '', empty: true, stopped: false }]), { streaming: true }), '…')
+})
+
 test('nothing yet is an ellipsis', () => {
   assert.equal(md(emptyTurn(), { streaming: true }), '…')
 })

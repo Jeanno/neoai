@@ -1,4 +1,4 @@
-import type { LanguageModelMiddleware } from 'ai'
+import type { LanguageModelMiddleware, ModelMessage } from 'ai'
 
 /**
  * Thinking a model writes into its answer (MOD-26). Some servers apply a
@@ -120,4 +120,24 @@ export const thinkTags: LanguageModelMiddleware = {
       ) as typeof stream,
     }
   },
+}
+
+/**
+ * Asked of a call that wants a quick answer more than a considered one: the
+ * judge's verdict, a picture's description (MOD-53). neorouter reads it per
+ * call over the link's own `think`; other models ignore it.
+ */
+export const THINK_OFF = { neorouter: { think: false } }
+
+/**
+ * The conversation without what the model thought (MOD-52): it is never sent
+ * back, and kept it would fill the window and bring compaction on early. An
+ * answer that was only thinking goes too.
+ */
+export function withoutThinking(messages: ModelMessage[]): ModelMessage[] {
+  return messages.flatMap((m) => {
+    if (m.role !== 'assistant' || typeof m.content === 'string' || !m.content.some((p) => p.type === 'reasoning')) return [m]
+    const content = m.content.filter((p) => p.type !== 'reasoning')
+    return content.length ? [{ ...m, content }] : []
+  })
 }

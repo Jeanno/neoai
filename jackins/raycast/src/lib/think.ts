@@ -1,8 +1,8 @@
 /**
  * Reasoning models (Qwen, DeepSeek, …) inline their thinking as <think>…</think>,
  * often without the opening tag because the chat template already wrote it.
- * Hosted models keep reasoning on (MOD-11), so this still matters with navi's
- * think: false.
+ * Models think by default (MOD-50), so this matters whenever a server writes
+ * its thinking into the text.
  */
 export function splitThinking(text: string): { reasoning: string; answer: string } {
   const end = text.indexOf('</think>')

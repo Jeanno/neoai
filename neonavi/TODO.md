@@ -19,6 +19,16 @@ add the requirement there first.
 - [x] An answer cut at the token cap says so, everywhere. (HAR-11)
 - [x] Go on, on the phone, for a job whose answer was cut. (JOB-35)
 - [x] Thinking a model writes into its answer (`<think>`, a stray `</think>`) never shows. (MOD-26)
+- [x] Models think by default, local, custom and hosted (Qwen3.8-27B: ~49% on
+      Terminal-Bench 2.1 without, ~80% with); `think: false` per link turns it
+      off; the spinner says `thinking…`; the judge asks with it off.
+      (MOD-50 to MOD-55, TL-49, HAR-16, HAR-17, SET-35, RAY-21)
+- [ ] Raycast: show reasoning a server sends apart (`reasoning_content`) when
+      _Show the model's reasoning_ is on; today only `<think>` text is shown.
+      (RAY-21)
+- [ ] Effort per link (`reasoning_effort` low/high, Anthropic `output_config.effort`)
+      once a server is measured to honour it; Anthropic's compatibility API
+      ignores `reasoning_effort` today. (MOD-50)
 - [x] Say why a link failed: unreachable, key refused, model gone, with the
       link named, in `navi`, `navi setup --check` and Raycast. (MOD-21)
 - [x] Keep working when the model doesn't: a model that starts answering
