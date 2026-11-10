@@ -671,3 +671,15 @@ test('an empty model list says why: the only model is already the model, or ther
   await runSetup(h.d)
   assert.match(h.out(), /Models on homelab:\n\s+1  m1/)
 })
+
+// SET-32: a prompt with a newline is redrawn over the line above it.
+test('every question reaches the line editor as one line', async () => {
+  const f = fake(['b', '', row('homelab'), '', ''], { config: { custom: { homelab: { baseURL: 'http://box/v1' } } }, endpoints: { 'http://box/v1': ['m1'] } })
+  const prompts: string[] = []
+  const ask = f.d.ask
+  f.d.ask = async (p) => (prompts.push(p), ask(p))
+  await runSetup(f.d)
+  assert.ok(prompts.length >= 4, prompts.join('|'))
+  assert.ok(prompts.every((p) => !p.includes('\n')), prompts.join('|'))
+  assert.match(f.out(), /Models on homelab:\n\s+1  m1\n\n/)
+})

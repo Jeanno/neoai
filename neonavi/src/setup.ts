@@ -319,7 +319,22 @@ async function pick(d: SetupDeps, slot: Slot, now: string | undefined, keys: Rec
 }
 
 /** Runs setup and returns the exit code: 0 once something answers (SET-12). */
-export async function runSetup(d: SetupDeps, { check = false } = {}): Promise<number> {
+/**
+ * SET-32: a question is one line; the blank lines before it are printed.
+ * A line editor takes a prompt starting with a newline for two lines tall,
+ * and redrawing it moved up and cleared the last line printed: a list of one
+ * model showed as none.
+ */
+function oneLine(ask: SetupIO['ask'], print: SetupIO['print']): SetupIO['ask'] {
+  return (prompt) => {
+    const lead = prompt.match(/^\n*/)![0].length
+    for (let i = 0; i < lead; i++) print('')
+    return ask(prompt.slice(lead))
+  }
+}
+
+export async function runSetup(given: SetupDeps, { check = false } = {}): Promise<number> {
+  const d: SetupDeps = { ...given, ask: oneLine(given.ask, given.print), askSecret: oneLine(given.askSecret, given.print) }
   try {
     await d.core.load()
   } catch (e) {

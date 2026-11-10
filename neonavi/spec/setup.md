@@ -52,6 +52,9 @@ JSON by hand. Everything it writes goes to `~/.neoai/config.json`.
   A list left empty says why instead of asking for a number: the only model
   is already the model (the backup never offers it, SET-18), or the server
   lists none right now.
+- SET-32: Every terminal question is asked on one line, the blank line
+  before it printed apart: a prompt that starts with a newline was redrawn
+  over the last line of the list above it, so a list of one showed empty.
 - SET-18: Changing a slot first offers three groups: Providers, Local and
   Custom. The fallback also offers "none", and never the primary's pick.
 - SET-29: Each group says in a line what it is: a hosted model with your
