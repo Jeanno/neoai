@@ -16,7 +16,7 @@ import {
   type Listing,
   type Verdict,
 } from 'neorouter'
-import { modelFor, parseModelSpec, walkChain, type Chosen, type Entry, type Failure as ChainFailure } from './spec.ts'
+import { modelFor, parseModelSpec, troubleIn, walkChain, type Chosen, type Entry, type Failure as ChainFailure } from './spec.ts'
 import type { Escalation } from './harness.ts'
 
 /**
@@ -177,7 +177,7 @@ export function setSlotIn(parts: string[], slot: Slot, value: string | null, cus
   return next
 }
 
-const nameOf = (provider: string) => providerById(provider)?.name ?? provider
+export const nameOf = (provider: string) => providerById(provider)?.name ?? provider
 
 /**
  * A resolved model in words, model first (SET-25): a local model by its id
@@ -218,8 +218,8 @@ export function entryLabel(e: Entry): string {
   return e.prefer === 'fast' ? 'any local model (fastest)' : 'the largest local model'
 }
 
-/** One link, as a slot: "The primary", "The fallback", "Link 3". */
-function slotName(index: number): string {
+/** One link, as a slot: "the model", "the backup", "link 3" (MOD-44). */
+export function slotName(index: number): string {
   return ['the model', 'the backup'][index] ?? `link ${index + 1}`
 }
 
@@ -553,20 +553,50 @@ export function setupCore(d: CoreDeps) {
       return { changed, status: await status() }
     },
 
-    /** A one-line test question to the model that answers (SET-11). */
-    async test(
-      answering: Answering,
-      { signal }: Cancel = {},
-    ): Promise<{ ok: true; reply: string } | { ok: false; error: string }> {
-      try {
-        const reply = (await cancellable(d.ask(answering.options, signal), signal)).trim()
-        return reply ? { ok: true, reply } : { ok: false, error: 'it returned an empty reply' }
-      } catch (e) {
-        // Cancelled is not a failure of the model: it is passed on (SET-26).
-        if (signal?.aborted) throw signal.reason
-        return { ok: false, error: e instanceof Error ? e.message.replace(/^neorouter: /, '') : String(e) }
+    test,
+
+    /**
+     * SET-34: the model that answers is asked the test question; one that
+     * fails it is listed with why (MOD-43), and the next link is resolved and
+     * asked, as a turn would go on to it (MOD-40). `reply` is the answer.
+     */
+    async verify(given: Status, { signal }: Cancel = {}): Promise<Status & { reply?: string }> {
+      const config = await d.load()
+      const custom = customNames(config)
+      const parts = links(config.model)
+      const chain = parseModelSpec(parts, custom)
+      let s = given
+      while (s.answering) {
+        const t = await test(s.answering, { signal })
+        if (t.ok) return { ...s, reply: t.reply }
+        const at = s.answering.index
+        const rest = await cancellable(d.resolve(chain.slice(at + 1), { launch: !s.onlyRunning }), signal)
+        const after = (i: number) => i + at + 1
+        s = {
+          ...s,
+          answering: rest.chosen && answeringFor({ ...rest.chosen, index: after(rest.chosen.index) }),
+          failures: [
+            ...s.failures,
+            { index: at, label: labelFor(parts[at], custom), why: t.error },
+            ...rest.failures.map((f) => ({ index: after(f.index), label: labelFor(parts[after(f.index)], custom), why: f.why })),
+          ],
+        }
       }
+      return s
     },
+  }
+
+  /** A one-line test question to the model that answers (SET-11); a failure in words (MOD-43). */
+  async function test(answering: Answering, { signal }: Cancel = {}): Promise<{ ok: true; reply: string } | { ok: false; error: string }> {
+    try {
+      const reply = (await cancellable(d.ask(answering.options, signal), signal)).trim()
+      return reply ? { ok: true, reply } : { ok: false, error: 'it returned an empty reply' }
+    } catch (e) {
+      // Cancelled is not a failure of the model: it is passed on (SET-26).
+      if (signal?.aborted) throw signal.reason
+      const t = troubleIn(e)
+      return { ok: false, error: t.trouble === 'unresolved' ? t.detail : `it ${t.words}${t.detail ? ` (${t.detail})` : ''}` }
+    }
   }
 }
 

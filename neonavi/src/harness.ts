@@ -22,6 +22,8 @@ export { attach, attachmentsOf, splitUserContent, type Attachment } from './atta
 import { searchBackend } from './web.ts'
 import { addTokens, CORRECTION_WINDOW, kindOf, readLedger, readsAsCorrection, readsAsRepeat, readUndoneEntries, record, routeAway, ROUTE_DAYS, type LedgerEntry, type Tokens } from './ledger.ts'
 import type { Tab } from './browser.ts'
+import { chainHooks, type FellBack } from './fallback.ts'
+export { chainModel, fellBackLine, type ChainModel, type FellBack } from './fallback.ts'
 export { allowable, type Answer } from './approve.ts'
 
 /**
@@ -155,6 +157,12 @@ export type HarnessEvent =
   | { type: 'tool-result'; id: string; name: string; output: unknown; error: boolean }
   /** The model call failed. The turn still ends with `done`. */
   | { type: 'error'; error: unknown }
+  /**
+   * A link of the chain failed and the next answers (HAR-14, MOD-40): which
+   * failed and why, which answers, and `again` when the model failed the turn
+   * before too. Not an escalation: the turn did not struggle, its model was away.
+   */
+  | ({ type: 'fell-back' } & FellBack)
   /** The turn struggled and goes on on a stronger model (ESC-3); `local` is false when its prompts leave the machine. */
   | { type: 'escalated'; from: string; to: string; local: boolean; reason: string; routed?: true }
   /**
@@ -261,19 +269,36 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       if (signal?.aborted) onAbort()
       else signal?.addEventListener('abort', onAbort, { once: true })
       const events = channel<HarnessEvent>()
-      const work = run(prompt, attachments, stop.signal, events.push, again, note).then(events.close, events.fail)
+      // HAR-14: a chain model is told a turn starts, and says when another link answers it.
+      const hooks = chainHooks(o.model)
+      hooks?.newTurn()
+      let fell: FellBack | undefined
+      const unlisten = hooks?.listen((e) => {
+        fell = e
+        events.push({ type: 'fell-back', ...e })
+      })
+      const work = run(prompt, attachments, stop.signal, events.push, again, note, () => fell).then(events.close, events.fail)
       try {
         yield* events
       } finally {
         // Left early: stop the model, and let the turn settle its history first.
         stop.abort()
         await work
+        unlisten?.()
         signal?.removeEventListener('abort', onAbort)
         busy = false
       }
     }
 
-    async function run(prompt: string, attachments: Attachment[] | undefined, signal: AbortSignal, emit: (e: HarnessEvent) => void, again?: string, note?: string) {
+    async function run(
+      prompt: string,
+      attachments: Attachment[] | undefined,
+      signal: AbortSignal,
+      emit: (e: HarnessEvent) => void,
+      again?: string,
+      note?: string,
+      fellBack: () => FellBack | undefined = () => undefined,
+    ) {
       const started = Date.now()
       // LED-7, LED-13: the answer before, if recent enough to be what this turn is about, and what was asked for it.
       const recent = answered && started - answered.at < CORRECTION_WINDOW ? answered : undefined
@@ -554,6 +579,9 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         done = { ...more, called: true, text: more.text.trim() ? `${done.text.trimEnd()}\n\n${more.text}` : done.text }
       }
       history = whole
+      // HAR-14: the ledger counts the turn for the link that answered it.
+      const fell = fellBack()
+      if (!escalated && fell) answering = { model: fell.to.label, local: fell.to.local }
       const text = done.text
       const stopped = done.stopped
       // Written before the turn is said to be done: a front end may exit on `done`.

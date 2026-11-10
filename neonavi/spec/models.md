@@ -45,7 +45,7 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
 ## Resolution
 
 - MOD-5: The list is a fallback chain, tried in order. The first link that
-  resolves is used for the whole run.
+  resolves is used for the whole run, unless it fails at runtime (MOD-40).
 - MOD-6: Each link is scoped to what it names: a provider or custom link never
   falls to another provider or to a local model, and a local link never leaves
   the machine. There is no keyless tier.
@@ -81,6 +81,44 @@ Which model answers comes from `model` in `~/.neoai/config.json`, overridden by
 - MOD-9: The `remote` alias picks the free OpenRouter chat model with the
   largest context window from the live catalogue.
 - ~~MOD-13: `free` is never in the default chain.~~ The keyless tier is gone.
+
+## When a link fails at runtime
+
+- MOD-40: When the link answering a request fails, after neorouter's own
+  retries (MOD-42), for anything but the request's own fault (MOD-41) and
+  not because the caller stopped it, that request goes to the next link of
+  the chain that resolves, and on down it. This is not escalation (ESC-*):
+  the turn did not struggle, its model was away. Links before the one the
+  session started on (MOD-5) are not tried, and a step whose answer has
+  begun is not moved. For the rest of that turn its steps go straight to
+  the link that answered. The next turn tries the model again, once and
+  without retries, so a model still down costs no second wait through the
+  backoff: failing again, it hands over at once; answering, it is trusted
+  again, retries and all. `navi`, `navi -p`, a job and `navi mcp` all do
+  this; `navi serve` does it per request (SRV-4).
+- MOD-41: A failed call is one of: not reached (no connection, or no
+  answer in time), the key refused (401, 403), out of credit (402), the
+  model gone (404, or the server saying the model is not found), busy or
+  at capacity (429, 503, 529, or the server saying capacity, queue full,
+  overloaded or rate limit), not loaded (the server saying the model is not
+  loaded or still loading), a server error (another 5xx), or the request
+  refused (any other 4xx, such as a context too long or a tool schema the
+  server rejects). A refused request is not passed on: a backup would be
+  sent the same request. Each carries the status and the server's own
+  words, short and without the address.
+- MOD-42: neorouter tries a call to a hosted or custom server again three
+  times, 1.5, 3 and 6 seconds apart, on no connection or a 402, 408, 409,
+  425, 429, 5xx or 529; a caller can ask for fewer for one call
+  (`providerOptions.neorouter.retries`).
+- MOD-43: A link that fails at runtime is said in words naming it by its
+  slot (MOD-44) and model, and why (MOD-41): "the model, qwen3 on
+  Darkbloom, is busy or at capacity (429 capacity (queueFull))". When no
+  link answers, the turn's error lists each link tried that way, in every
+  front end; setup's test question words its failure the same way (SET-34).
+- MOD-44: Links are named by slot in everything navi says: "the model",
+  "the backup", then "link 3" and on (SET-30), never "primary" or
+  "fallback": in `navi`'s failures (MOD-21), setup, and `navi serve`'s log
+  and errors.
 
 ## Context
 

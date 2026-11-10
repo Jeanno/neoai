@@ -1,4 +1,4 @@
-export { auto, diagnose, probe, route, type AutoOptions, type Route } from './provider.ts'
+export { auto, CallError, detailOf, diagnose, probe, route, troubleOf, type AutoOptions, type Route, type Trouble } from './provider.ts'
 export { generate, stream, inspect } from './helpers.ts'
 export { shutdown } from './launch.ts'
 export { configDir, sessionsDir, readKey, readConfig, envFor, customEndpoints, type Custom } from './config.ts'

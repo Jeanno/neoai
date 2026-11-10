@@ -6,8 +6,9 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import type { ReadableStream as WebStream } from 'node:stream/web'
-import { diagnose, PROVIDERS, readConfig, reset, route, type Route } from 'neorouter'
-import { capTokens, linkOptions, optionsFor, type Entry, type LinkOptions } from './spec.ts'
+import { CallError, detailOf, diagnose, PROVIDERS, readConfig, reset, route, troubleOf, type Route } from 'neorouter'
+import { capTokens, linkOptions, optionsFor, troubleIn, type Entry, type LinkOptions } from './spec.ts'
+import { slotName } from './setup-core.ts'
 import { timingSafeEqual } from 'node:crypto'
 import { stat as statPath } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
@@ -77,9 +78,9 @@ function readBody(req: IncomingMessage): Promise<Buffer | null> {
   })
 }
 
-/** One link in words, for logs and errors: "primary (Darkbloom)". */
+/** One link in words, for logs and errors: "the model (Darkbloom:qwen3)", by its slot (MOD-44). */
 function linkName(entry: Entry, index: number): string {
-  const slot = ['primary', 'fallback'][index] ?? `link ${index + 1}`
+  const slot = slotName(index)
   const what = entry.where === 'local' ? (entry.id ?? 'local') : `${entry.provider}${entry.id ? `:${entry.id}` : ''}`
   return `${slot} (${what})`
 }
@@ -427,8 +428,10 @@ export function serveHandler(chain: Entry[], d: ServeDeps, o: { jobs?: JobsOptio
         continue
       }
       if (answer.status === 429 || answer.status >= 500) {
-        failed.push(`${name}: answered ${answer.status}`)
-        await answer.body?.cancel()
+        // Said in words, with the server's own (MOD-43).
+        const text = await answer.text().catch(() => '')
+        const t = troubleIn(new CallError('', troubleOf(answer.status, text), detailOf(answer.status, text), answer.status))
+        failed.push(`${name}: ${t.words} (${t.detail})`)
         continue
       }
       res.writeHead(answer.status, { 'content-type': answer.headers.get('content-type') ?? 'application/json' })

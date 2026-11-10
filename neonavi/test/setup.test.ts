@@ -20,7 +20,7 @@ import {
 } from '../src/setup-core.ts'
 import { makeLine } from '../src/approve.ts'
 import { optionsFor, type Chosen, type Entry, type Failure } from '../src/spec.ts'
-import type { Verdict } from 'neorouter'
+import { CallError, type Verdict } from 'neorouter'
 
 /** A scripted answer: literal text, or computed from what has been printed so far. */
 type Answer = string | null | ((out: string) => string)
@@ -52,6 +52,8 @@ interface World {
   endpoints?: Record<string, string[]>
   /** The test question fails with this. */
   askError?: string
+  /** The test question to this provider (or `local`) fails with this error. */
+  askFails?: Record<string, Error>
 }
 
 /** A fake world behind the real core, and a scripted user in front of the CLI. */
@@ -111,8 +113,10 @@ function fake(answers: Answer[], w: World = {}) {
       if (server.auth === 'wrong') return { ok: false, why: 'rejected', message: `${server.baseURL} answered 401` }
       return { ok: true, models: listed.map((id) => ({ id })) }
     },
-    ask: async () => {
+    ask: async (options) => {
       if (w.askError) throw new Error(w.askError)
+      const fails = w.askFails?.[options.provider ?? 'local']
+      if (fails) throw fails
       return 'Hello there!'
     },
   }
@@ -185,6 +189,29 @@ test('--check lists every link when nothing answers', async () => {
   const f = fake(['1'], { config: { model: ['local:qwen3-4b', 'anthropic:claude-sonnet-5-5'] } })
   assert.equal(await runSetup(f.d, { check: true }), 1)
   assert.match(f.out(), /- The model, qwen3-4b on this computer: it is not there\.\n- The backup, claude-sonnet-5-5 on Anthropic: it is not there\./)
+})
+
+// SET-34, MOD-43: a model that resolves but does not answer is found out, and the backup asked
+test('--check asks the model, and a busy one hands over to the backup', async () => {
+  const f = fake(['1'], {
+    local: ['qwen3-4b'],
+    config: { ...KEYED, model: ['local:qwen3-4b', 'anthropic:claude-sonnet-5-5'] },
+    askFails: { local: new CallError('neorouter: … responded 429', 'busy', '429 capacity (queueFull)', 429) },
+  })
+  assert.equal(await runSetup(f.d, { check: true }), 0)
+  assert.match(f.out(), /navi answers with claude-sonnet-5-5 on Anthropic, the backup \(REMOTE[^\n]*\n- The model, qwen3-4b on this computer: it is busy or at capacity \(429 capacity \(queueFull\)\)\./)
+})
+
+test('--check exits 1 when no link answers the test question', async () => {
+  const refused = new CallError('neorouter: … responded 401', 'key', '401 invalid x-api-key', 401)
+  const f = fake(['1'], {
+    local: ['qwen3-4b'],
+    config: { ...KEYED, model: ['local:qwen3-4b', 'anthropic:claude-sonnet-5-5'] },
+    askFails: { local: new CallError('neorouter: … did not respond', 'unreachable', 'connection refused'), anthropic: refused },
+  })
+  assert.equal(await runSetup(f.d, { check: true }), 1)
+  assert.match(f.out(), /- The model, qwen3-4b on this computer: it could not be reached \(connection refused\)\.\n- The backup, claude-sonnet-5-5 on Anthropic: it had its key refused \(401 invalid x-api-key\)\./)
+  assert.ok(f.out().includes(CLI_NEXT_STEP))
 })
 
 // SET-27: the core's own next step names no command.

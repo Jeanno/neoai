@@ -46,7 +46,8 @@ From a checkout, `./neonavi/install.sh` does the same with the code you have. Ei
 The installer ends by checking for a model. If it finds none, run `navi setup`. It shows the
 model navi answers with and its backup, and one list to choose either from: a model on your
 computer (with help getting LM Studio or Ollama going), a provider with your API key (it asks
-for the key and checks it) or your own server's URL and key, and it tests the result. A saved key or endpoint can be removed there too. Until you
+for the key and checks it) or your own server's URL and key, and it tests the result. With a backup, navi
+carries on with it whenever the model is busy, unreachable or not loaded, and says so. A saved key or endpoint can be removed there too. Until you
 choose, nothing leaves your machine.
 
 ```bash

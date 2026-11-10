@@ -1,5 +1,5 @@
 import { wrapLanguageModel } from 'ai'
-import { auto, diagnose, probe, providerById, type AutoOptions } from 'neorouter'
+import { auto, CallError, diagnose, probe, providerById, type AutoOptions, type Trouble } from 'neorouter'
 import { thinkTags } from './think.ts'
 
 export interface Entry {
@@ -189,3 +189,27 @@ export function withOptions(model: ReturnType<typeof auto>, o: LinkOptions): Ret
   // Still streams tool calls as auto() does, so the harness need not ask for it whole.
   return Object.assign(wrapped, { streamsToolCalls: (model as { streamsToolCalls?: boolean }).streamsToolCalls })
 }
+
+/** A failed call's trouble in words, said after the link's name (MOD-43). */
+const TROUBLE_WORDS: Record<Trouble, string> = {
+  unreachable: 'could not be reached',
+  key: 'had its key refused',
+  gone: 'is no longer served',
+  busy: 'is busy or at capacity',
+  loading: 'is not loaded',
+  credit: 'is out of credit',
+  server: 'had a server error',
+  request: 'refused the request',
+}
+
+/** A failed call's kind and words (MOD-41); an error that is not a call's is a link that did not resolve. */
+export function troubleIn(e: unknown): { trouble: Trouble | 'unresolved'; words: string; detail: string } {
+  // By shape as well, should two copies of neorouter be loaded.
+  if (e instanceof CallError || (e instanceof Error && e.name === 'CallError' && (e as CallError).trouble in TROUBLE_WORDS)) {
+    const c = e as CallError
+    return { trouble: c.trouble, words: TROUBLE_WORDS[c.trouble], detail: c.detail }
+  }
+  const message = (e instanceof Error ? e.message : String(e)).replace(/^neorouter: /, '')
+  return { trouble: 'unresolved', words: 'did not answer', detail: message }
+}
+

@@ -97,6 +97,15 @@ test("the request's own fields win over what navi would add", async () => {
   s.close()
 })
 
+// SRV-4, MOD-43, MOD-44: a busy link is said in words, with the server's own
+test('a link at capacity is listed as busy, with what it said', async () => {
+  const s = await serving([() => new Response('{"error":{"message":"capacity","code":"queueFull"}}', { status: 429 }), null])
+  const r = await post(s.base, { model: 'x', messages: [] })
+  assert.equal(r.status, 503)
+  assert.match((await r.json()).error.message, /the model \(box:big\): is busy or at capacity \(429 capacity \(queueFull\)\)/)
+  s.close()
+})
+
 // SRV-4, MOD-21
 test('when nothing answers, a 503 lists each link and why', async () => {
   const s = await serving([
@@ -109,7 +118,7 @@ test('when nothing answers, a 503 lists each link and why', async () => {
   assert.equal(r.status, 503)
   assert.equal(
     (await r.json()).error.message,
-    "No model in navi's chain answered: primary (box:big): could not be reached; fallback (local): link 1 is not there.",
+    "No model in navi's chain answered: the model (box:big): could not be reached; the backup (local): link 1 is not there.",
   )
   assert.ok(s.forgot() >= 1)
   s.close()

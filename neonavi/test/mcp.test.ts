@@ -69,7 +69,7 @@ test('a failure is a tool result with isError, not a protocol error', async () =
   const replies = await exchange(
     [call(1, { prompt: 'x' }), call(2, { prompt: '' }), call(3, { prompt: 'x', directory: 'rel' }), call(4, { prompt: 'x', files: ['/nope.png'] })],
     async () => {
-      throw new Error('navi has no model to answer with: primary (local): no local model server is running')
+      throw new Error('navi has no model to answer with: the model (local): no local model server is running')
     },
   )
   const byId = Object.fromEntries(replies.map((r) => [r.id, r]))

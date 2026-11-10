@@ -21,6 +21,16 @@ add the requirement there first.
 - [x] Thinking a model writes into its answer (`<think>`, a stray `</think>`) never shows. (MOD-26)
 - [x] Say why a link failed: unreachable, key refused, model gone, with the
       link named, in `navi`, `navi setup --check` and Raycast. (MOD-21)
+- [x] Keep working when the model doesn't: a model that starts answering
+      429 capacity, 503, not loaded, or stops being reachable mid-session
+      hands the turn to the backup, said in one line, and is tried again
+      next turn without a second wait through its retries. The failure is
+      said in plain words, by slot ("the model", "the backup"), in `navi`,
+      `navi -p`, jobs, `navi serve` and `navi setup --check`, which now asks
+      the test question. (Seen for real: Darkbloom answered `429 capacity
+      (queueFull)` for a day because its model never loaded.)
+      (`spec/models.md` MOD-40 to MOD-44, `spec/harness.md` HAR-14,
+      `spec/cli.md` CLI-50, `spec/setup.md` SET-34)
 - [x] The installer leaves `navi` runnable: it already warns when
       `~/.local/bin` is not on PATH; navi had simply never been installed here.
 - [x] Cite spec ids from the existing tests so every requirement is traceable.

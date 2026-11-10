@@ -141,7 +141,7 @@ Providers: `openai`, `anthropic`, `google` (Gemini), `openrouter`, `groq`, `deep
 ### Fallback chains
 
 - A list is tried in order: `"model": ["anthropic:claude-sonnet-5-5", "local"]`. The first
-  link that resolves is used for the whole run.
+  link that resolves is used for the whole run, unless it stops answering.
 - A link never falls to something it does not name: a provider link never falls to a local
   model, and a local link never leaves the machine.
 - A provider or custom link fails when its key is missing, the server cannot be reached, or
@@ -150,6 +150,18 @@ Providers: `openai`, `anthropic`, `google` (Gemini), `openrouter`, `groq`, `deep
 - If no link resolves, navi lists each with why, suggests `navi setup`, and exits 1.
 - A long-running navi (an open session, `navi serve`, `navi mcp`) tries a failed link again
   after 30 seconds, and looks afresh as soon as the config file changes.
+- When the model fails mid-session (busy or at capacity, not loaded, unreachable, key
+  refused, model gone, out of credit, a server error), once its retries are spent, the next
+  link answers that turn, and navi says so in one dim line:
+  `· the model is busy or at capacity (Darkbloom: 429 capacity (queueFull)); the backup,
+  claude-sonnet-5-5 on Anthropic, answers (REMOTE: prompts leave this computer)`.
+  The rest of the turn stays on the backup. The next turn asks the model again, once and
+  without waiting through its retries; once it answers, it is the model again. A request the
+  server refuses as such (a context too long, a bad tool schema) is not passed on: the backup
+  would get the same request. Jobs and `navi mcp` do the same; this is not escalation.
+- When no link answers, the error names each one and why, in words:
+  `no model in the chain answered: the model, qwen3 on Darkbloom, is busy or at capacity
+  (429 …); the backup, claude-sonnet-5-5 on Anthropic, had its key refused (401 …)`.
 
 ### Options per model
 
@@ -458,12 +470,14 @@ picks up a new model, key or endpoint without a restart.
 **No model answers.** navi lists each link with why (no key, server not reached, key
 refused, model not served or not installed, no local server). Run `navi setup` to choose a
 model, or start your local server (Ollama, LM Studio) and try again.
-`navi setup --check` says whether a model answers.
+`navi setup --check` says whether a model answers: it asks the model a test question, so a
+model that is listed but at capacity or not loaded is found out, and the backup is asked.
 
-**Rate limits (429).** In the terminal the first link that resolves serves the whole run, so
-a 429 is a failed model call; with `escalate` set the turn carries on there. Otherwise switch
-with `/model <spec>` and `/retry`, or pick another primary in `navi setup`. `navi serve`
-moves a request to the next link on 429 or 5xx. "Rate-limited" from search is DuckDuckGo:
+**Rate limits (429), a busy or unloaded model.** After its retries (1.5, 3 and 6 seconds),
+the turn goes to the backup, if the chain has one (`b` in `navi setup`), and the next turn
+tries the model once more. Without a backup it is a failed model call, said in words; with
+`escalate` set the turn carries on there. You can also switch with `/model <spec>` and
+`/retry`. `navi serve` moves a request to the next link on 429 or 5xx. "Rate-limited" from search is DuckDuckGo:
 set `search` to SearXNG or Brave.
 
 **How much has this cost me?** `navi usage` (or `navi usage --days 7`); from neosh, `?/usage`. Local models are

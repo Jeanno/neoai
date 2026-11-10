@@ -3,7 +3,7 @@ import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/
 import { networkInterfaces } from 'node:os'
 import { join } from 'node:path'
 import type { ModelMessage } from 'ai'
-import { CUT_NOTE, type Answer, type HarnessOptions, type Session } from './harness.ts'
+import { CUT_NOTE, fellBackLine, type Answer, type HarnessOptions, type Session } from './harness.ts'
 import type { Attachment } from './attach.ts'
 import { glance, glancePage } from './diff.ts'
 
@@ -272,7 +272,11 @@ export async function makeJobs(d: JobDeps): Promise<Jobs> {
         else if (e.type === 'tool-result' && e.error) job.log.push(`  failed: ${brief(e.output)}`)
         else if (e.type === 'auto-approved') job.log.push(`· ${e.allowed ? 'allowed' : 'auto-approved'}: ${e.command}`)
         else if (e.type === 'compacted') job.log.push(`· compacted ${e.messages} messages`)
-        else if (e.type === 'escalated') {
+        // CLI-50: the same line a turn in the terminal says.
+        else if (e.type === 'fell-back') {
+          job.model = e.to.label
+          job.log.push(`· ${fellBackLine(e)}`)
+        } else if (e.type === 'escalated') {
           job.model = e.to
           job.log.push(`· ${e.routed ? 'started on' : 'escalated to'} ${e.to}${e.local ? '' : ' (REMOTE)'}: ${e.reason}`)
         } else if (e.type === 'error') {

@@ -55,7 +55,7 @@ test('bare words are reported, not taken as a prompt', async () => {
   assert.match(r.stderr, /unexpected: what is this/)
 })
 
-// CLI-14, CLI-2, MOD-21: flags in any order; each link named with why; nothing on stdout.
+// CLI-14, CLI-2, MOD-21, MOD-44: flags in any order; each link named by slot with why; nothing on stdout.
 test('with no model that answers, each link says why and navi exits 1', async () => {
   for (const args of [
     ['-p', 'hi', '--model', 'openai:gpt-5,anthropic:claude-sonnet-5-5'],
@@ -63,8 +63,8 @@ test('with no model that answers, each link says why and navi exits 1', async ()
   ]) {
     const r = await navi(args)
     assert.equal(r.code, 1, args.join(' '))
-    assert.match(r.stderr, /primary \(gpt-5 on OpenAI\): no key for OpenAI/)
-    assert.match(r.stderr, /fallback \(claude-sonnet-5-5 on Anthropic\): no key for Anthropic/)
+    assert.match(r.stderr, /the model \(gpt-5 on OpenAI\): no key for OpenAI/)
+    assert.match(r.stderr, /the backup \(claude-sonnet-5-5 on Anthropic\): no key for Anthropic/)
     assert.match(r.stderr, /navi setup/)
     assert.equal(r.stdout, '')
   }

@@ -17,9 +17,14 @@ JSON by hand. Everything it writes goes to `~/.neoai/config.json`.
   that nothing answers. A pin replaced under MOD-19 is named as gone.
   Each link that failed before it, or every link when none answers, is
   listed with why (MOD-21).
-- SET-2: `navi setup --check` only reports: it exits 0 when a model resolves,
+- SET-2: `navi setup --check` only reports: it exits 0 when a model answers (SET-34),
   and otherwise prints how to get one (the next step of SET-27, then naming
   `navi setup`) and exits 1. It never asks anything.
+- SET-34: `--check` also asks the model that resolves the test question
+  (SET-11): a model can resolve and still not answer, as a server at
+  capacity does. One that fails it is listed with why (MOD-43), and the
+  next link is resolved and asked, as a turn would go on to it (MOD-40).
+  It exits 0 only when a link answered.
 - SET-3: `navi setup` with a non-terminal stdin behaves as `--check`.
 - SET-24: The first status a front end shows on opening setup only looks at
   servers already running (MOD-18): opening setup never starts a local

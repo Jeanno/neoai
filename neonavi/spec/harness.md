@@ -49,6 +49,13 @@ jack-ins are others (`jackins/NAVI.md`).
   parts. A closing offer ("Let me know if…", "I'll be here"), a question,
   a turn without tools, and one stopped, cut or escalated are not carried
   on, nor is a turn twice.
+- HAR-14: A front end may give the chain as one model (`chainModel` from
+  `neonavi/harness`, MOD-40). The harness tells it when each turn starts,
+  and when another link answers for one that failed, the turn has a
+  `fell-back` event: which links failed and why (MOD-41), which answers and
+  whether its prompts leave the machine, and `again` when the model failed
+  the turn before too. It comes once a turn, before the answer's text. The
+  ledger counts that turn for the link that answered (LED-1).
 - HAR-5: The harness never writes to stdout or stderr itself; everything a user
   might see is an event or a callback, so a front end with no terminal works.
 - HAR-6: The CLI is built on the library, with its behaviour in `cli.md`

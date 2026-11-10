@@ -361,6 +361,8 @@ export async function runSetup(given: SetupDeps, { check = false } = {}): Promis
   let status = await d.core.status({ launch: check })
   const code = () => (status.answering ? 0 : 1)
   if (check) {
+    // SET-34: resolving is not answering; a busy model is found out by asking it.
+    if (status.answering) status = await d.core.verify(status)
     d.print(describe(status.answering, bold, status))
     if (!status.answering) d.print(CLI_NEXT_STEP)
     return code()

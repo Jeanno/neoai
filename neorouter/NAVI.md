@@ -36,6 +36,13 @@ A pinned model must be in the server's live model list. Without one, only
 OpenRouter has a pick: the roomiest free chat model in its catalogue.
 `checkKey` and `fetchModels` tell a refused key from no network, for setup.
 
+A call to a hosted or custom server is tried again three times (1.5, 3, 6 s) on
+no connection, 402, 408, 409, 425, 429, 5xx or 529; `providerOptions.neorouter.retries`
+asks for fewer. A call that still fails throws a `CallError` whose `trouble` says what
+kind (`unreachable`, `key`, `gone`, `busy`, `loading`, `credit`, `server`, `request`)
+and whose `detail` is the status and the server's own words, without the URL, so a
+caller can move on to another model and say why (navi's MOD-40, MOD-41).
+
 Which backend answered is announced once on stderr, so a local-looking call that
 quietly went to the network cannot pass unnoticed.
 

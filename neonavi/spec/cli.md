@@ -82,6 +82,15 @@
   tool echo, hints, errors — goes to stderr, so stdout can be piped.
 - CLI-12: An empty answer prints a dim hint on stderr. In one-shot mode this
   exits 1; in interactive mode the loop continues.
+- CLI-50: When another link answers a turn for the model (MOD-40, HAR-14),
+  one dim line on stderr says so before the answer, in `navi` and
+  `navi -p` alike, and a job's log has the same line: "· the model is busy
+  or at capacity (Darkbloom: 429 capacity (queueFull)); the backup,
+  claude-sonnet-5-5 on Anthropic, answers (REMOTE: prompts leave this
+  computer)", REMOTE as CLI-15 and ESC-5 call it out, and "again" after
+  why when the model failed the turn before too. When no link answers, the
+  error says each link and why (MOD-43), and links that failed to resolve
+  at the start are named by slot (MOD-44).
 - CLI-13: History is saved after every turn, empty answer or not, except
   under `--new` (CLI-35).
 - CLI-38: `--once` with `-p` on a terminal answers that prompt and exits,

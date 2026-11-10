@@ -223,8 +223,65 @@ const FINISH: Record<string, LanguageModelV2FinishReason> = {
   tool_calls: 'tool-calls',
 }
 
-/** Keyless endpoints return 402/429/5xx unpredictably under load. */
-const TRANSIENT = new Set([402, 408, 409, 425, 429, 500, 502, 503, 504])
+/** Keyless endpoints return 402/429/5xx unpredictably under load; 529 is Anthropic's "overloaded". */
+const TRANSIENT = new Set([402, 408, 409, 425, 429, 500, 502, 503, 504, 529])
+
+/**
+ * What went wrong with a call, in kinds a caller can act on (MOD-41):
+ * a backup answers for any of them but `request`, which is the request's own
+ * fault and would fail the same way anywhere (MOD-40).
+ */
+export type Trouble = 'unreachable' | 'key' | 'gone' | 'busy' | 'loading' | 'credit' | 'server' | 'request'
+
+const LOADING = /not (yet )?loaded|no model (is )?loaded|model is loading|loading model|still loading|warming up|not ready/i
+const GONE = /model[^.]{0,40}(not found|does not exist|doesn'?t exist|unknown|not available|unavailable|not served)|no such model|unknown model/i
+const BUSY = /capacity|queue[ _-]?full|queuefull|overload|too many requests|busy|rate[ _-]?limit/i
+
+/** The kind of trouble a status and body mean (MOD-41); no status is a server not reached. */
+export function troubleOf(status: number | undefined, body = ''): Trouble {
+  if (status === undefined) return 'unreachable'
+  if (LOADING.test(body)) return 'loading'
+  if (status === 401 || status === 403) return 'key'
+  if (status === 402) return 'credit'
+  if (status === 404 || GONE.test(body)) return 'gone'
+  if (status === 429 || status === 503 || status === 529 || BUSY.test(body)) return 'busy'
+  if (status >= 500 || status === 408 || status === 425) return 'server'
+  return 'request'
+}
+
+/** A body's own short account of itself: an OpenAI- or Anthropic-shaped error's words and code, or its first words. */
+export function detailOf(status: number | undefined, body: string): string {
+  let said = ''
+  try {
+    const j = JSON.parse(body)
+    const e = typeof j?.error === 'object' && j.error ? j.error : j
+    const words = [e?.message, typeof j?.error === 'string' ? j.error : undefined, j?.detail].find((w) => typeof w === 'string' && w.trim())
+    const code = [e?.code, e?.type].find((c) => typeof c === 'string' && c && c !== words)
+    said = [words, code && `(${code})`].filter(Boolean).join(' ')
+  } catch {
+    said = body
+  }
+  said = said.replace(/\s+/g, ' ').trim()
+  if (said.length > 80) said = `${said.slice(0, 79)}…`
+  return [status, said].filter((x) => x !== undefined && x !== '').join(' ')
+}
+
+/**
+ * A call that failed after its retries, with what kind of trouble it was
+ * (MOD-41). The message stays as it was; `detail` is the short status and
+ * the server's own words, without the URL.
+ */
+export class CallError extends Error {
+  constructor(
+    message: string,
+    readonly trouble: Trouble,
+    readonly detail: string,
+    readonly status?: number,
+  ) {
+    super(message)
+    this.name = 'CallError'
+  }
+}
 
 /**
  * Aborts only while waiting for response headers, then disarms — so a slow
@@ -267,6 +324,7 @@ async function send(
   auth?: string,
   caller?: AbortSignal,
   attempt = 0,
+  retries = 3,
 ): Promise<Response> {
   if (process.env.NEOROUTER_DEBUG) console.error('POST', url, JSON.stringify(payload))
   let res: Response
@@ -275,17 +333,19 @@ async function send(
   } catch (e) {
     // Cancelled by the caller: retrying would only start the answer they abandoned.
     if (caller?.aborted) throw e
-    if (hosted && attempt < 3) {
+    if (hosted && attempt < retries) {
       await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt))
-      return send(url, payload, hosted, auth, caller, attempt + 1)
+      return send(url, payload, hosted, auth, caller, attempt + 1, retries)
     }
-    throw new Error(`neorouter: ${url} did not respond (${String(e)})`)
+    const cause = (e as { cause?: { code?: string } })?.cause?.code
+    const why = cause === 'ECONNREFUSED' ? 'connection refused' : cause === 'ENOTFOUND' ? 'no such host' : e instanceof Error && e.name === 'AbortError' ? 'no answer in time' : 'no answer'
+    throw new CallError(`neorouter: ${url} did not respond (${String(e)})`, 'unreachable', why)
   }
   if (res.ok) return res
-  if (TRANSIENT.has(res.status) && attempt < 3) {
+  if (TRANSIENT.has(res.status) && attempt < retries) {
     // Seconds, not milliseconds: a fast retry re-enters a queue we just filled.
     await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt))
-    return send(url, payload, hosted, auth, caller, attempt + 1)
+    return send(url, payload, hosted, auth, caller, attempt + 1, retries)
   }
   const text = await res.text()
   // A strict server may refuse a field it does not know; reasoning_effort is
@@ -293,28 +353,37 @@ async function send(
   const p = payload as { reasoning_effort?: string; stream_options?: unknown }
   if (res.status === 400 && p?.reasoning_effort && /reasoning/i.test(text)) {
     const { reasoning_effort: _, ...rest } = p
-    return send(url, rest, hosted, auth, caller, attempt)
+    return send(url, rest, hosted, auth, caller, attempt, retries)
   }
   // So is asking for token counts on a stream.
   if (res.status === 400 && p?.stream_options && /stream_options|include_usage/i.test(text)) {
     const { stream_options: _, ...rest } = p
-    return send(url, rest, hosted, auth, caller, attempt)
+    return send(url, rest, hosted, auth, caller, attempt, retries)
   }
-  throw new Error(`neorouter: ${url} responded ${res.status} ${text}`)
+  throw new CallError(`neorouter: ${url} responded ${res.status} ${text}`, troubleOf(res.status, text), detailOf(res.status, text), res.status)
 }
 
 /**
  * Only the anonymous tier needs pacing. OpenRouter is authenticated and takes
  * concurrent requests, so serialising it would cost 3s a call for nothing.
  */
-function post(url: string, payload: unknown, r: Resolved, caller?: AbortSignal): Promise<Response> {
+function post(url: string, payload: unknown, r: Resolved, caller?: AbortSignal, retries = 3): Promise<Response> {
   // A custom endpoint on this computer is still often a busy shared server (MOD-20).
   const hosted = !r.local || !!r.server.custom
   const auth = r.server.auth
   const paced = hosted && r.backend === 'pollinations'
   return paced
-    ? serialize(() => send(url, payload, true, auth, caller))
-    : send(url, payload, hosted, auth, caller)
+    ? serialize(() => send(url, payload, true, auth, caller, 0, retries))
+    : send(url, payload, hosted, auth, caller, 0, retries)
+}
+
+/**
+ * How many times a call is tried again after trouble: three, unless the
+ * caller says otherwise with `providerOptions.neorouter.retries` (MOD-42).
+ */
+export function retriesOf(o: LanguageModelV2CallOptions): number {
+  const n = (o.providerOptions?.neorouter as { retries?: unknown } | undefined)?.retries
+  return typeof n === 'number' && Number.isInteger(n) && n >= 0 ? n : 3
 }
 
 class AutoModel implements LanguageModelV2 {
@@ -348,7 +417,7 @@ class AutoModel implements LanguageModelV2 {
   async doGenerate(options: LanguageModelV2CallOptions) {
     const r = await this.ready()
     const { payload, warnings } = body(options, r, false, this.think)
-    const res = await post(chatEndpoint(r.server, r.backend), payload, r, options.abortSignal)
+    const res = await post(chatEndpoint(r.server, r.backend), payload, r, options.abortSignal, retriesOf(options))
     const json = (await res.json()) as any
     const choice = json.choices?.[0]
     return {
@@ -394,7 +463,7 @@ class AutoModel implements LanguageModelV2 {
     // an authenticated backend streams properly and should not be faked.
     if (r.backend === 'pollinations') return this.simulateStream(options)
     const { payload, warnings } = body(options, r, true, this.think)
-    const res = await post(chatEndpoint(r.server, r.backend), payload, r, options.abortSignal)
+    const res = await post(chatEndpoint(r.server, r.backend), payload, r, options.abortSignal, retriesOf(options))
     const parts = sseParts(res.body as AsyncIterable<Uint8Array>, metadata(r))
     const stream = new ReadableStream<LanguageModelV2StreamPart>({
       async start(controller) {

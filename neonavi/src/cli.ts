@@ -15,10 +15,11 @@ import { ago, clearAllSessions, clearSession, listSessions, addPrompt, loadPromp
 import { exchanges, exchangesMarkdown, transcript } from './transcript.ts'
 import { attachStdin, MAX_UPLOAD } from './attach.ts'
 import { attach, createHarness, CUT_NOTE, DEFAULT_STEPS, type Attachment, type HarnessEvent } from './harness.ts'
+import { chainModel, fellBackLine, type ChainModel } from './fallback.ts'
 import { drawAnnouncements, readConfig, reset } from 'neorouter'
 import { configuredBrowser, disconnect, findBrowser, installBrowser, makeTab, showBrowser } from './browser.ts'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
-import { describe, entryLabel, escalationFor, modelLabel, updateConfig } from './setup-core.ts'
+import { describe, entryLabel, escalationFor, modelLabel, slotName, updateConfig } from './setup-core.ts'
 import { readLedger, readUndoneEntries, recordUndone, ROUTE_DAYS, stats, usage } from './ledger.ts'
 import { makeJobs, matches, serveToken, tailnetAddresses, titleOf, working, type JobDeps } from './jobs.ts'
 import { LEVELS, notifyLevels, push, pushConfig, withLevels, type Level } from './push.ts'
@@ -171,9 +172,9 @@ const ABOUT = [
   'navi redo            bring back what the last undo here put back, unless changed since',
 ].join('\n')
 
-/** Each link that did not answer, and why (MOD-21). */
+/** Each link that did not answer, and why (MOD-21), by its slot (MOD-44). */
 function failedLines(failures: Failure[]): string[] {
-  return failures.map((f) => `${['primary', 'fallback'][f.index] ?? `link ${f.index + 1}`} (${entryLabel(f.entry)}): ${f.why}`)
+  return failures.map((f) => `${slotName(f.index)} (${entryLabel(f.entry)}): ${f.why}`)
 }
 
 /** `navi mcp`: navi as an MCP server over stdio (mcp.md). */
@@ -188,11 +189,13 @@ async function mcp(argv: string[]) {
   process.env.NEOROUTER_QUIET = '1'
   const ask: Ask = async ({ prompt, directory, attachments }) => {
     const config = await readConfig()
-    const { chosen, failures } = await walkChain(parseModelSpec(config.model, Object.keys(config.custom ?? {})))
+    const chain = parseModelSpec(config.model, Object.keys(config.custom ?? {}))
+    const { chosen, failures } = await walkChain(chain)
     if (!chosen) throw new Error(`navi has no model to answer with: ${failedLines(failures).join('; ')}`)
     // No approve callback: what would need a y is declined (MCP-4).
     const harness = await createHarness({
-      model: modelFor(chosen, config),
+      // MOD-40: a link that fails mid-task hands over to the next.
+      model: chainModel(chain, chosen, config),
       contextWindow: chosen.contextWindow,
       cwd: directory,
       config,
@@ -202,12 +205,14 @@ async function mcp(argv: string[]) {
     })
     let done: Extract<HarnessEvent, { type: 'done' }> | undefined
     const errors: string[] = []
+    let answeredBy = modelLabel(chosen)
     for await (const e of harness.session().turn(prompt, { attachments })) {
       if (e.type === 'done') done = e
       else if (e.type === 'error') errors.push(e.error instanceof Error ? e.error.message : String(e.error))
+      else if (e.type === 'fell-back') answeredBy = e.to.label
     }
     if (!done || done.empty) throw new Error(errors[0] ?? 'the model returned no answer')
-    return { text: done.text, model: modelLabel(chosen) }
+    return { text: done.text, model: answeredBy }
   }
   await serveMcp(ask, { input: process.stdin, output: process.stdout, ...(browsing && { browser: () => makeTab({ home: homedir() }) }) })
   // A pipe's writes are asynchronous: exiting now could cut off the last replies.
@@ -317,10 +322,12 @@ async function serve(argv: string[]) {
 /** A job's session (JOB-1): the chain, escalation, the browser and the ledger, as the CLI's. */
 async function startJob({ job, directory, history, approve, answered }: Parameters<JobDeps['start']>[0]) {
   const config = await readConfig()
-  const { chosen, failures } = await walkChain(parseModelSpec(config.model, Object.keys(config.custom ?? {})))
+  const chain = parseModelSpec(config.model, Object.keys(config.custom ?? {}))
+  const { chosen, failures } = await walkChain(chain)
   if (!chosen) throw new Error(`navi has no model to answer with: ${failedLines(failures).join('; ')}`)
   const harness = await createHarness({
-    model: modelFor(chosen, config),
+    // MOD-40: a link that fails mid-job hands over to the next.
+    model: chainModel(chain, chosen, config),
     contextWindow: chosen.contextWindow,
     cwd: directory,
     config,
@@ -1071,8 +1078,10 @@ async function main() {
   }
   // CLI-47: the manual of the shell navi is asked from, named by its first heading.
   const shellManual = await shellManualFrom(process.env.NAVI_SHELL_MANUAL)
+  // MOD-40: one chain model for the session, so what failed last turn is remembered.
+  let chained: ChainModel = chainModel(chain, chosen, config)
   const harnessFor = (chosen: Chosen) => createHarness({
-    model: modelFor(chosen, config),
+    model: chained,
     contextWindow: chosen.contextWindow,
     cwd,
     config,
@@ -1125,7 +1134,7 @@ async function main() {
     running = stop
     console.error(dim('· anything from this worth remembering? (^C skips)'))
     spin.start()
-    const found = await suggestFacts(modelFor(answering, config), session.history, known, stop.signal)
+    const found = await suggestFacts(chained, session.history, known, stop.signal)
     spin.stop()
     running = null
     if (stop.signal.aborted) return
@@ -1157,6 +1166,7 @@ async function main() {
     }
     answering = next.chosen
     chain = wanted
+    chained = chainModel(chain, answering, config)
     session = (await harnessFor(answering)).session(session.history)
     console.error(describe({ ...answering, label: modelLabel(answering) }))
   }
@@ -1225,6 +1235,8 @@ async function main() {
           else if (e.type === 'tool-result') {
             if (gutter && e.name.startsWith('browser_')) learnRefs(e.output, refs)
           } else if (e.type === 'error') note(`error: ${e.error instanceof Error ? e.error.message : String(e.error)}`)
+          // CLI-50: another link answers for the one that failed, in one line.
+          else if (e.type === 'fell-back') note(`· ${fellBackLine(e)}`)
           // ESC-5: said where the user sees model announcements, REMOTE called out (CLI-15).
           else if (e.type === 'escalated') note(`· ${e.routed ? 'started on' : 'escalated to'} ${e.to}${e.local ? '' : ' (REMOTE: prompts leave this computer)'}: ${e.reason}`)
           // The model or a tool is busy again.
