@@ -135,6 +135,9 @@
   browser action, a fact), no spinner is drawn: not even when a note about
   the call being asked arrives after the question is up. A frame drawn over
   it hid the question and what was typed, so y/n looked unread.
+- CLI-47: `NAVI_SHELL_MANUAL` in the environment, when it names a file that
+  is there, is the manual of the shell navi is asked from (neosh), named to
+  the model as PRM-15 says.
 - CLI-41: `NAVI_COMMAND_FILE` in the environment names a file for the
   command the answer suggests, for a shell to put at its prompt. The model
   is told so in the same note; when the answer's last code block is a shell

@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { basename, resolve } from 'node:path'
 import { readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
-import { commandFrom, promptFrom, startsFresh } from './args.ts'
+import { commandFrom, promptFrom, shellManualFrom, startsFresh } from './args.ts'
 import { modelFor, parseModelSpec, walkChain, type Chosen, type Failure } from './spec.ts'
 import { colorDiff, makeApprover, makeLine } from './approve.ts'
 import { makeSpinner } from './spinner.ts'
@@ -815,7 +815,7 @@ async function showStats(argv: string[]) {
   // LED-16: what routing by the ledger would do now, over its own window.
   const routeSince = Date.now() - ROUTE_DAYS * 86_400_000
   const route = config.route === 'ledger' && config.escalate ? { entries: await readLedger(homedir(), routeSince), undone: await readUndoneEntries(homedir(), routeSince) } : undefined
-  console.log(stats(await readLedger(homedir(), since), days, await readUndoneEntries(homedir(), since), route))
+  console.log(stats(await readLedger(homedir(), since), days, await readUndoneEntries(homedir(), since), route, config.prices))
   return 0
 }
 
@@ -1046,6 +1046,8 @@ async function main() {
     else if (midLine) process.stdout.write('\n')
     midLine = false
   }
+  // CLI-47: the manual of the shell navi is asked from, named by its first heading.
+  const shellManual = await shellManualFrom(process.env.NAVI_SHELL_MANUAL)
   const harnessFor = (chosen: Chosen) => createHarness({
     model: modelFor(chosen, config),
     contextWindow: chosen.contextWindow,
@@ -1056,6 +1058,7 @@ async function main() {
     escalate: escalationFor(config),
     maxSteps,
     browser: () => makeTab({ home: homedir() }),
+    ...(shellManual && { shellManual }),
     // The question would otherwise be drawn beside a spinning frame.
     approve: async (command, { change, action, memory, project, signal }) => {
       asking++
@@ -1333,3 +1336,4 @@ async function main() {
 }
 
 process.exit(await main())
+

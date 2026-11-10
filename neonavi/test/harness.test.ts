@@ -942,7 +942,9 @@ test('the ledger keeps counts of each turn, never what was said, and only for a 
   assert.equal(entry.front, 'cli')
   assert.equal(entry.model, 'big on Cloud')
   assert.equal(entry.local, false)
-  assert.deepEqual(entry.escalated, { from: 'small', reason: 'it gave no answer' })
+  // LED-18: each model's own tokens, summed over its steps.
+  assert.deepEqual(entry.escalated, { from: 'small', reason: 'it gave no answer', tokens: { in: 2, out: 2 } })
+  assert.deepEqual(entry.tokens, { in: 1, out: 1 })
   assert.deepEqual(entry.tools, { list_dir: 1 })
   assert.equal(entry.steps, 3)
   assert.equal(entry.outcome, 'answered')

@@ -80,6 +80,25 @@ what was said.
   now, judged as routing judges it (its own 30 days, not `--days`), is
   marked `routing starts these elsewhere now`, and shown even when it is
   the only kind or has no turns in the days shown.
+- LED-18: Each turn also records the tokens it used, as the backend reported
+  them, summed over its model steps: `tokens` (`in`, `out`, and `cached`,
+  the part of `in` read from the provider's cache) for the answering model,
+  and, for a turn that escalated, the first model's under `escalated`. A
+  step the backend gave no counts for adds nothing, and a turn with none at
+  all records no `tokens`. Streamed calls ask the backend for their counts
+  (`stream_options.include_usage`); a server that refuses that field is asked
+  again without it.
+- LED-19: `navi stats` shows, on a model's line, the tokens it used in the
+  days shown (`120k in, 8k out`), and what they cost, estimated: free for a
+  model on this computer, and for a hosted model priced in navi's table
+  (Claude models, by id, whether named directly or through OpenRouter), or
+  in `prices` in `~/.neoai/config.json`, `~$0.42`. A hosted model with no
+  price says `price unknown`. A last line totals the estimate, says it is
+  estimated from list prices, and how many turns have no token counts.
+- LED-20: `prices` in the config maps a model id, as the ledger names it
+  (`claude-sonnet-5-5`, `qwen3.6-35b-a3b-vl-mtp-mxfp8`), to US dollars per
+  million tokens: `{ "in": 2, "out": 10, "cached": 0.2 }`, `cached` taking
+  `in`'s price when left out. It wins over navi's own table.
 
 ## Open
 

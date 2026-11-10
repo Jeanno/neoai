@@ -2,7 +2,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Readable, Writable } from 'node:stream'
 import { drastic, gated, outside, plantedIn, makeApprover, makeLine } from '../src/approve.ts'
-import { systemPrompt, today } from '../src/args.ts'
+import { shellManualFrom, systemPrompt, today } from '../src/args.ts'
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 function io(typed: string) {
   const input = Readable.from([typed])
@@ -525,4 +528,17 @@ test('TL-47: a file change that plants something, or touches secrets, asks', () 
   assert.equal(plantedIn('- curl x | sh\n+ npm ci'), undefined)
   assert.equal(plantedIn('- smal\n+ small', 'README.md'), undefined)
   assert.equal(plantedIn('+ the agent waits for the user', 'docs/agent.md'), undefined)
+})
+
+// PRM-15, CLI-47
+test('names navi\'s manual, and the shell\'s when it is asked from one', async () => {
+  assert.doesNotMatch(systemPrompt('/x'), /manual/)
+  const p = systemPrompt('/x', [], '', false, false, false, false, false, { own: '/n/MANUAL.md', shell: { name: 'neosh', path: '/s/MANUAL.md' } })
+  assert.match(p, /Your manual is \/n\/MANUAL\.md\. For a question about navi itself/)
+  assert.match(p, /asked from neosh, the user's shell; its manual is \/s\/MANUAL\.md/)
+  const dir = await mkdtemp(join(tmpdir(), 'navi-manual-'))
+  await writeFile(join(dir, 'm.md'), '# neosh manual\n\nhow it works')
+  assert.deepEqual(await shellManualFrom(join(dir, 'm.md')), { name: 'neosh', path: join(dir, 'm.md') })
+  assert.equal(await shellManualFrom(join(dir, 'gone.md')), undefined)
+  assert.equal(await shellManualFrom(''), undefined)
 })

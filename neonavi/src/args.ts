@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { wall } from './clock.ts'
 
 /**
@@ -26,6 +27,7 @@ export function systemPrompt(
   write = false,
   browser = false,
   memory = false,
+  manuals: { own?: string; shell?: { name: string; path: string } } = {},
 ): string {
   const here = entries.length ? entries.join(', ') : '(empty)'
   return [
@@ -63,6 +65,16 @@ export function systemPrompt(
       : []),
     ...(memory
       ? ['When the user tells you something lasting about themselves, or asks you to remember it, use remember.']
+      : []),
+    ...(manuals.own
+      ? [
+          `Your manual is ${manuals.own}. For a question about navi itself (its commands, settings, models,`,
+          'costs, approvals, undo, sessions, memory, jobs), read it first and answer from it, not from memory,',
+          'giving the command to type.',
+        ]
+      : []),
+    ...(manuals.shell
+      ? [`You are asked from ${manuals.shell.name}, the user's shell; its manual is ${manuals.shell.path}. For a question about ${manuals.shell.name}, read that first.`]
       : []),
     'When you have the answer, state it plainly. Do not narrate your tool use.',
     ...(context
@@ -111,4 +123,13 @@ export function commandFrom(line: string): Command | null {
   if (line === '/save' || line.startsWith('/save ')) return { name: 'save', args: line.slice('/save'.length).trim() }
   if (line === '/copy' || line.startsWith('/copy ')) return { name: 'copy', args: line.slice('/copy'.length).trim() }
   return null
+}
+
+/** CLI-47: the shell's manual when the file is there, named as its first heading names it (`# neosh`). */
+export async function shellManualFrom(path: string | undefined): Promise<{ name: string; path: string } | undefined> {
+  if (!path?.trim()) return undefined
+  const text = await readFile(path.trim(), 'utf8').catch(() => undefined)
+  if (text === undefined) return undefined
+  const name = /^#\s+(\S+)/m.exec(text)?.[1] ?? 'the shell'
+  return { name, path: path.trim() }
 }

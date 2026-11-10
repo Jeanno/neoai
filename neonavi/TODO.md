@@ -280,10 +280,18 @@ its NSH items below are kept as the record, and its spec is there now.
 - [x] A quick switch for notifications: `navi notify [mac|phone]
       [all|waiting|off]` and a Notifications screen on the phone page;
       pushes can be paused without losing the topic. (JOB-39, JOB-40, PSH-19)
-- [ ] The browser in Raycast: approval is ready, but Raycast's bundler
-      cannot pack Playwright. (`jackins/raycast/spec.md` Open)
+- [x] Token counts per turn, and `navi stats` estimating what they cost from
+      list prices (or `prices` in the config); streams ask for usage. (LED-18 to LED-20)
+- [x] A manual navi reads to answer questions about itself, and neosh's when
+      asked from neosh. (PRM-15, CLI-47)
 - [x] The browser over MCP: `navi mcp --browser` serves the browser tools,
       actions marked destructive so the client asks. (MCP-6, MCP-7)
+
+### Low priority: Raycast (deprioritized 2026-11-09)
+- [ ] The browser in Raycast: approval is ready, but Raycast's bundler
+      cannot pack Playwright. (`jackins/raycast/spec.md` Open)
+- [ ] RAY-1, RAY-5, RAY-8 tests, which need Raycast running.
+- [ ] A Raycast release tag (`raycast-v*`), when the owner asks.
 
 ## Done
 

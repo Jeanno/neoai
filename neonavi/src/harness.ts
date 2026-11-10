@@ -1,7 +1,9 @@
 import { generateText, stepCountIs, streamText, type LanguageModel, type ModelMessage } from 'ai'
 import { configDir, readConfig } from 'neorouter'
+import { existsSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { basename } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { systemPrompt, today } from './args.ts'
 import { collectContext } from './context.ts'
@@ -18,7 +20,7 @@ import { splitUserContent, userContent, type Attachment } from './attach.ts'
 
 export { attach, attachmentsOf, splitUserContent, type Attachment } from './attach.ts'
 import { searchBackend } from './web.ts'
-import { CORRECTION_WINDOW, kindOf, readLedger, readsAsCorrection, readsAsRepeat, readUndoneEntries, record, routeAway, ROUTE_DAYS, type LedgerEntry } from './ledger.ts'
+import { addTokens, CORRECTION_WINDOW, kindOf, readLedger, readsAsCorrection, readsAsRepeat, readUndoneEntries, record, routeAway, ROUTE_DAYS, type LedgerEntry, type Tokens } from './ledger.ts'
 import type { Tab } from './browser.ts'
 export { allowable, type Answer } from './approve.ts'
 
@@ -99,6 +101,8 @@ export interface HarnessOptions {
    * session on first use. Left out, there are no browser tools (BRW-13).
    */
   browser?: () => Tab
+  /** The manual of the program navi is asked from (CLI-47), named to the model (PRM-15). */
+  shellManual?: { name: string; path: string }
   /** Read from `~/.neoai/config.json` when left out. */
   config?: HarnessConfig
   /** The front end, for the ledger (HAR-10, LED-1): `cli`, `raycast`, `mcp`, `job`. */
@@ -194,6 +198,9 @@ export interface Harness {
   session: (history?: ModelMessage[], o?: { answered?: { model: string; at: number } }) => Session
 }
 
+/** navi's manual (PRM-15), beside its source. */
+export const MANUAL = fileURLToPath(new URL('../MANUAL.md', import.meta.url))
+
 export async function createHarness(o: HarnessOptions): Promise<Harness> {
   // Read from where an "always" is saved (TL-43), so the two never differ.
   const config = o.config ?? ((await readConfig(configDir(o.home ?? homedir()))) as HarnessConfig)
@@ -214,7 +221,9 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
   const entries = await readdir(o.cwd).catch(() => [])
   const context = await collectContext(o.cwd, o.home ?? homedir())
   const project = remembering ? await projectRoot(o.cwd, home) : undefined
-  const system = systemPrompt(o.cwd, entries, context, web, fetch, write, browsing, remembering)
+  // PRM-15: navi's own manual, where this copy of navi has one.
+  const manual = existsSync(MANUAL) ? MANUAL : undefined
+  const system = systemPrompt(o.cwd, entries, context, web, fetch, write, browsing, remembering, { own: manual, shell: o.shellManual })
   const systemTokens = estimateTokens([{ role: 'system', content: system }])
 
   /** The front end's answer, or a decline if it throws or the turn stops first. */
@@ -408,6 +417,8 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         let lastCalledTools = false
         let called = false
         let taken = 0
+        // LED-18: what its steps used, as the backend counted.
+        let tokens: Tokens | undefined
         // HAR-11: how the last step ended.
         let cut = false
         if (!stopped) {
@@ -427,6 +438,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
                 finished = step.response.messages
                 lastText = step.text
                 lastCalledTools = step.toolCalls.length > 0
+                tokens = addTokens(tokens, step.usage)
                 taken++
               },
             })
@@ -497,7 +509,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           if (taken >= maxSteps && lastCalledTools) trouble = `it used all ${maxSteps} steps still calling tools`
           else if (!text.trim()) trouble = 'it gave no answer'
         }
-        return { messages: [...finished, ...kept], text, stopped, trouble, cut: cut && !stopped && !trouble, called }
+        return { messages: [...finished, ...kept], text, stopped, trouble, cut: cut && !stopped && !trouble, called, tokens }
       }
 
       const kind = kindOf(prompt, attachments?.length ?? 0)
@@ -506,7 +518,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       const since = Date.now() - ROUTE_DAYS * 86_400_000
       const away = ledgered ? routeAway(await readLedger(home, since), named.model, kind, await readUndoneEntries(home, since)) : undefined
       const routed = away ? await target() : null
-      let escalated: { from: string; reason: string; routed?: true } | undefined
+      let escalated: LedgerEntry['escalated']
       let answering = named
       if (routed && away) {
         escalated = { from: named.model, reason: away, routed: true }
@@ -516,10 +528,11 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
       // Escalation is only tried where there is somewhere to go (ESC-3).
       const first = routed ? await attempt(streamable(routed.model), sent, false) : await attempt(model, sent, !!o.escalate)
       let done = first
+      let tokens = first.tokens
       let whole = [...sent, ...first.messages]
       const to = !routed && first.trouble && !first.stopped ? await target() : null
       if (to && first.trouble) {
-        escalated = { from: named.model, reason: first.trouble }
+        escalated = { from: named.model, reason: first.trouble, ...(first.tokens && { tokens: first.tokens }) }
         answering = { model: to.name, local: to.local }
         emit({ type: 'escalated', from: named.model, to: to.name, local: to.local, reason: first.trouble })
         // What the first model did stays, with a word on why another goes on (ESC-3).
@@ -528,6 +541,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
           content: `(navi: the model that started on this struggled: ${first.trouble}. Carry on from where it got to and finish the task above.)`,
         }
         done = await attempt(streamable(to.model), [...whole, note], false)
+        tokens = done.tokens
         whole = [...whole, note, ...done.messages]
       }
       // HAR-12: a turn that stopped on saying what it would do next is carried on, once.
@@ -535,6 +549,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
         const note: ModelMessage = { role: 'user', content: '(navi: you stopped after saying what you would do next. Go on and do it, then answer.)' }
         emit({ type: 'text', text: '\n\n' })
         const more = await attempt(model, [...whole, note], false)
+        tokens = more.tokens ? addTokens(tokens, { inputTokens: more.tokens.in, outputTokens: more.tokens.out, cachedInputTokens: more.tokens.cached }) : tokens
         whole = [...whole, note, ...more.messages]
         done = { ...more, called: true, text: more.text.trim() ? `${done.text.trimEnd()}\n\n${more.text}` : done.text }
       }
@@ -566,6 +581,7 @@ export async function createHarness(o: HarnessOptions): Promise<Harness> {
             ? { corrects: recent.model, ...about }
             : recent && readsAsRepeat(prompt, before.text) && { repeats: recent.model, ...about }),
           ...(done.cut && { cut: true as const }),
+          ...(tokens && { tokens }),
         }
         await record(home, entry)
       }

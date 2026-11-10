@@ -61,3 +61,10 @@ test('usage is reported on the finish', async () => {
   )
   assert.deepEqual((parts.at(-1) as { usage: unknown }).usage, { inputTokens: 3, outputTokens: 1, totalTokens: 4 })
 })
+
+test('cached prompt tokens are reported too', async () => {
+  const parts = await collect(
+    sse([{ choices: [{ delta: { content: 'x' }, finish_reason: 'stop' }], usage: { prompt_tokens: 30, completion_tokens: 1, total_tokens: 31, prompt_tokens_details: { cached_tokens: 20 } } }]),
+  )
+  assert.deepEqual((parts.at(-1) as { usage: unknown }).usage, { inputTokens: 30, outputTokens: 1, totalTokens: 31, cachedInputTokens: 20 })
+})

@@ -174,6 +174,8 @@ function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean, think
       model: r.modelId,
       messages,
       stream,
+      // Without it a stream ends with no token counts at all.
+      ...(stream && { stream_options: { include_usage: true } }),
       ...(o.maxOutputTokens != null && { max_tokens: o.maxOutputTokens }),
       ...(o.temperature != null && { temperature: o.temperature }),
       ...(o.topP != null && { top_p: o.topP }),
@@ -185,6 +187,17 @@ function body(o: LanguageModelV2CallOptions, r: Resolved, stream: boolean, think
       // Pollinations asks callers to identify themselves; harmless elsewhere.
       ...(r.backend === 'pollinations' && { referrer: 'neorouter' }),
     },
+  }
+}
+
+/** An OpenAI-style usage object as the SDK's; cached prompt tokens are part of the prompt's. */
+function usageOf(u: any): LanguageModelV2Usage {
+  const cached = u?.prompt_tokens_details?.cached_tokens
+  return {
+    inputTokens: u?.prompt_tokens,
+    outputTokens: u?.completion_tokens,
+    totalTokens: u?.total_tokens,
+    ...(typeof cached === 'number' && { cachedInputTokens: cached }),
   }
 }
 
@@ -277,9 +290,14 @@ async function send(
   const text = await res.text()
   // A strict server may refuse a field it does not know; reasoning_effort is
   // only ever a hint, so ask once more without it.
-  const p = payload as { reasoning_effort?: string }
+  const p = payload as { reasoning_effort?: string; stream_options?: unknown }
   if (res.status === 400 && p?.reasoning_effort && /reasoning/i.test(text)) {
     const { reasoning_effort: _, ...rest } = p
+    return send(url, rest, hosted, auth, caller, attempt)
+  }
+  // So is asking for token counts on a stream.
+  if (res.status === 400 && p?.stream_options && /stream_options|include_usage/i.test(text)) {
+    const { stream_options: _, ...rest } = p
     return send(url, rest, hosted, auth, caller, attempt)
   }
   throw new Error(`neorouter: ${url} responded ${res.status} ${text}`)
@@ -336,11 +354,7 @@ class AutoModel implements LanguageModelV2 {
     return {
       content: fromChoice(choice),
       finishReason: FINISH[choice?.finish_reason] ?? 'unknown',
-      usage: {
-        inputTokens: json.usage?.prompt_tokens,
-        outputTokens: json.usage?.completion_tokens,
-        totalTokens: json.usage?.total_tokens,
-      },
+      usage: usageOf(json.usage),
       providerMetadata: metadata(r),
       response: { id: json.id, modelId: json.model ?? r.modelId },
       warnings,
@@ -440,12 +454,7 @@ export async function* sseParts(
         calls.set(t.index ?? 0, call)
       }
       if (choice?.finish_reason) finishReason = FINISH[choice.finish_reason] ?? 'unknown'
-      if (json.usage)
-        usage = {
-          inputTokens: json.usage.prompt_tokens,
-          outputTokens: json.usage.completion_tokens,
-          totalTokens: json.usage.total_tokens,
-        }
+      if (json.usage) usage = usageOf(json.usage)
     }
   }
   yield { type: 'text-end', id }

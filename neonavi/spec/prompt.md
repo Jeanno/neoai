@@ -36,3 +36,9 @@ Rebuilt at startup and sent with every turn.
 - PRM-14: When memory is on (MEM-4), says to use remember when the user tells
   it something lasting about themselves or asks it to; the facts themselves
   come just before the date (MEM-2).
+- PRM-15: Says navi has a manual, and names its file: for a question about
+  navi itself (its commands, settings, models, costs, approvals, undo,
+  sessions, memory, jobs), read the manual first and answer from it, rather
+  than from memory, giving the command to type. When the front end names
+  another manual (CLI-47), it says that one is for the program navi is
+  running in, by name, and to read it for questions about that program.

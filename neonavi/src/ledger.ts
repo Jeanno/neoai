@@ -1,5 +1,6 @@
 import { appendFile, chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { cost, priceOf } from './prices.ts'
 
 /**
  * How each turn went, as counts (ledger.md): what model answered, how long
@@ -22,8 +23,8 @@ export interface LedgerEntry {
   promptChars: number
   attachments: number
   outcome: 'answered' | 'empty' | 'error' | 'stopped'
-  /** The model the turn started on and why it left it (LED-3); `routed` when it never started there (ESC-6). */
-  escalated?: { from: string; reason: string; routed?: true }
+  /** The model the turn started on and why it left it (LED-3); `routed` when it never started there (ESC-6); what it used there (LED-18). */
+  escalated?: { from: string; reason: string; routed?: true; tokens?: Tokens }
   /** What sort of turn it was, by its prompt's first words (LED-11); never the prompt. */
   kind?: TurnKind
   /** The model whose answer this turn's prompt corrected (LED-7); never the prompt. */
@@ -34,6 +35,23 @@ export interface LedgerEntry {
   aboutKind?: TurnKind
   /** The answer ended at the token cap (HAR-11). */
   cut?: true
+  /** What the answering model used (LED-18). */
+  tokens?: Tokens
+}
+
+/** Tokens as a backend counted them (LED-18); `cached` is the part of `in` read from its cache. */
+export interface Tokens {
+  in: number
+  out: number
+  cached?: number
+}
+
+/** `sum` with one step's usage added; unchanged when the backend gave no counts. */
+export function addTokens(sum: Tokens | undefined, u: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number } | undefined): Tokens | undefined {
+  const n = (x: number | undefined) => (typeof x === 'number' && Number.isFinite(x) ? x : 0)
+  if (!u || !(n(u.inputTokens) || n(u.outputTokens))) return sum
+  const cached = n(sum?.cached) + n(u.cachedInputTokens)
+  return { in: n(sum?.in) + n(u.inputTokens), out: n(sum?.out) + n(u.outputTokens), ...(cached && { cached }) }
 }
 
 /** A line saying the user undid a turn's changes (LED-9): when, and whose turn; nothing else. */
@@ -234,7 +252,7 @@ export interface Routing {
 }
 
 /** One line per model, most turns first (LED-6), each with its kinds of turn under it (LED-16). */
-export function stats(entries: LedgerEntry[], days: number, undoneGiven: (string | UndoneEntry)[] = [], route?: Routing): string {
+export function stats(entries: LedgerEntry[], days: number, undoneGiven: (string | UndoneEntry)[] = [], route?: Routing, prices?: Record<string, unknown>): string {
   const undoneEntries = undoneGiven.map((u) => (typeof u === 'string' ? { at: '', undid: u } : u))
   const undone = undoneEntries.map((u) => u.undid)
   if (!entries.length) return `No turns recorded in the last ${days} day${days === 1 ? '' : 's'}.`
@@ -251,6 +269,17 @@ export function stats(entries: LedgerEntry[], days: number, undoneGiven: (string
   for (const from of [...away.keys(), ...past.keys()]) if (!by.has(from)) by.set(from, [])
   const rows = [...by].sort((a, b) => b[1].length + (away.get(b[0]) ?? 0) - (a[1].length + (away.get(a[0]) ?? 0)))
   const lines = [`Last ${days} day${days === 1 ? '' : 's'}, ${entries.length} turn${entries.length === 1 ? '' : 's'}:`]
+  // LED-18: each model's tokens, a turn that escalated counting on both.
+  const used = new Map<string, Tokens>()
+  const use = (model: string, t?: Tokens) => {
+    if (t) used.set(model, addTokens(used.get(model), { inputTokens: t.in, outputTokens: t.out, cachedInputTokens: t.cached })!)
+  }
+  for (const e of entries) {
+    use(e.model, e.tokens)
+    if (e.escalated) use(e.escalated.from, e.escalated.tokens)
+  }
+  let total = 0
+  let unpriced = 0
   for (const [model, turns] of rows) {
     const n = turns.length
     const count = (o: LedgerEntry['outcome']) => turns.filter((t) => t.outcome === o).length
@@ -279,8 +308,31 @@ export function stats(entries: LedgerEntry[], days: number, undoneGiven: (string
     if (escalated) parts.push(`${escalated} escalated away`)
     const routed = past.get(model)
     if (routed) parts.push(`${routed} routed past it`)
+    // LED-19: what it used, and what that cost.
+    const t = used.get(model)
+    if (t) {
+      const local = turns[0]?.local ?? entries.find((e) => e.escalated?.from === model)?.local
+      const price = local ? undefined : priceOf(model, prices)
+      if (price) total += cost(t, price)
+      else if (!local) unpriced++
+      parts.push(`${count3(t.in)} in, ${count3(t.out)} out`, local ? 'free' : price ? dollars(cost(t, price)) : 'price unknown')
+    }
     lines.push(`  ${model}${turns[0]?.local === false ? ' (REMOTE)' : ''}: ${parts.join(' · ')}`)
     lines.push(...kindLines(model, turns, entries, undoneEntries, route))
   }
+  const counted = entries.filter((e) => e.tokens).length
+  if (counted) {
+    const missing = entries.length - counted
+    lines.push(
+      `Estimated cost: ${dollars(total)}, from list prices${unpriced ? `, leaving out ${unpriced} model${unpriced === 1 ? '' : 's'} with no price` : ''}` +
+        (missing ? `; ${missing} turn${missing === 1 ? ' has' : 's have'} no token counts.` : '.'),
+    )
+  }
   return lines.join('\n')
 }
+
+/** 950, 12k, 1.2M. */
+const count3 = (n: number) => (n < 1000 ? `${n}` : n < 1e6 ? `${+(n / 1000).toFixed(n < 1e4 ? 1 : 0)}k` : `${+(n / 1e6).toFixed(1)}M`)
+
+/** ~$0.42, to the cent; less than a cent is said so. */
+const dollars = (d: number) => (d > 0 && d < 0.01 ? 'under $0.01' : `~$${d.toFixed(2)}`)
