@@ -55,6 +55,13 @@ JSON by hand. Everything it writes goes to `~/.neoai/config.json`.
 - SET-32: Every terminal question is asked on one line, the blank line
   before it printed apart: a prompt that starts with a newline was redrawn
   over the last line of the list above it, so a list of one showed empty.
+- SET-33: After a pick, the first screen shown again ends, right above its
+  question, with what changed: "The model is now <label> (was <old>)." or
+  the backup's (or "is still", when the pick was the same), then the test
+  question's reply ("It answered the test question: …", one line) or why it
+  failed, after the line saying what answers and where (REMOTE included). The list drawn
+  again had pushed a dim "Saved." and the reply off the screen, so a switch
+  looked like nothing happened.
 - SET-18: Changing a slot first offers three groups: Providers, Local and
   Custom. The fallback also offers "none", and never the primary's pick.
 - SET-29: Each group says in a line what it is: a hosted model with your

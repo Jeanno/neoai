@@ -243,7 +243,7 @@ test('a local model becomes the primary, saved with local:, and is asked a quest
   assert.match(f.out(), /\d+  qwen\/qwen3-8b$/m)
   assert.match(f.out(), /navi answers with qwen\/qwen3-8b \(/)
   assert.doesNotMatch(f.out(), /lmstudio ·|  lmstudio/)
-  assert.match(f.out(), /Hello there!/)
+  assert.match(f.out(), /It answered the test question: Hello there!/)
 })
 
 test('the current pick is marked', async () => {
@@ -256,7 +256,7 @@ test('the current pick is marked', async () => {
 test('a test question that fails shows the error', async () => {
   const f = fake([row('a'), ''], { local: ['a'], askError: 'it timed out' })
   await runSetup(f.d)
-  assert.match(f.out(), /The model didn't answer: it timed out/)
+  assert.match(f.out(), /It didn't answer the test question: it timed out/)
 })
 
 // SET-5
@@ -342,7 +342,8 @@ test('a custom endpoint is checked, saved under custom.<name>, and its models li
   // Tried as typed, then with /v1.
   assert.deepEqual(f.config().custom, { homelab: { baseURL: 'http://box:8000/v1' } })
   assert.deepEqual(f.saved.at(-1)?.model, ['local', 'homelab:qwen3-27b'])
-  assert.match(f.out(), /Backup\s+qwen3-27b on homelab/)
+  // SET-33: the change is said right above the question that follows it.
+  assert.match(f.out(), /The backup is now qwen3-27b on homelab \(was none\)\.\n.*navi answers with a .*\n.*It answered the test question: Hello there!/)
 })
 
 test('a saved endpoint lists its models', async () => {

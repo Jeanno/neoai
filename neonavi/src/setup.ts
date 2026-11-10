@@ -56,7 +56,7 @@ async function choose(
   d: SetupIO,
   title: string,
   rows: Row[],
-  { filter = false, keys = {}, prompt }: { filter?: boolean; keys?: Record<string, string>; prompt?: string } = {},
+  { filter = false, keys = {}, prompt, note = [] }: { filter?: boolean; keys?: Record<string, string>; prompt?: string; note?: string[] } = {},
 ): Promise<Outcome<number | string>> {
   let shown = rows.map((r, i) => ({ ...r, i }))
   for (;;) {
@@ -71,6 +71,9 @@ async function choose(
     })
     if (!shown.length) d.print(dim('   nothing matches'))
     for (const [k, what] of Object.entries(keys)) d.print(`\n    ${k}  ${what}`)
+    // SET-33: what just changed, where it is seen, right above the question.
+    if (note.length) d.print('')
+    for (const line of note) d.print(`  ${line}`)
     const a = await d.ask(prompt ?? (filter ? '\nNumber, text to search, or Enter to go back: ' : '\nNumber, or Enter to go back: '))
     if (a === null) return 'eof'
     const t = a.trim()
@@ -276,9 +279,12 @@ const SERVERS = 'Your own server, any that speaks the OpenAI API'
  * or a server goes on to its models; the backup also offers none. With
  * `keys`, the list is setup's first screen and Enter finishes.
  */
-async function pick(d: SetupDeps, slot: Slot, now: string | undefined, keys: Record<string, string> = {}, prompt?: string): Promise<Outcome<string | null>> {
+async function pick(d: SetupDeps, slot: Slot, now: string | undefined, keys: Record<string, string> = {}, prompt?: string, note: string[] = []): Promise<Outcome<string | null>> {
   // The provider or server the slot's model is on now is marked, as a local model is.
   const on = (name: string) => !!now?.endsWith(` on ${name}`)
+  // The note is for the first drawing; going back into the list drops it.
+  let noted = false
+  const shownOnce = (lines: string[]) => (noted ? [] : ((noted = true), lines))
   for (;;) {
     const [here, providers, servers, menu] = await Promise.all([d.core.localModels(slot), d.core.providers(), d.core.customs(), d.core.slotMenu(slot)])
     const running = here.some((c) => c.value !== 'local')
@@ -298,7 +304,7 @@ async function pick(d: SetupDeps, slot: Slot, now: string | undefined, keys: Rec
       ...(menu.none ? [{ ...menu.none, heading: 'No backup', act: { kind: 'model', value: null } as Act }] : []),
     ]
     const title = slot === 0 ? 'Choose the model navi answers with:' : 'Choose a backup, for when the model does not answer:'
-    const i = await choose(d, title, rows, { keys, prompt })
+    const i = await choose(d, title, rows, { keys, prompt, note: shownOnce(note) })
     if (typeof i !== 'number') return i
     const act = rows[i].act
     let got: Outcome<string | null> = 'back'
@@ -316,6 +322,12 @@ async function pick(d: SetupDeps, slot: Slot, now: string | undefined, keys: Rec
     if (act.kind === 'remove') got = (await removeEndpoint(d, servers.map((c) => c.name))) === 'eof' ? 'eof' : 'back'
     if (got !== 'back') return got
   }
+}
+
+/** A reply as one line, short enough to read at a glance. */
+function firstLine(reply: string): string {
+  const line = reply.trim().split('\n')[0]
+  return line.length > 72 ? `${line.slice(0, 71)}…` : line
 }
 
 /** Runs setup and returns the exit code: 0 once something answers (SET-12). */
@@ -355,13 +367,15 @@ export async function runSetup(given: SetupDeps, { check = false } = {}): Promis
   }
   showStatus(d, status)
 
+  let news: string[] = []
   for (;;) {
     // SET-30: the first screen is the list; b is the backup's, Enter finishes.
     // SET-29: with nothing answering, the way out says what it leaves behind.
     const backup = `a backup, for when the model does not answer (now: ${status.fallback?.label ?? 'none'})`
     const finish = status.answering ? '\nNumber, b for a backup, or Enter to finish: ' : '\nNumber, b for a backup, or Enter to leave without a model: '
     let slot: Slot = 0
-    let got = await pick(d, 0, status.primary.label, { b: backup }, finish)
+    let got = await pick(d, 0, status.primary.label, { b: backup }, finish, news)
+    news = []
     if (got === 'b') {
       slot = 1
       got = await pick(d, 1, status.fallback?.label)
@@ -372,13 +386,21 @@ export async function runSetup(given: SetupDeps, { check = false } = {}): Promis
       return code()
     }
 
+    const was = slot === 0 ? status.primary.label : (status.fallback?.label ?? 'none')
     const set = await d.core.setSlot(slot, got)
     status = set.status
-    if (set.changed) d.print(dim('Saved.'))
-    showStatus(d, status)
-    if (!status.answering) continue
+    const now = slot === 0 ? status.primary.label : (status.fallback?.label ?? 'none')
+    const which = slot === 0 ? 'The model' : 'The backup'
+    news = [bold(set.changed ? `${which} is now ${now} (was ${was}).` : `${which} is still ${now}.`)]
+    if (!status.answering) {
+      showStatus(d, status)
+      news = []
+      continue
+    }
+    // Where it answers from stays said: REMOTE is a warning (SET-1).
+    news.push(describe(status.answering, bold, status))
     d.print(dim('Asking it a test question…'))
     const t = await d.core.test(status.answering)
-    d.print(t.ok ? t.reply : `The model didn't answer: ${t.error}`)
+    news.push(t.ok ? `It answered the test question: ${firstLine(t.reply)}` : `It didn't answer the test question: ${t.error}`)
   }
 }
