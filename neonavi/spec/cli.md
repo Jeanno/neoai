@@ -121,6 +121,16 @@
   working directory or `~`, and a file the shell keeps a command's output in
   (CLI-42) as `· read what \`python3 app.py\` printed`. A call with no words
   is shown as its input, as in CLI-10.
+- CLI-46: In that gutter a markdown table is drawn as a table: its rows
+  are held until the table ends, then drawn in columns two spaces apart,
+  each as wide as its widest cell (East Asian wide characters counting
+  two), aligned as its `|---|`, `|---:|` or `|:---:|` rule says; the
+  header in bold with a dim `─` rule under it, the rule row itself not
+  drawn, and markdown in cells drawn as CLI-44 says. Too wide for the
+  terminal, the widest column gives way and its cells wrap inside it; still
+  too wide, each row is drawn a cell to a line, named by its header
+  (`Size: 12 KB`), rows a blank line apart. A `|` inside `code` or escaped
+  `\|` is not a column.
 - CLI-45: While a question waits for an answer (`[y/N/a]`, a change, a
   browser action, a fact), no spinner is drawn: not even when a note about
   the call being asked arrives after the question is up. A frame drawn over

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { describeCall, makeGutter } from '../src/gutter.ts'
+import { cells, columns, describeCall, makeGutter } from '../src/gutter.ts'
 
 /** The answer drawn as it streams, in pieces of `size` characters. */
 function draw(answer: string, width: number, size = 3) {
@@ -76,4 +76,36 @@ test('a tool call reads in plain words', () => {
   assert.equal(d('edit_file', { path: '/etc/hosts', old_text: 'a', new_text: 'b' }), 'edit /etc/hosts')
   assert.equal(d('browser_click', { ref: 'e3' }), undefined)
   assert.equal(d('read_file', {}), undefined)
+})
+
+// CLI-46
+test('a table is drawn in aligned columns, however it streams', () => {
+  const answer = 'Sizes:\n\n| File | Size |\n|---|---:|\n| app.py | 12 KB |\n| 数据.csv | 1.2 MB |\n\nDone.'
+  const want = '│ Sizes:\n│\n│ File        Size\n│ ────────  ──────\n│ app.py     12 KB\n│ 数据.csv  1.2 MB\n│\n│ Done.\n'
+  for (const size of [1, 4, 100]) assert.equal(draw(answer, 40, size), want, `in pieces of ${size}`)
+  // A table that ends the answer is drawn too.
+  assert.equal(draw('| a | b |\n|---|---|\n| 1 | 2 |', 40), '│ a  b\n│ ─  ─\n│ 1  2\n')
+})
+
+test('a table too wide wraps its widest column, then goes row by row', () => {
+  const answer = '| Name | Note |\n|---|---|\n| x | one two three four five six seven |\n'
+  assert.equal(draw(answer, 24), '│ Name  Note\n│ ────  ────────────────\n│ x     one two three\n│       four five six\n│       seven\n')
+  // Too narrow for columns: each cell on its own line, named by its header.
+  const three = '| Alpha | Beta | Gamma |\n|---|---|---|\n| aaaaaaaaaaaa | bbbbbbbbbbbb | cccccccccccc |\n'
+  assert.equal(draw(three, 22), '│ Alpha: aaaaaaaaaaaa\n│ Beta: bbbbbbbbbbbb\n│ Gamma: cccccccccccc\n')
+})
+
+test('cells split on | outside code, and wide characters take two columns', () => {
+  assert.deepEqual(cells('| a | `x|y` | b \\| c |'), ['a', '`x|y`', 'b | c'])
+  assert.equal(columns('数据'), 4)
+  assert.equal(columns('\x1b[1mab\x1b[22m'), 2)
+})
+
+test('with colour, a table header is bold and its rule dim', () => {
+  const g = makeGutter(40, true)
+  const out = g.text('| **A** | B |\n|---|---|\n| `x` | y |\n') + g.end()
+  assert.ok(out.includes('\x1b[1mA'), JSON.stringify(out))
+  assert.ok(out.includes('\x1b[2m─'), JSON.stringify(out))
+  assert.ok(out.includes('\x1b[36mx\x1b[39m'), JSON.stringify(out))
+  assert.ok(!out.includes('|'), JSON.stringify(out))
 })
