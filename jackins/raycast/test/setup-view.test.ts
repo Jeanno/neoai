@@ -64,7 +64,7 @@ test("RAY-9: the core's model-first words are shown as they are (SET-25)", () =>
   assert.equal(whereLabel({ label: remote.label, local: false }), 'claude-sonnet-5-5 on Anthropic (remote)')
   assert.equal(whereLabel({ label: local.label, local: true }), 'qwen3-4b')
   assert.doesNotMatch(statusMarkdown(status(local)), /lmstudio/)
-  assert.match(statusMarkdown(status(local)), /\*\*qwen3-4b\*\*, the primary \(on this computer\)/)
+  assert.match(statusMarkdown(status(local)), /\*\*qwen3-4b\*\* \(on this computer\)/)
 })
 
 test('RAY-6: choices become rows as the core words them', () => {
@@ -92,7 +92,7 @@ test('RAY-6: providers say where their key comes from (SET-19)', () => {
 })
 
 test('RAY-6: the status says what answers, then the test reply or error (SET-11)', () => {
-  assert.match(statusMarkdown(status(remote)), /\*\*claude-sonnet-5-5 on Anthropic\*\*, the fallback \(REMOTE/)
+  assert.match(statusMarkdown(status(remote)), /\*\*claude-sonnet-5-5 on Anthropic\*\*, the backup \(REMOTE/)
   assert.match(statusMarkdown(status(local), { state: 'asking' }), /Asking it a test question/)
   assert.match(
     statusMarkdown(status(local), { state: 'done', ok: true, reply: 'Hello!' }),
@@ -129,6 +129,6 @@ test('the status says why each link failed', () => {
   )
   assert.match(
     md,
-    /fallback \(REMOTE[^]*\n- The primary, qwen3\.8 on Darkbloom: Darkbloom could not be reached at http:\/\/box\/v1\./,
+    /backup \(REMOTE[^]*\n- The model, qwen3\.8 on Darkbloom: Darkbloom could not be reached at http:\/\/box\/v1\./,
   )
 })
