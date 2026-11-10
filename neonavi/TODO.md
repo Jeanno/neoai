@@ -280,7 +280,7 @@ its NSH items below are kept as the record, and its spec is there now.
 - [x] A quick switch for notifications: `navi notify [mac|phone]
       [all|waiting|off]` and a Notifications screen on the phone page;
       pushes can be paused without losing the topic. (JOB-39, JOB-40, PSH-19)
-- [x] Token counts per turn, and `navi stats` estimating what they cost from
+- [x] Token counts per turn, and `navi usage` estimating what they cost from
       list prices (or `prices` in the config); streams ask for usage. (LED-18 to LED-20)
 - [x] A manual navi reads to answer questions about itself, and neosh's when
       asked from neosh. (PRM-15, CLI-47)

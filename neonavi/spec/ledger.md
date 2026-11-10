@@ -88,12 +88,14 @@ what was said.
   all records no `tokens`. Streamed calls ask the backend for their counts
   (`stream_options.include_usage`); a server that refuses that field is asked
   again without it.
-- LED-19: `navi stats` shows, on a model's line, the tokens it used in the
-  days shown (`120k in, 8k out`), and what they cost, estimated: free for a
+- LED-19: `navi usage [--days N]` (default 30) shows a line per model: its
+  turns, the tokens it used in the days shown (`120k in, 8k out`; `no token
+  counts` when none were recorded), and what they cost, estimated: free for a
   model on this computer, and for a hosted model priced in navi's table
   (Claude models, by id, whether named directly or through OpenRouter), or
   in `prices` in `~/.neoai/config.json`, `~$0.42`. A hosted model with no
-  price says `price unknown`. A last line totals the estimate, says it is
+  price says `price unknown`. The most expensive comes first. `navi stats`
+  shows neither tokens nor cost. A last line totals the estimate, says it is
   estimated from list prices, and how many turns have no token counts.
 - LED-20: `prices` in the config maps a model id, as the ledger names it
   (`claude-sonnet-5-5`, `qwen3.6-35b-a3b-vl-mtp-mxfp8`), to US dollars per

@@ -364,7 +364,7 @@ Schedules:
 - No one can say `y` over MCP, so anything that would ask is declined.
 - `navi mcp --browser` also offers navi's browser tools; the client's approval is the yes.
 
-## The ledger, navi stats and cost
+## The ledger, navi stats, and navi usage for cost
 
 - Each turn adds a line of counts to `~/.neoai/ledger.jsonl`: when, the front end, the model,
   whether it stayed local, how long, steps, tools used, failed tool calls, declined
@@ -380,7 +380,7 @@ Tokens and cost:
 
 - Each turn records the tokens the backend reported: in, out, and cached (the part of in read
   from the provider's cache).
-- `navi stats` shows each model's tokens (`120k in, 8k out`) and an estimated cost: `free`
+- `navi usage [--days N]` (default 30) shows each model's turns, tokens (`120k in, 8k out`) and an estimated cost, most expensive first: `free`
   for a model on this computer; a dollar figure (`~$0.42`) for Claude models (direct or
   through OpenRouter) from navi's own price table, or for any model in `prices`;
   `price unknown` for other hosted models.
@@ -456,7 +456,7 @@ with `/model <spec>` and `/retry`, or pick another primary in `navi setup`. `nav
 moves a request to the next link on 429 or 5xx. "Rate-limited" from search is DuckDuckGo:
 set `search` to SearXNG or Brave.
 
-**How much has this cost me?** `navi stats` (or `navi stats --days 7`). Local models are
+**How much has this cost me?** `navi usage` (or `navi usage --days 7`); from neosh, `?/usage`. Local models are
 free; hosted models without a price say `price unknown` (add them under `prices`). It is an
 estimate from list prices.
 

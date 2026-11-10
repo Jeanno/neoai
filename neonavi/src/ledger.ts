@@ -252,7 +252,7 @@ export interface Routing {
 }
 
 /** One line per model, most turns first (LED-6), each with its kinds of turn under it (LED-16). */
-export function stats(entries: LedgerEntry[], days: number, undoneGiven: (string | UndoneEntry)[] = [], route?: Routing, prices?: Record<string, unknown>): string {
+export function stats(entries: LedgerEntry[], days: number, undoneGiven: (string | UndoneEntry)[] = [], route?: Routing): string {
   const undoneEntries = undoneGiven.map((u) => (typeof u === 'string' ? { at: '', undid: u } : u))
   const undone = undoneEntries.map((u) => u.undid)
   if (!entries.length) return `No turns recorded in the last ${days} day${days === 1 ? '' : 's'}.`
@@ -269,17 +269,6 @@ export function stats(entries: LedgerEntry[], days: number, undoneGiven: (string
   for (const from of [...away.keys(), ...past.keys()]) if (!by.has(from)) by.set(from, [])
   const rows = [...by].sort((a, b) => b[1].length + (away.get(b[0]) ?? 0) - (a[1].length + (away.get(a[0]) ?? 0)))
   const lines = [`Last ${days} day${days === 1 ? '' : 's'}, ${entries.length} turn${entries.length === 1 ? '' : 's'}:`]
-  // LED-18: each model's tokens, a turn that escalated counting on both.
-  const used = new Map<string, Tokens>()
-  const use = (model: string, t?: Tokens) => {
-    if (t) used.set(model, addTokens(used.get(model), { inputTokens: t.in, outputTokens: t.out, cachedInputTokens: t.cached })!)
-  }
-  for (const e of entries) {
-    use(e.model, e.tokens)
-    if (e.escalated) use(e.escalated.from, e.escalated.tokens)
-  }
-  let total = 0
-  let unpriced = 0
   for (const [model, turns] of rows) {
     const n = turns.length
     const count = (o: LedgerEntry['outcome']) => turns.filter((t) => t.outcome === o).length
@@ -308,27 +297,53 @@ export function stats(entries: LedgerEntry[], days: number, undoneGiven: (string
     if (escalated) parts.push(`${escalated} escalated away`)
     const routed = past.get(model)
     if (routed) parts.push(`${routed} routed past it`)
-    // LED-19: what it used, and what that cost.
-    const t = used.get(model)
-    if (t) {
-      const local = turns[0]?.local ?? entries.find((e) => e.escalated?.from === model)?.local
-      const price = local ? undefined : priceOf(model, prices)
-      if (price) total += cost(t, price)
-      else if (!local) unpriced++
-      parts.push(`${count3(t.in)} in, ${count3(t.out)} out`, local ? 'free' : price ? dollars(cost(t, price)) : 'price unknown')
-    }
     lines.push(`  ${model}${turns[0]?.local === false ? ' (REMOTE)' : ''}: ${parts.join(' · ')}`)
     lines.push(...kindLines(model, turns, entries, undoneEntries, route))
   }
-  const counted = entries.filter((e) => e.tokens).length
-  if (counted) {
-    const missing = entries.length - counted
-    lines.push(
-      `Estimated cost: ${dollars(total)}, from list prices${unpriced ? `, leaving out ${unpriced} model${unpriced === 1 ? '' : 's'} with no price` : ''}` +
-        (missing ? `; ${missing} turn${missing === 1 ? ' has' : 's have'} no token counts.` : '.'),
-    )
-  }
   return lines.join('\n')
+}
+
+/**
+ * LED-19: `navi usage`: each model's turns, tokens and estimated cost over
+ * the days shown, most expensive first, then the total.
+ */
+export function usage(entries: LedgerEntry[], days: number, prices?: Record<string, unknown>): string {
+  if (!entries.length) return `No turns recorded in the last ${days} day${days === 1 ? '' : 's'}.`
+  // LED-18: each model's tokens, a turn that escalated counting on both.
+  const models = new Map<string, { turns: number; local: boolean; tokens?: Tokens }>()
+  const use = (model: string, local: boolean | undefined, t: Tokens | undefined, turn: boolean) => {
+    const m = models.get(model) ?? { turns: 0, local: !!local }
+    if (turn) m.turns++
+    if (t) m.tokens = addTokens(m.tokens, { inputTokens: t.in, outputTokens: t.out, cachedInputTokens: t.cached })
+    models.set(model, m)
+  }
+  for (const e of entries) {
+    use(e.model, e.local, e.tokens, true)
+    // The model it started on is not known to be local or not; as it was last seen.
+    if (e.escalated && !e.escalated.routed) use(e.escalated.from, models.get(e.escalated.from)?.local ?? entries.find((f) => f.model === e.escalated!.from)?.local, e.escalated.tokens, false)
+  }
+  let total = 0
+  let unpriced = 0
+  const rows = [...models].map(([model, m]) => {
+    const price = m.local ? undefined : priceOf(model, prices)
+    const spent = m.tokens && price ? cost(m.tokens, price) : 0
+    total += spent
+    if (m.tokens && !m.local && !price) unpriced++
+    const parts = [
+      `${m.turns} turn${m.turns === 1 ? '' : 's'}`,
+      ...(m.tokens ? [`${count3(m.tokens.in)} in, ${count3(m.tokens.out)} out`] : []),
+      m.local ? 'free' : !m.tokens ? 'no token counts' : price ? dollars(spent) : 'price unknown',
+    ]
+    return { spent, line: `  ${model}${m.local ? '' : ' (REMOTE)'}: ${parts.join(' · ')}`, turns: m.turns }
+  })
+  rows.sort((a, b) => b.spent - a.spent || b.turns - a.turns)
+  const missing = entries.filter((e) => !e.tokens).length
+  return [
+    `Last ${days} day${days === 1 ? '' : 's'}, ${entries.length} turn${entries.length === 1 ? '' : 's'}:`,
+    ...rows.map((r) => r.line),
+    `Estimated cost: ${dollars(total)}, from list prices${unpriced ? `, leaving out ${unpriced} model${unpriced === 1 ? '' : 's'} with no price` : ''}` +
+      (missing ? `; ${missing} turn${missing === 1 ? ' has' : 's have'} no token counts.` : '.'),
+  ].join('\n')
 }
 
 /** 950, 12k, 1.2M. */

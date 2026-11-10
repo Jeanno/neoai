@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { appendFile, mkdtemp, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addTokens, kindOf, ledgerFile, readLedger, readsAsCorrection, readsAsRepeat, readUndone, readUndoneEntries, record, recordUndone, routeAway, stats, type LedgerEntry, type TurnKind } from '../src/ledger.ts'
+import { addTokens, kindOf, usage, ledgerFile, readLedger, readsAsCorrection, readsAsRepeat, readUndone, readUndoneEntries, record, recordUndone, routeAway, stats, type LedgerEntry, type TurnKind } from '../src/ledger.ts'
 
 const entry = (o: Partial<LedgerEntry> = {}): LedgerEntry => ({
   at: new Date().toISOString(),
@@ -239,28 +239,35 @@ test('tokens add up over steps, and a step with no counts adds nothing', () => {
 })
 
 // LED-19, LED-20
-test('stats show each model\'s tokens and what they cost, and a total', () => {
+test('usage shows each model\'s turns, tokens and estimated cost, most expensive first, and a total', () => {
+  assert.equal(usage([], 30), 'No turns recorded in the last 30 days.')
   const sonnet = { model: 'claude-sonnet-5-5 on Anthropic', local: false }
-  const out = stats(
+  const out = usage(
     [
       entry({ tokens: { in: 50_000, out: 2_000 } }),
       entry({ ...sonnet, tokens: { in: 1_000_000, out: 100_000, cached: 500_000 } }),
       entry({ model: 'anthropic/claude-haiku-5.5 on OpenRouter', local: false, tokens: { in: 1_000_000, out: 0 } }),
       entry({ model: 'mystery on Cloud', local: false, tokens: { in: 1_000, out: 1_000 } }),
       entry({ ...sonnet }),
+      entry({ model: 'old on Cloud', local: false }),
     ],
     7,
   )
-  const lines = out.split('\n')
-  assert.match(lines.find((l) => l.startsWith('  qwen'))!, / · 50k in, 2k out · free$/)
-  // Sonnet 5.5: 500k at $2, 500k cached at $0.20, 100k out at $10.
-  assert.match(lines.find((l) => l.startsWith('  claude-sonnet'))!, / · 1M in, 100k out · ~\$2\.10$/)
-  assert.match(lines.find((l) => l.startsWith('  anthropic/claude-haiku'))!, / · ~\$0\.10$/)
-  assert.match(lines.find((l) => l.startsWith('  mystery'))!, / · price unknown$/)
-  assert.equal(lines.at(-1), 'Estimated cost: ~$2.20, from list prices, leaving out 1 model with no price; 1 turn has no token counts.')
+  assert.equal(
+    out,
+    [
+      'Last 7 days, 6 turns:',
+      // Sonnet 5.5: 500k at $2, 500k cached at $0.20, 100k out at $10.
+      '  claude-sonnet-5-5 on Anthropic (REMOTE): 2 turns · 1M in, 100k out · ~$2.10',
+      '  anthropic/claude-haiku-5.5 on OpenRouter (REMOTE): 1 turn · 1M in, 0 out · ~$0.10',
+      '  qwen on Darkbloom: 1 turn · 50k in, 2k out · free',
+      '  mystery on Cloud (REMOTE): 1 turn · 1k in, 1k out · price unknown',
+      '  old on Cloud (REMOTE): 1 turn · no token counts',
+      'Estimated cost: ~$2.20, from list prices, leaving out 1 model with no price; 2 turns have no token counts.',
+    ].join('\n'),
+  )
   // The config's price wins over the list's.
-  const own = stats([entry({ ...sonnet, tokens: { in: 1_000_000, out: 0 } })], 7, [], undefined, { 'claude-sonnet-5-5': { in: 1, out: 1 } })
-  assert.match(own, /out · ~\$1\.00\n/)
-  // Turns from before token counting: no cost line at all.
-  assert.doesNotMatch(stats([entry()], 7), /Estimated/)
+  assert.match(usage([entry({ ...sonnet, tokens: { in: 1_000_000, out: 0 } })], 7, { 'claude-sonnet-5-5': { in: 1, out: 1 } }), /out · ~\$1\.00\n/)
+  // stats is about how models did, not what they cost.
+  assert.doesNotMatch(stats([entry({ ...sonnet, tokens: { in: 1, out: 1 } })], 7), / in, |\$|Estimated/)
 })

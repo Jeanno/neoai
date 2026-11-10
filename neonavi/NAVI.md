@@ -282,15 +282,15 @@ same thing again in other words ("25% asked again", LED-13, LED-14). An undo of 
 turn's changes counts against the model that made them too: `navi stats`
 shows the share of its edits you undid (LED-9, LED-10).
 
-It also counts each turn's tokens, and estimates what they cost from list
-prices: free for a model on this computer, `price unknown` for a hosted one
+It also counts each turn's tokens, and `navi usage` estimates what they
+cost from list prices: free for a model on this computer, `price unknown` for a hosted one
 navi has no price for (LED-18, LED-19). Give your own in the config, US
 dollars per million tokens (LED-20):
 
     "prices": { "qwen3.6-35b-a3b-vl-mtp-mxfp8": { "in": 0.2, "out": 0.8 } }
 
-    navi stats
-      claude-sonnet-5-5 on Anthropic (REMOTE): 14 turns · … · 410k in, 12k out · ~$0.94
+    navi usage
+      claude-sonnet-5-5 on Anthropic (REMOTE): 14 turns · 410k in, 12k out · ~$0.94
     Estimated cost: ~$0.94, from list prices; 30 turns have no token counts.
 
 Ask navi about itself ("how do I stop it asking?", "what has this cost

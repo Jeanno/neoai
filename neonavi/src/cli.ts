@@ -19,7 +19,7 @@ import { drawAnnouncements, readConfig, reset } from 'neorouter'
 import { configuredBrowser, disconnect, findBrowser, installBrowser, makeTab, showBrowser } from './browser.ts'
 import { CLI_NEXT_STEP, realDeps, runSetup } from './setup.ts'
 import { describe, entryLabel, escalationFor, modelLabel, updateConfig } from './setup-core.ts'
-import { readLedger, readUndoneEntries, recordUndone, ROUTE_DAYS, stats } from './ledger.ts'
+import { readLedger, readUndoneEntries, recordUndone, ROUTE_DAYS, stats, usage } from './ledger.ts'
 import { makeJobs, matches, serveToken, tailnetAddresses, titleOf, working, type JobDeps } from './jobs.ts'
 import { LEVELS, notifyLevels, push, pushConfig, withLevels, type Level } from './push.ts'
 import { addFact, forgetFact, memoryFile, projectRoot, readMemory } from './memory.ts'
@@ -126,6 +126,7 @@ const USAGE = [
   '       navi mcp [--browser]',
   '       navi browser [--install]',
   '       navi stats [--days N]',
+  '       navi usage [--days N]',
   '       navi job "<what you want done>" [-a <file>]… [-C <directory>]',
   '       navi jobs [<id> [y | n | stop | undo | delete | show | repeat (--at HH:MM [--days …] | --every 30m) [--only-changes] | reply "<follow-up>" [-a <file>]…] | find <words> | clear | link]',
   '       navi schedule "<what you want done>" (--at HH:MM [--days mon,tue,…] | --every 30m|2h) [--only-changes] [-C <directory>]',
@@ -157,6 +158,7 @@ const ABOUT = [
   '                     --browser also offers its browser tools',
   "navi browser         open navi's browser to sign in to sites; --install gets Chromium for it",
   'navi stats           how each model has done, from the ledger; --days N (default 30)',
+  'navi usage           tokens used and what they cost, estimated, by model; --days N (default 30)',
   'navi job "…"         hand navi serve a job to do in the background; -a sends a file, -C sets where',
   'navi jobs            list jobs; <id> shows one, then y, n, stop, undo, delete, show (every turn), repeat (on a schedule) or reply; find lists those mentioning words; clear deletes finished ones; link is for a phone',
   'navi schedule "…"    have navi serve start a job at a time of day or every so often;',
@@ -803,6 +805,19 @@ async function undoCommand(argv: string[]) {
 }
 
 /** `navi stats [--days N]`: how each model has done (LED-6). */
+/** LED-19: tokens and estimated cost, by model. */
+async function showUsage(argv: string[]) {
+  const days = argv[0] === '--days' && argv.length === 2 ? Number(argv[1]) : argv.length ? NaN : 30
+  if (!Number.isInteger(days) || days < 1) {
+    console.error(`unexpected: ${argv.join(' ')}`)
+    console.error('usage: navi usage [--days N]')
+    return 1
+  }
+  const config = await readConfig()
+  console.log(usage(await readLedger(homedir(), Date.now() - days * 86_400_000), days, config.prices))
+  return 0
+}
+
 async function showStats(argv: string[]) {
   const days = argv[0] === '--days' && argv.length === 2 ? Number(argv[1]) : argv.length ? NaN : 30
   if (!Number.isInteger(days) || days < 1) {
@@ -815,7 +830,7 @@ async function showStats(argv: string[]) {
   // LED-16: what routing by the ledger would do now, over its own window.
   const routeSince = Date.now() - ROUTE_DAYS * 86_400_000
   const route = config.route === 'ledger' && config.escalate ? { entries: await readLedger(homedir(), routeSince), undone: await readUndoneEntries(homedir(), routeSince) } : undefined
-  console.log(stats(await readLedger(homedir(), since), days, await readUndoneEntries(homedir(), since), route, config.prices))
+  console.log(stats(await readLedger(homedir(), since), days, await readUndoneEntries(homedir(), since), route))
   return 0
 }
 
@@ -924,6 +939,7 @@ async function main() {
   if (argv[0] === 'mcp') return mcp(argv.slice(1))
   if (argv[0] === 'browser') return browser(argv.slice(1))
   if (argv[0] === 'stats') return showStats(argv.slice(1))
+  if (argv[0] === 'usage') return showUsage(argv.slice(1))
   if (argv[0] === 'job') return startJobCommand(argv.slice(1))
   if (argv[0] === 'jobs') return jobsCommand(argv.slice(1))
   if (argv[0] === 'schedule') return scheduleCommand(argv.slice(1))
