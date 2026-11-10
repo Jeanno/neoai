@@ -121,6 +121,10 @@
   working directory or `~`, and a file the shell keeps a command's output in
   (CLI-42) as `· read what \`python3 app.py\` printed`. A call with no words
   is shown as its input, as in CLI-10.
+- CLI-45: While a question waits for an answer (`[y/N/a]`, a change, a
+  browser action, a fact), no spinner is drawn: not even when a note about
+  the call being asked arrives after the question is up. A frame drawn over
+  it hid the question and what was typed, so y/n looked unread.
 - CLI-41: `NAVI_COMMAND_FILE` in the environment names a file for the
   command the answer suggests, for a shell to put at its prompt. The model
   is told so in the same note; when the answer's last code block is a shell

@@ -1027,7 +1027,11 @@ async function main() {
       line.close()
       process.exit(code)
     })
-  const spin = makeSpinner(process.stderr)
+  const spinner = makeSpinner(process.stderr)
+  // CLI-45: while a question waits for y/n, nothing starts the spinner over it,
+  // not even a note for the call being asked about, which can arrive after.
+  let asking = 0
+  const spin = { start: () => asking === 0 && spinner.start(), stop: () => spinner.stop() }
   const asker = makeApprover({ line })
   // On a terminal the answer is written as it arrives; a pipe gets exactly the
   // final answer, as before streaming.
@@ -1054,17 +1058,21 @@ async function main() {
     browser: () => makeTab({ home: homedir() }),
     // The question would otherwise be drawn beside a spinning frame.
     approve: async (command, { change, action, memory, project, signal }) => {
+      asking++
       spin.stop()
       endLine()
-      const ok = change
-        ? await asker.approveChange(command, change, signal)
-        : action
-          ? await asker.approveAction(command, action.url, signal)
-          : memory !== undefined
-            ? await asker.approveMemory(memory, signal, project)
-            : await asker.approve(command, signal)
-      spin.start()
-      return ok
+      try {
+        return change
+          ? await asker.approveChange(command, change, signal)
+          : action
+            ? await asker.approveAction(command, action.url, signal)
+            : memory !== undefined
+              ? await asker.approveMemory(memory, signal, project)
+              : await asker.approve(command, signal)
+      } finally {
+        asking--
+        spin.start()
+      }
     },
   })
   let answering = chosen
