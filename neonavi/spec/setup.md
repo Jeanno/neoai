@@ -48,6 +48,10 @@ JSON by hand. Everything it writes goes to `~/.neoai/config.json`.
   provider or a server goes on to its models. The slots are named "the
   model" and "the backup", and the model's needs no naming when it answers.
   This replaces the groups of SET-18 in the terminal.
+- SET-31: A server's or provider's models are titled "Models on <name>:".
+  A list left empty says why instead of asking for a number: the only model
+  is already the model (the backup never offers it, SET-18), or the server
+  lists none right now.
 - SET-18: Changing a slot first offers three groups: Providers, Local and
   Custom. The fallback also offers "none", and never the primary's pick.
 - SET-29: Each group says in a line what it is: a hosted model with your

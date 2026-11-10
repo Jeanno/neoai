@@ -127,7 +127,8 @@ export interface CustomRow {
 
 export type Failure = { ok: false; why: 'rejected' | 'unreachable' | 'invalid'; message: string }
 
-export type ModelList = { ok: true; recommended: Choice[]; all: Choice[] } | Failure
+/** `taken`: a model left out of the backup's list because it is the model already (SET-31). */
+export type ModelList = { ok: true; recommended: Choice[]; all: Choice[]; taken?: string } | Failure
 
 /** Help getting a local model (SET-5), for a front end to lay out as it likes. */
 export const LOCAL_HELP = [
@@ -314,11 +315,15 @@ export function setupCore(d: CoreDeps) {
       const n = listing.models.find((m) => m.id === id)?.contextWindow
       return { value: `${prefix}:${id}`, label: id, ...(n && { detail: `${Math.round(n / 1024)}k context` }) }
     }
+    const every = [...ids].sort().map(row)
+    const all = await choicesFor(slot, every)
+    const taken = every.find((r) => !all.some((c) => c.value === r.value))?.label
     return {
       ok: true,
       // One the provider no longer offers is not shown (SET-20).
       recommended: await choicesFor(slot, recommended.filter((id) => ids.includes(id)).map(row)),
-      all: await choicesFor(slot, [...ids].sort().map(row)),
+      all,
+      ...(taken && { taken }),
     }
   }
 

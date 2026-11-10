@@ -325,7 +325,7 @@ test('a provider with a key can have it replaced', async () => {
 test('hand-picked models the provider still offers come first, then all models', async () => {
   const f = fake([row('Anthropic'), row('All models…'), row('claude-old-1'), ''], { config: KEYED })
   assert.equal(await runSetup(f.d), 0)
-  const picks = f.out().slice(f.out().indexOf('Anthropic:'), f.out().indexOf('All Anthropic models:'))
+  const picks = f.out().slice(f.out().indexOf('Models on Anthropic:'), f.out().indexOf('All models on Anthropic:'))
   assert.match(picks, /claude-sonnet-5-5/)
   // In the code's list but not the provider's: not shown.
   assert.doesNotMatch(picks, /claude-opus-5-5|claude-old-1/)
@@ -653,4 +653,21 @@ test('with nothing answering, leaving says navi cannot answer, and each section 
   const ok = fake([''], { local: ['qwen3-4b'] })
   await runSetup(ok.d)
   assert.doesNotMatch(ok.out(), /No model yet/)
+})
+
+// SET-31
+test('an empty model list says why: the only model is already the model, or there are none', async () => {
+  const custom = { homelab: { baseURL: 'http://box/v1' } }
+  const f = fake(['b', row('homelab'), '', ''], { config: { model: ['homelab:m1'], custom }, endpoints: { 'http://box/v1': ['m1'] } })
+  await runSetup(f.d)
+  assert.match(f.out(), /homelab serves only m1, and that is already the model\. A backup has to be a different model/)
+  assert.doesNotMatch(f.out(), /Models on homelab:/)
+
+  const g = fake([row('homelab'), '', ''], { config: { custom }, endpoints: { 'http://box/v1': [] } })
+  await runSetup(g.d)
+  assert.match(g.out(), /homelab lists no models right now/)
+
+  const h = fake([row('homelab'), '', ''], { config: { custom }, endpoints: { 'http://box/v1': ['m1'] } })
+  await runSetup(h.d)
+  assert.match(h.out(), /Models on homelab:\n\s+1  m1/)
 })

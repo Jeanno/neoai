@@ -163,11 +163,11 @@ async function providerModels(d: SetupDeps, slot: Slot, p: ProviderRow): Promise
       // Looked up afresh: a key entered a moment ago is saved now.
       ...((await d.core.providers()).find((r) => r.id === p.id)?.key === 'saved' ? [{ label: 'Remove the saved key' }] : []),
     ]
-    const i = await choose(d, `${p.name}:`, rows)
+    const i = await choose(d, `Models on ${p.name}:`, rows)
     if (typeof i !== 'number') return i === 'eof' ? 'eof' : 'back'
     if (i < picks.length) return picks[i].value!
     if (list.ok && i === picks.length) {
-      const got = await pickFrom(d, `All ${p.name} models:`, list.all)
+      const got = await pickFrom(d, `All models on ${p.name}:`, list.all)
       if (got === 'eof') return 'eof'
       if (got !== 'back' && got !== null) return got
       continue
@@ -236,7 +236,16 @@ async function customModels(d: SetupDeps, slot: Slot, name: string): Promise<Out
     d.print(list.message)
     return 'back'
   }
-  const got = await pickFrom(d, `${name}:`, list.all)
+  // SET-31: an empty list says why, rather than asking for a number of nothing.
+  if (!list.all.length) {
+    d.print(
+      list.taken
+        ? `\n${name} serves only ${bold(list.taken)}, and that is already the model. A backup has to be a different model, so pick another server or provider, or none.`
+        : `\n${name} lists no models right now. It may be busy or still starting; try again in a moment.`,
+    )
+    return 'back'
+  }
+  const got = await pickFrom(d, `Models on ${name}:`, list.all)
   return got === null ? 'back' : got
 }
 
