@@ -43,10 +43,10 @@ From a checkout, `./neonavi/install.sh` does the same with the code you have. Ei
 `navi` command in `~/.local/bin`; run the installer again to update, or pass `--uninstall` to remove it
 (`… | sh -s -- --uninstall`).
 
-The installer ends by checking for a model. If it finds none, run `navi setup`. It shows your
-primary and fallback models and lets you change either, from a provider (it asks for a key and
-checks it), a model on your computer (with help getting LM Studio or Ollama going) or a custom
-endpoint, and it tests the result. A saved key or endpoint can be removed there too. Until you
+The installer ends by checking for a model. If it finds none, run `navi setup`. It shows the
+model navi answers with and its backup, and one list to choose either from: a model on your
+computer (with help getting LM Studio or Ollama going), a provider with your API key (it asks
+for the key and checks it) or your own server's URL and key, and it tests the result. A saved key or endpoint can be removed there too. Until you
 choose, nothing leaves your machine.
 
 ```bash

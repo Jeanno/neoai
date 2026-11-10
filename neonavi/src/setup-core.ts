@@ -219,7 +219,7 @@ export function entryLabel(e: Entry): string {
 
 /** One link, as a slot: "The primary", "The fallback", "Link 3". */
 function slotName(index: number): string {
-  return ['the primary', 'the fallback'][index] ?? `link ${index + 1}`
+  return ['the model', 'the backup'][index] ?? `link ${index + 1}`
 }
 
 const capital = (s: string) => s[0].toUpperCase() + s.slice(1)
@@ -240,7 +240,9 @@ export function describe(
   const where = answering.local ? 'on this computer' : 'REMOTE: prompts leave this computer'
   // A pin replaced under MOD-19 is named, so the swap is never silent.
   const gone = answering.replaced ? ` The pinned ${answering.replaced} is gone; it serves only this model now.` : ''
-  return `navi answers with ${strong(answering.label)}, ${slotName(answering.index)} (${where}).${gone}${failed}`
+  // SET-30: the backup is named as such; the model needs no name.
+  const which = answering.index === 0 ? '' : `, ${slotName(answering.index)}`
+  return `navi answers with ${strong(answering.label)}${which} (${where}).${gone}${failed}`
 }
 
 /**

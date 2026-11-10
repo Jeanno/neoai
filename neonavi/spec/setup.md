@@ -39,6 +39,15 @@ JSON by hand. Everything it writes goes to `~/.neoai/config.json`.
 - SET-13: Setup shows the primary model (the chain's first link), the fallback
   (its second link, or none) and any later links, and says which one answers
   now. The user can change the primary or the fallback, then finish.
+- SET-30: In the terminal, the first screen is one numbered list, the same
+  for the model (the primary) and the backup (the fallback), so either can
+  be any of them: On this computer (SET-21, and help, SET-5, when nothing
+  runs), With your API key (SET-19) and Your own server (SET-22: the saved
+  ones, "Add a server", "Remove a server"). A number sets the model; `b`
+  shows the list for the backup, with none (SET-18); Enter finishes. A
+  provider or a server goes on to its models. The slots are named "the
+  model" and "the backup", and the model's needs no naming when it answers.
+  This replaces the groups of SET-18 in the terminal.
 - SET-18: Changing a slot first offers three groups: Providers, Local and
   Custom. The fallback also offers "none", and never the primary's pick.
 - SET-29: Each group says in a line what it is: a hosted model with your

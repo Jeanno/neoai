@@ -43,27 +43,38 @@ interface Row {
   label: string
   detail?: string
   current?: boolean
+  /** A heading drawn above the row, starting a section (SET-30). */
+  heading?: string
 }
 
 /**
- * A numbered list; returns the index picked. With `filter`, typing anything
+ * A numbered list; returns the index picked, or a letter of `keys`, each
+ * drawn below the list with what it does. With `filter`, typing anything
  * that is not a number narrows the list, for model lists hundreds long.
  */
-async function choose(d: SetupIO, title: string, rows: Row[], { filter = false } = {}): Promise<Outcome<number>> {
+async function choose(
+  d: SetupIO,
+  title: string,
+  rows: Row[],
+  { filter = false, keys = {}, prompt }: { filter?: boolean; keys?: Record<string, string>; prompt?: string } = {},
+): Promise<Outcome<number | string>> {
   let shown = rows.map((r, i) => ({ ...r, i }))
   for (;;) {
     d.print(`\n${title}`)
     // Details start in one column, so they read as a second column.
     const wide = Math.max(0, ...shown.filter((r) => r.detail).map((r) => r.label.length))
     shown.forEach((r, n) => {
+      if (r.heading && shown.length === rows.length) d.print(`  ${bold(r.heading)}`)
       const detail = r.detail ? dim(`  ${' '.repeat(wide - r.label.length)}${r.detail}`) : ''
       const mark = r.current ? dim('  (current)') : ''
       d.print(`   ${String(n + 1).padStart(2)}  ${r.label}${detail}${mark}`)
     })
     if (!shown.length) d.print(dim('   nothing matches'))
-    const a = await d.ask(filter ? '\nNumber, text to search, or Enter to go back: ' : '\nNumber, or Enter to go back: ')
+    for (const [k, what] of Object.entries(keys)) d.print(`\n    ${k}  ${what}`)
+    const a = await d.ask(prompt ?? (filter ? '\nNumber, text to search, or Enter to go back: ' : '\nNumber, or Enter to go back: '))
     if (a === null) return 'eof'
     const t = a.trim()
+    if (t.toLowerCase() in keys) return t.toLowerCase()
     if (!t) {
       if (shown.length === rows.length) return 'back'
       shown = rows.map((r, i) => ({ ...r, i }))
@@ -78,7 +89,6 @@ async function choose(d: SetupIO, title: string, rows: Row[], { filter = false }
   }
 }
 
-const SLOT_NAME = ['primary', 'fallback']
 
 /** Words into lines of at most `width` characters. */
 function wrap(text: string, width: number): string[] {
@@ -92,8 +102,8 @@ function wrap(text: string, width: number): string[] {
 }
 
 function showStatus(d: SetupIO, s: Status) {
-  d.print(`\n  Primary   ${s.primary.label}`)
-  d.print(`  Fallback  ${s.fallback?.label ?? 'none'}`)
+  d.print(`\n  Model   ${s.primary.label}`)
+  d.print(`  Backup  ${s.fallback?.label ?? 'none'}`)
   if (s.later.length) d.print(`  Then      ${s.later.map((l) => l.label).join(', ')}`)
   d.print(`\n${describe(s.answering, bold, s)}`)
 }
@@ -137,7 +147,7 @@ async function removeKey(d: SetupDeps, p: ProviderRow): Promise<Outcome<'removed
 
 async function pickFrom(d: SetupDeps, title: string, choices: Choice[]): Promise<Outcome<string | null>> {
   const i = await choose(d, title, choices, { filter: choices.length > 20 })
-  return typeof i === 'number' ? choices[i].value : i
+  return typeof i === 'number' ? choices[i].value : i === 'eof' ? 'eof' : 'back'
 }
 
 /** SET-20: the hand-picked models, then all of them, then replacing the key. */
@@ -154,7 +164,7 @@ async function providerModels(d: SetupDeps, slot: Slot, p: ProviderRow): Promise
       ...((await d.core.providers()).find((r) => r.id === p.id)?.key === 'saved' ? [{ label: 'Remove the saved key' }] : []),
     ]
     const i = await choose(d, `${p.name}:`, rows)
-    if (typeof i !== 'number') return i
+    if (typeof i !== 'number') return i === 'eof' ? 'eof' : 'back'
     if (i < picks.length) return picks[i].value!
     if (list.ok && i === picks.length) {
       const got = await pickFrom(d, `All ${p.name} models:`, list.all)
@@ -169,27 +179,6 @@ async function providerModels(d: SetupDeps, slot: Slot, p: ProviderRow): Promise
       continue
     }
     if ((await enterKey(d, p)) === 'eof') return 'eof'
-  }
-}
-
-/** SET-19 */
-async function providers(d: SetupDeps, slot: Slot): Promise<Outcome<string>> {
-  for (;;) {
-    const rows = await d.core.providers()
-    const i = await choose(
-      d,
-      'Providers:',
-      rows.map((p) => ({ label: p.name, detail: p.key === 'saved' ? 'key saved' : p.key === 'env' ? `key from ${p.env}` : undefined })),
-    )
-    if (typeof i !== 'number') return i
-    const p = rows[i]
-    if (!p.key) {
-      const added = await enterKey(d, p)
-      if (added === 'eof') return 'eof'
-      if (added === 'back') continue
-    }
-    const got = await providerModels(d, slot, p)
-    if (got !== 'back') return got
   }
 }
 
@@ -209,19 +198,6 @@ async function localHelp(d: SetupDeps): Promise<Outcome<'found'>> {
       return 'found'
     }
     d.print('Nothing yet. Is a model downloaded, and (in LM Studio) is the server on?')
-  }
-}
-
-/** SET-21 */
-async function local(d: SetupDeps, slot: Slot): Promise<Outcome<string>> {
-  for (;;) {
-    const choices = await d.core.localModels(slot)
-    const running = choices.some((c) => c.value !== 'local')
-    const rows: Row[] = [...choices, { label: 'Help getting a model' }]
-    const i = await choose(d, running ? 'On this computer:' : 'On this computer (nothing running):', rows)
-    if (typeof i !== 'number') return i
-    if (i < choices.length) return choices[i].value!
-    if ((await localHelp(d)) === 'eof') return 'eof'
   }
 }
 
@@ -266,8 +242,8 @@ async function customModels(d: SetupDeps, slot: Slot, name: string): Promise<Out
 
 /** SET-28: one that a link in the chain uses is kept, and setup says which. */
 async function removeEndpoint(d: SetupDeps, names: string[]): Promise<Outcome<'removed'>> {
-  const i = await choose(d, 'Remove which endpoint?', names.map((label) => ({ label })))
-  if (typeof i !== 'number') return i
+  const i = await choose(d, 'Remove which server?', names.map((label) => ({ label })))
+  if (typeof i !== 'number') return i === 'eof' ? 'eof' : 'back'
   const sure = await confirm(d, `\nRemove ${names[i]}?`)
   if (sure !== true) return sure === 'eof' ? 'eof' : 'back'
   const removed = await d.core.removeCustom(names[i])
@@ -275,37 +251,60 @@ async function removeEndpoint(d: SetupDeps, names: string[]): Promise<Outcome<'r
   return removed.ok ? 'removed' : 'back'
 }
 
-async function custom(d: SetupDeps, slot: Slot): Promise<Outcome<string>> {
-  for (;;) {
-    const saved = await d.core.customs()
-    const i = await choose(d, 'Custom endpoints:', [
-      ...saved.map((c) => ({ label: c.name, detail: c.baseURL })),
-      { label: 'Add an endpoint' },
-      ...(saved.length ? [{ label: 'Remove an endpoint' }] : []),
-    ])
-    if (typeof i !== 'number') return i
-    if (i > saved.length) {
-      if ((await removeEndpoint(d, saved.map((c) => c.name))) === 'eof') return 'eof'
-      continue
-    }
-    const name = i < saved.length ? saved[i].name : await addEndpoint(d)
-    if (name === 'eof') return 'eof'
-    if (name === 'back') continue
-    const got = await customModels(d, slot, name)
-    if (got !== 'back') return got
-  }
-}
+type Act =
+  | { kind: 'model'; value: string | null }
+  | { kind: 'help' }
+  | { kind: 'provider'; p: ProviderRow }
+  | { kind: 'server'; name: string }
+  | { kind: 'add' }
+  | { kind: 'remove' }
 
-/** SET-18: Providers, Local or Custom; the fallback also offers none. */
-async function pick(d: SetupDeps, slot: Slot): Promise<Outcome<string | null>> {
+const SERVERS = 'Your own server, any that speaks the OpenAI API'
+
+/**
+ * SET-30: every way to answer in one list, for the model and the backup
+ * alike: on this computer, with your API key, on your own server. A provider
+ * or a server goes on to its models; the backup also offers none. With
+ * `keys`, the list is setup's first screen and Enter finishes.
+ */
+async function pick(d: SetupDeps, slot: Slot, now: string | undefined, keys: Record<string, string> = {}, prompt?: string): Promise<Outcome<string | null>> {
+  // The provider or server the slot's model is on now is marked, as a local model is.
+  const on = (name: string) => !!now?.endsWith(` on ${name}`)
   for (;;) {
-    const menu = await d.core.slotMenu(slot)
-    const rows: Row[] = [...menu.groups, ...(menu.none ? [menu.none] : [])]
-    const i = await choose(d, `Choose the ${SLOT_NAME[slot]} model from:`, rows)
+    const [here, providers, servers, menu] = await Promise.all([d.core.localModels(slot), d.core.providers(), d.core.customs(), d.core.slotMenu(slot)])
+    const running = here.some((c) => c.value !== 'local')
+    const rows: (Row & { act: Act })[] = [
+      ...here.map((c, i) => ({ ...c, heading: i === 0 ? (running ? 'On this computer' : 'On this computer (nothing running now)') : undefined, act: { kind: 'model', value: c.value } as Act })),
+      ...(running ? [] : [{ label: 'Help getting a model', detail: 'LM Studio or Ollama', heading: here.length ? undefined : 'On this computer', act: { kind: 'help' } as Act }]),
+      ...providers.map((p, i) => ({
+        label: p.name,
+        detail: p.key === 'saved' ? 'key saved' : p.key === 'env' ? `key from ${p.env}` : undefined,
+        heading: i === 0 ? 'With your API key' : undefined,
+        current: on(p.name),
+        act: { kind: 'provider', p } as Act,
+      })),
+      ...servers.map((c, i) => ({ label: c.name, detail: c.baseURL, current: on(c.name), heading: i === 0 ? SERVERS : undefined, act: { kind: 'server', name: c.name } as Act })),
+      { label: 'Add a server', detail: 'its URL, and a key if it needs one', heading: servers.length ? undefined : SERVERS, act: { kind: 'add' } },
+      ...(servers.length ? [{ label: 'Remove a server', act: { kind: 'remove' } as Act }] : []),
+      ...(menu.none ? [{ ...menu.none, heading: 'No backup', act: { kind: 'model', value: null } as Act }] : []),
+    ]
+    const title = slot === 0 ? 'Choose the model navi answers with:' : 'Choose a backup, for when the model does not answer:'
+    const i = await choose(d, title, rows, { keys, prompt })
     if (typeof i !== 'number') return i
-    if (i >= menu.groups.length) return null
-    const group = menu.groups[i].id
-    const got = group === 'providers' ? await providers(d, slot) : group === 'local' ? await local(d, slot) : await custom(d, slot)
+    const act = rows[i].act
+    let got: Outcome<string | null> = 'back'
+    if (act.kind === 'model') return act.value
+    if (act.kind === 'help') got = (await localHelp(d)) === 'eof' ? 'eof' : 'back'
+    if (act.kind === 'provider') {
+      const added = act.p.key ? 'saved' : await enterKey(d, act.p)
+      got = added === 'saved' ? await providerModels(d, slot, act.p) : added
+    }
+    if (act.kind === 'server') got = await customModels(d, slot, act.name)
+    if (act.kind === 'add') {
+      const name = await addEndpoint(d)
+      got = name === 'eof' || name === 'back' ? name : await customModels(d, slot, name)
+    }
+    if (act.kind === 'remove') got = (await removeEndpoint(d, servers.map((c) => c.name))) === 'eof' ? 'eof' : 'back'
     if (got !== 'back') return got
   }
 }
@@ -333,18 +332,21 @@ export async function runSetup(d: SetupDeps, { check = false } = {}): Promise<nu
   showStatus(d, status)
 
   for (;;) {
+    // SET-30: the first screen is the list; b is the backup's, Enter finishes.
     // SET-29: with nothing answering, the way out says what it leaves behind.
-    d.print(status.answering ? `\n  1  Change the primary model\n  2  Change the fallback` : `\n  1  Choose a model\n  2  Change the fallback`)
-    const c = (await d.ask(status.answering ? '\nChoose, or press Enter to finish: ' : '\nChoose, or press Enter to leave without a model: '))?.trim().toLowerCase()
-    if (c === undefined || c === '' || c === 'q') {
-      if (!status.answering) d.print(dim(`\nNo model yet, so navi can't answer. ${CLI_NEXT_STEP}`))
+    const backup = `a backup, for when the model does not answer (now: ${status.fallback?.label ?? 'none'})`
+    const finish = status.answering ? '\nNumber, b for a backup, or Enter to finish: ' : '\nNumber, b for a backup, or Enter to leave without a model: '
+    let slot: Slot = 0
+    let got = await pick(d, 0, status.primary.label, { b: backup }, finish)
+    if (got === 'b') {
+      slot = 1
+      got = await pick(d, 1, status.fallback?.label)
+      if (got === 'back') continue
+    }
+    if (got === 'eof' || got === 'back') {
+      if (got !== 'eof' && !status.answering) d.print(dim(`\nNo model yet, so navi can't answer. ${CLI_NEXT_STEP}`))
       return code()
     }
-    if (c !== '1' && c !== '2') continue
-    const slot: Slot = c === '1' ? 0 : 1
-    const got = await pick(d, slot)
-    if (got === 'eof') return code()
-    if (got === 'back') continue
 
     const set = await d.core.setSlot(slot, got)
     status = set.status

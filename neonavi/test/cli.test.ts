@@ -82,7 +82,7 @@ test('a missing attachment is reported and navi exits 1', async () => {
 test('setup without a terminal behaves as --check', async () => {
   const r = await navi(['setup'], { config: { model: 'openai:gpt-5' } })
   assert.equal(r.code, 1)
-  assert.match(r.stdout + r.stderr, /can't find a model to answer with[^]*- The primary, gpt-5 on OpenAI: no key for OpenAI/)
+  assert.match(r.stdout + r.stderr, /can't find a model to answer with[^]*- The model, gpt-5 on OpenAI: no key for OpenAI/)
 })
 
 // SES-14
@@ -223,7 +223,7 @@ test('on a terminal navi keeps asking until told to leave', { skip: process.plat
   assert.equal(r.code, 0, JSON.stringify(r.shown))
   assert.match(r.shown, /^navi · ask anything; \/help for commands; exit, \^C or \^D to leave/)
   assert.match(r.shown, /It holds \.neoai\./)
-  assert.match(r.shown, /\/model\r?\r\n\r\nnavi answers with fake-1 on box, the primary \(on this computer\)\.\r\nsaved chain: fake-1 on box\r\n/)
+  assert.match(r.shown, /\/model\r?\r\n\r\nnavi answers with fake-1 on box \(on this computer\)\.\r\nsaved chain: fake-1 on box\r\n/)
   // A pin the endpoint no longer serves falls to what it does (MOD-19).
   assert.match(r.shown, /The pinned nope is gone/)
   assert.match(r.shown, /\/model\r?\r\n\r\n[^\n]*\r\nsaved chain: fake-1 on box\r\nthis session: nope on box\r\n/)

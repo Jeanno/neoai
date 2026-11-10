@@ -83,16 +83,19 @@ Examples:
 
 ### navi setup
 
-- `navi setup` shows the primary model, the fallback and any later links, says which answers
-  now, and lets you change the primary or the fallback (or set the fallback to none).
-- Each slot offers Providers (a hosted model with your API key), Local (a model on this
-  computer, such as LM Studio or Ollama) and Custom (your own OpenAI-compatible endpoint).
-- A provider without a key asks for one, hidden, and checks it before saving. Local lists
-  the models on running local servers, plus "any local model (fastest)", and helps get LM
-  Studio or Ollama going. Custom asks a name, base URL and optional key, and checks it.
+- `navi setup` shows the model, the backup and any later links, and says which answers now.
+- Its first screen is one numbered list of everything navi can answer with: **On this
+  computer** (models on running LM Studio or Ollama servers, "any local model (fastest)", and
+  help getting one), **With your API key** (Anthropic, OpenAI, Gemini, OpenRouter and the
+  rest) and **Your own server** (any OpenAI-compatible URL with its key: saved ones, "Add a
+  server", "Remove a server"). Pick a number to use it as the model; `b` opens the same list
+  for the backup, which also offers none.
+- A provider without a key asks for one, hidden, and checks it before saving, then lists its
+  models. "Add a server" asks a name, base URL and optional key, and checks it.
+- To use your own API URL and key as the model: `navi setup`, "Add a server", then its model.
 - After a change, setup asks the model a one-line test question.
-- A saved key or custom endpoint can be removed (an endpoint in use must leave its slot
-  first). A key set in the environment is not touched.
+- A saved key can be removed from its provider's list, a server with "Remove a server" (one
+  in use must be replaced as the model or backup first). A key set in the environment is not touched.
 - `navi setup --check` only reports: exit 0 when a model answers, 1 otherwise, with the next
   step. Without a terminal, `navi setup` does the same. Leaving setup writes nothing more.
 - Setup changes only `model`, `keys.<provider>` and `custom.<name>`, and stops rather than

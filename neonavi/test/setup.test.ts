@@ -133,18 +133,18 @@ const KEYED = { keys: { anthropic: 'k' } }
 test('an empty config shows the local model as primary and no fallback', async () => {
   const f = fake([''], { local: ['qwen3-4b'] })
   assert.equal(await runSetup(f.d), 0)
-  assert.match(f.out(), /Primary\s+any local model \(fastest\)/)
-  assert.match(f.out(), /Fallback\s+none/)
-  assert.match(f.out(), /qwen3-4b, the primary \(on this computer\)/)
+  assert.match(f.out(), /Model\s+any local model \(fastest\)/)
+  assert.match(f.out(), /Backup\s+none/)
+  assert.match(f.out(), /navi answers with qwen3-4b \(on this computer\)/)
   assert.equal(f.saved.length, 0)
 })
 
 test('says when the answer is remote, and which slot answers', async () => {
   const f = fake([''], { config: { ...KEYED, model: ['local', 'anthropic:claude-sonnet-5-5'] } })
   await runSetup(f.d)
-  assert.match(f.out(), /Fallback\s+claude-sonnet-5-5 on Anthropic/)
+  assert.match(f.out(), /Backup\s+claude-sonnet-5-5 on Anthropic/)
   // SET-25: model first.
-  assert.match(f.out(), /claude-sonnet-5-5 on Anthropic, the fallback \(REMOTE/)
+  assert.match(f.out(), /claude-sonnet-5-5 on Anthropic, the backup \(REMOTE/)
 })
 
 test('reports when nothing answers', async () => {
@@ -178,13 +178,13 @@ test('--check exits 1 with the next step when nothing answers', async () => {
 test('--check says why each link failed', async () => {
   const f = fake(['1'], { config: { ...KEYED, model: ['local:qwen3-4b', 'anthropic:claude-sonnet-5-5'] } })
   assert.equal(await runSetup(f.d, { check: true }), 0)
-  assert.match(f.out(), /the fallback \(REMOTE[^\n]*\n- The primary, qwen3-4b on this computer: it is not there\./)
+  assert.match(f.out(), /the backup \(REMOTE[^\n]*\n- The model, qwen3-4b on this computer: it is not there\./)
 })
 
 test('--check lists every link when nothing answers', async () => {
   const f = fake(['1'], { config: { model: ['local:qwen3-4b', 'anthropic:claude-sonnet-5-5'] } })
   assert.equal(await runSetup(f.d, { check: true }), 1)
-  assert.match(f.out(), /- The primary, qwen3-4b on this computer: it is not there\.\n- The fallback, claude-sonnet-5-5 on Anthropic: it is not there\./)
+  assert.match(f.out(), /- The model, qwen3-4b on this computer: it is not there\.\n- The backup, claude-sonnet-5-5 on Anthropic: it is not there\./)
 })
 
 // SET-27: the core's own next step names no command.
@@ -205,62 +205,63 @@ test('opening setup starts no runtime; picking a model or --check may', async ()
   assert.equal(await runSetup(g.d, { check: true }), 0)
   assert.deepEqual(g.resolves, [true])
 
-  const h = fake(['1', row('Local'), row('any local model'), ''], { idle: ['qwen3-4b'] })
+  const h = fake([row('any local model'), ''], { idle: ['qwen3-4b'] })
   assert.equal(await runSetup(h.d), 0)
   assert.deepEqual(h.resolves, [false, true])
-  assert.match(h.out(), /qwen3-4b, the primary/)
+  assert.match(h.out(), /navi answers with qwen3-4b \(/)
 })
 
 // SET-18
-test('a slot offers Providers, Local and Custom; the fallback also none', async () => {
-  const f = fake(['1', '', '2', ''])
+test('one list offers this computer, providers and servers, for the model and the backup alike; the backup also none', async () => {
+  const f = fake(['b', '', ''], { config: { custom: { homelab: { baseURL: 'http://lab:8000/v1' } } } })
   await runSetup(f.d)
-  const [primary, fallback] = f.out().split('Choose the fallback')
-  assert.match(primary, /Providers[\s\S]*Local[\s\S]*Custom/)
+  const [primary, fallback] = f.out().split('Choose a backup')
+  for (const listing of [primary, fallback]) assert.match(listing, /On this computer[\s\S]*With your API key[\s\S]*Anthropic[\s\S]*Your own server[\s\S]*homelab[\s\S]*Add a server/)
+  assert.match(primary, /b {2}a backup, for when the model does not answer \(now: none\)/)
   assert.doesNotMatch(primary, /\d+  none/)
   assert.match(fallback, /\d+  none/)
 })
 
 test('the fallback can be none, and never lists the primary', async () => {
-  const f = fake(['2', row('Local'), ''], { config: { model: ['local:a', 'local'] }, local: ['a', 'b'] })
+  const f = fake(['b', ''], { config: { model: ['local:a', 'local'] }, local: ['a', 'b'] })
   await runSetup(f.d)
-  const listing = f.out().slice(f.out().lastIndexOf('On this computer'))
+  const listing = f.out().split('Choose a backup')[1].split('Choose the model')[0]
   assert.doesNotMatch(listing, /\d+  a\b/)
   assert.match(listing, /\d+  b/)
 
-  const g = fake(['2', row('none'), ''], { config: { model: ['local:a', 'local'] }, local: ['a'] })
+  const g = fake(['b', row('none'), ''], { config: { model: ['local:a', 'local'] }, local: ['a'] })
   assert.equal(await runSetup(g.d), 0)
   assert.deepEqual(g.saved.at(-1)?.model, ['local:a'])
 })
 
 // SET-21, SET-17, SET-11
 test('a local model becomes the primary, saved with local:, and is asked a question', async () => {
-  const f = fake(['1', row('Local'), row('qwen/qwen3-8b'), ''], { local: ['qwen3-4b', 'qwen/qwen3-8b'] })
+  const f = fake([row('qwen/qwen3-8b'), ''], { local: ['qwen3-4b', 'qwen/qwen3-8b'] })
   assert.equal(await runSetup(f.d), 0)
   assert.deepEqual(f.saved.at(-1)?.model, ['local:qwen/qwen3-8b'])
   // SET-25: listed and named by the model, never the server's app.
   assert.match(f.out(), /\d+  qwen\/qwen3-8b$/m)
-  assert.match(f.out(), /qwen\/qwen3-8b, the primary/)
+  assert.match(f.out(), /navi answers with qwen\/qwen3-8b \(/)
   assert.doesNotMatch(f.out(), /lmstudio ·|  lmstudio/)
   assert.match(f.out(), /Hello there!/)
 })
 
 test('the current pick is marked', async () => {
-  const f = fake(['1', row('Local'), '', '', ''], { config: { model: ['local:a'] }, local: ['a', 'b'] })
+  const f = fake(['', '', ''], { config: { model: ['local:a'] }, local: ['a', 'b'] })
   await runSetup(f.d)
   assert.match(f.out(), /\d+  a.*\(current\)/)
 })
 
 // SET-11
 test('a test question that fails shows the error', async () => {
-  const f = fake(['1', row('Local'), row('a'), ''], { local: ['a'], askError: 'it timed out' })
+  const f = fake([row('a'), ''], { local: ['a'], askError: 'it timed out' })
   await runSetup(f.d)
   assert.match(f.out(), /The model didn't answer: it timed out/)
 })
 
 // SET-5
 test('local help checks again until a model is found, then lists it', async () => {
-  const f = fake(['1', row('Local'), row('Help getting a model'), '', '', row('qwen3-4b'), ''], {
+  const f = fake([row('Help getting a model'), '', '', row('qwen3-4b'), ''], {
     localUp: [[], ['qwen3-4b']],
   })
   assert.equal(await runSetup(f.d), 0)
@@ -272,14 +273,14 @@ test('local help checks again until a model is found, then lists it', async () =
 })
 
 test('going back from local help saves nothing', async () => {
-  const f = fake(['1', row('Local'), row('Help getting a model'), 'b', '', '', ''])
+  const f = fake([row('Help getting a model'), 'b', '', '', ''])
   assert.equal(await runSetup(f.d), 1)
   assert.equal(f.saved.length, 0)
 })
 
 // SET-19
 test('providers are listed by name, marking those with a key', async () => {
-  const f = fake(['1', row('Providers'), '', '', ''], { config: KEYED, env: { GROQ_API_KEY: 'g' } })
+  const f = fake(['', '', ''], { config: KEYED, env: { GROQ_API_KEY: 'g' } })
   await runSetup(f.d)
   for (const name of ['OpenAI', 'Anthropic', 'Google Gemini', 'OpenRouter', 'Groq', 'DeepSeek', 'Mistral', 'xAI'])
     assert.match(f.out(), new RegExp(`\\d+  ${name}`))
@@ -290,7 +291,7 @@ test('providers are listed by name, marking those with a key', async () => {
 
 // SET-6, SET-20
 test('a provider without a key asks for one, checks it, saves it, then lists models', async () => {
-  const f = fake(['1', row('Providers'), row('Anthropic'), 'sk-ant-good', row('claude-haiku-5-5'), ''])
+  const f = fake([row('Anthropic'), 'sk-ant-good', row('claude-haiku-5-5'), ''])
   assert.equal(await runSetup(f.d), 0)
   assert.match(f.out(), /platform\.claude\.com\/settings\/keys/)
   assert.equal(f.saved[0].keys.anthropic, 'sk-ant-good')
@@ -299,21 +300,21 @@ test('a provider without a key asks for one, checks it, saves it, then lists mod
 })
 
 test('a rejected key is not saved', async () => {
-  const f = fake(['1', row('Providers'), row('OpenRouter'), 'sk-or-bad', '', '', ''], { key: 'rejected' })
+  const f = fake([row('OpenRouter'), 'sk-or-bad', '', '', ''], { key: 'rejected' })
   assert.equal(await runSetup(f.d), 1)
   assert.equal(f.saved.length, 0)
   assert.match(f.out(), /OpenRouter didn't accept that key\. Nothing was saved/)
 })
 
 test('a key that cannot be checked is not saved, and setup says why', async () => {
-  const f = fake(['1', row('Providers'), row('OpenRouter'), 'sk-or-maybe', '', '', ''], { key: 'unreachable' })
+  const f = fake([row('OpenRouter'), 'sk-or-maybe', '', '', ''], { key: 'unreachable' })
   assert.equal(await runSetup(f.d), 1)
   assert.equal(f.saved.length, 0)
   assert.match(f.out(), /Couldn't reach OpenRouter/)
 })
 
 test('a provider with a key can have it replaced', async () => {
-  const f = fake(['1', row('Providers'), row('Anthropic'), row('Replace the key'), 'sk-ant-new', '', '', '', ''], {
+  const f = fake([row('Anthropic'), row('Replace the key'), 'sk-ant-new', '', '', '', ''], {
     config: KEYED,
   })
   await runSetup(f.d)
@@ -322,7 +323,7 @@ test('a provider with a key can have it replaced', async () => {
 
 // SET-20
 test('hand-picked models the provider still offers come first, then all models', async () => {
-  const f = fake(['1', row('Providers'), row('Anthropic'), row('All models…'), row('claude-old-1'), ''], { config: KEYED })
+  const f = fake([row('Anthropic'), row('All models…'), row('claude-old-1'), ''], { config: KEYED })
   assert.equal(await runSetup(f.d), 0)
   const picks = f.out().slice(f.out().indexOf('Anthropic:'), f.out().indexOf('All Anthropic models:'))
   assert.match(picks, /claude-sonnet-5-5/)
@@ -334,35 +335,35 @@ test('hand-picked models the provider still offers come first, then all models',
 // SET-22, MOD-15
 test('a custom endpoint is checked, saved under custom.<name>, and its models listed', async () => {
   const f = fake(
-    ['2', row('Custom'), row('Add an endpoint'), 'homelab', 'http://box:8000/', '', row('qwen3-27b'), ''],
+    ['b', row('Add a server'), 'homelab', 'http://box:8000/', '', row('qwen3-27b'), ''],
     { local: ['a'], endpoints: { 'http://box:8000/v1': ['qwen3-27b'] } },
   )
   assert.equal(await runSetup(f.d), 0)
   // Tried as typed, then with /v1.
   assert.deepEqual(f.config().custom, { homelab: { baseURL: 'http://box:8000/v1' } })
   assert.deepEqual(f.saved.at(-1)?.model, ['local', 'homelab:qwen3-27b'])
-  assert.match(f.out(), /Fallback\s+qwen3-27b on homelab/)
+  assert.match(f.out(), /Backup\s+qwen3-27b on homelab/)
 })
 
 test('a saved endpoint lists its models', async () => {
-  const f = fake(['1', row('Custom'), row('homelab'), row('m2'), ''], {
+  const f = fake([row('homelab'), row('m2'), ''], {
     config: { custom: { homelab: { baseURL: 'http://box/v1', key: 's' } } },
     endpoints: { 'http://box/v1': ['m1', 'm2'] },
   })
   assert.equal(await runSetup(f.d), 0)
-  assert.match(f.out(), /homelab  http:\/\/box\/v1/)
+  assert.match(f.out(), /homelab +http:\/\/box\/v1/)
   assert.deepEqual(f.saved.at(-1)?.model, ['homelab:m2'])
 })
 
 test('an endpoint that does not answer is not saved', async () => {
-  const f = fake(['1', row('Custom'), row('Add an endpoint'), 'homelab', 'http://nowhere/v1', '', '', '', ''])
+  const f = fake([row('Add a server'), 'homelab', 'http://nowhere/v1', '', '', '', ''])
   await runSetup(f.d)
   assert.equal(f.saved.length, 0)
   assert.match(f.out(), /Couldn't list models at http:\/\/nowhere\/v1\. Nothing was saved/)
 })
 
 test('a custom name may not be a provider id or local', async () => {
-  const f = fake(['1', row('Custom'), row('Add an endpoint'), 'openai', 'local', '', '', '', ''])
+  const f = fake([row('Add a server'), 'openai', 'local', '', '', '', ''])
   await runSetup(f.d)
   assert.match(f.out(), /openai is taken by OpenAI/)
   assert.match(f.out(), /local is taken by local models/)
@@ -372,10 +373,10 @@ test('a custom name may not be a provider id or local', async () => {
 // SET-28
 test('a saved key can be removed after confirming; other fields stay', async () => {
   const config = { keys: { anthropic: 'k', groq: 'g' }, approve: 'ask' }
-  const no = fake(['1', row('Providers'), row('Anthropic'), row('Remove the saved key'), 'n', '', '', ''], { config })
+  const no = fake([row('Anthropic'), row('Remove the saved key'), 'n', '', '', ''], { config })
   await runSetup(no.d)
   assert.equal(no.saved.length, 0)
-  const f = fake(['1', row('Providers'), row('Anthropic'), row('Remove the saved key'), 'y', '', ''], { config })
+  const f = fake([row('Anthropic'), row('Remove the saved key'), 'y', '', ''], { config })
   await runSetup(f.d)
   assert.match(f.out(), /Key removed\./)
   assert.deepEqual(f.config(), { keys: { groq: 'g' }, approve: 'ask' })
@@ -392,14 +393,14 @@ test('removing a saved key says when the environment still keys the provider', a
 })
 
 test('a key from the environment alone offers no removal', async () => {
-  const f = fake(['1', row('Providers'), row('Groq'), '', '', '', ''], { env: { GROQ_API_KEY: 'g' } })
+  const f = fake([row('Groq'), '', '', '', ''], { env: { GROQ_API_KEY: 'g' } })
   await runSetup(f.d)
   assert.doesNotMatch(f.out(), /Remove the saved key/)
 })
 
 test('a custom endpoint can be removed, unless the chain uses it', async () => {
   const custom = { homelab: { baseURL: 'http://box/v1' }, spare: { baseURL: 'http://spare/v1' } }
-  const f = fake(['1', row('Custom'), row('Remove an endpoint'), row('spare'), 'y', '', '', ''], {
+  const f = fake([row('Remove a server'), row('spare'), 'y', '', '', ''], {
     config: { model: ['local', 'homelab:m1'], custom },
   })
   await runSetup(f.d)
@@ -454,7 +455,7 @@ test('a replaced pin is named as gone in the status', () => {
   const answering = { index: 0, local: false, label: 'qwen3.6 on Darkbloom', replaced: 'qwen3.8' } as any
   assert.equal(
     describe(answering),
-    'navi answers with qwen3.6 on Darkbloom, the primary (REMOTE: prompts leave this computer). The pinned qwen3.8 is gone; it serves only this model now.',
+    'navi answers with qwen3.6 on Darkbloom (REMOTE: prompts leave this computer). The pinned qwen3.8 is gone; it serves only this model now.',
   )
 })
 
@@ -586,7 +587,7 @@ test('EOF leaves without writing', async () => {
 })
 
 test('EOF while typing a key leaves without writing', async () => {
-  const f = fake(['1', row('Providers'), row('OpenAI'), null])
+  const f = fake([row('OpenAI'), null])
   assert.equal(await runSetup(f.d), 1)
   assert.equal(f.saved.length, 0)
 })
@@ -642,17 +643,14 @@ test('a secret answer is read but not echoed', async () => {
 })
 
 // SET-29
-test('with nothing answering, leaving says navi cannot answer, and each group says what it is', async () => {
-  const f = fake(['1', '', '', ''])
+test('with nothing answering, leaving says navi cannot answer, and each section says what it is', async () => {
+  const f = fake([''])
   assert.equal(await runSetup(f.d), 1)
-  assert.match(f.out(), /1 {2}Choose a model/)
-  assert.match(f.out(), /Providers {2}a hosted model, with your API key/)
-  assert.match(f.out(), /Local {6}a model running on this computer/)
-  assert.match(f.out(), /Custom {5}your own endpoint/)
+  assert.match(f.out(), /On this computer \(nothing running now\)[\s\S]*Help getting a model +LM Studio or Ollama/)
+  assert.match(f.out(), /Your own server, any that speaks the OpenAI API/)
   assert.ok(f.out().includes(`No model yet, so navi can't answer. ${CLI_NEXT_STEP}`), f.out())
   // Something answering keeps the plain words.
   const ok = fake([''], { local: ['qwen3-4b'] })
   await runSetup(ok.d)
-  assert.match(ok.out(), /1 {2}Change the primary model/)
   assert.doesNotMatch(ok.out(), /No model yet/)
 })
