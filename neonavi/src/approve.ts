@@ -48,15 +48,21 @@ export interface Approver {
 /** What a terminal sends around a paste when bracketed paste is on (CLI-26). */
 const PASTE_ON = '\x1b[?2004h'
 const PASTE_OFF = '\x1b[?2004l'
+/** CLI-48: written as a question opens and as it closes, for the shell; a terminal shows nothing of them. */
+export const QUESTION_MARK = '\x1b]6974;Q\x07'
+export const ANSWERED_MARK = '\x1b]6974;A\x07'
 
 export function makeLine({
   input,
   output,
   onInterrupt,
   history,
+  marked = process.env.NAVI_MARK_QUESTIONS === '1',
 }: {
   input: Readable
   output: Writable
+  /** Each question opened is marked for the shell running navi (CLI-48). */
+  marked?: boolean
   /** Earlier prompts, newest first, and where to add one when it is kept (CLI-27). */
   history?: { prompts: string[]; add: (prompt: string) => void }
   /** ^C on an empty line: true when it was handled (a turn stopped), false to leave (CLI-7, CLI-25). */
@@ -179,12 +185,16 @@ export function makeLine({
     r.setPrompt(prompt)
     // The cursor stays at the end of anything typed ahead.
     r.prompt(true)
+    // CLI-48: so neosh, holding navi in the background, can say it waits on you.
+    if (marked) output.write(QUESTION_MARK)
     // A key shows nothing as it is typed but the newline that ends it.
     if (secret) shows = 'newline'
     // A question given up on (the turn stopped) must not take the next line typed.
     const answered = await new Promise<string | null>((resolve) => {
       const answer = (l: string | null) => {
         shows = 'nothing'
+        // Answered, or closed without one (a judge allowed it, the turn stopped).
+        if (marked) output.write(ANSWERED_MARK)
         signal?.removeEventListener('abort', gaveUp)
         resolve(l)
       }

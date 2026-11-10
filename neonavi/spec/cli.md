@@ -135,6 +135,12 @@
   browser action, a fact), no spinner is drawn: not even when a note about
   the call being asked arrives after the question is up. A frame drawn over
   it hid the question and what was typed, so y/n looked unread.
+- CLI-48: `NAVI_MARK_QUESTIONS=1` in the environment marks each question
+  navi opens on a terminal (`[y/N]` and the rest) with `ESC ] 6974 ; Q BEL`,
+  and its closing, answered or not (a judge allowed the call, the turn
+  stopped), with `ESC ] 6974 ; A BEL`. A terminal shows nothing of them; a
+  shell holding navi in the background (neosh NSH-62) says from them
+  whether navi is waiting for an answer.
 - CLI-47: `NAVI_SHELL_MANUAL` in the environment, when it names a file that
   is there, is the manual of the shell navi is asked from (neosh), named to
   the model as PRM-15 says.

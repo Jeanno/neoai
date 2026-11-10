@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Readable, Writable } from 'node:stream'
-import { drastic, gated, outside, plantedIn, makeApprover, makeLine } from '../src/approve.ts'
+import { drastic, gated, outside, plantedIn, makeApprover, makeLine, QUESTION_MARK, ANSWERED_MARK } from '../src/approve.ts'
 import { shellManualFrom, systemPrompt, today } from '../src/args.ts'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -541,4 +541,20 @@ test('names navi\'s manual, and the shell\'s when it is asked from one', async (
   assert.deepEqual(await shellManualFrom(join(dir, 'm.md')), { name: 'neosh', path: join(dir, 'm.md') })
   assert.equal(await shellManualFrom(join(dir, 'gone.md')), undefined)
   assert.equal(await shellManualFrom(''), undefined)
+})
+
+// CLI-48: each question opened is marked for the shell, and only when asked for.
+test('a question is marked for the shell only when it says so', async () => {
+  for (const marked of [true, false]) {
+    const t = await fakeTerminal()
+    const line = makeLine({ ...t, marked })
+    const answer = line.ask('run? ')
+    await t.tick()
+    assert.equal(t.drawn().includes(QUESTION_MARK), marked)
+    assert.ok(!t.drawn().includes(ANSWERED_MARK))
+    await t.type('y\r')
+    assert.equal(await answer, 'y')
+    assert.equal(t.drawn().includes(ANSWERED_MARK), marked)
+    line.close()
+  }
 })
