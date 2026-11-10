@@ -1,5 +1,6 @@
 import type { ModelMessage } from 'ai'
 import { CUT_NOTE, splitUserContent, type HarnessEvent } from 'neonavi/harness'
+import { fellBackLine } from 'neonavi/fallback'
 import { splitThinking } from './think'
 import type { Approval } from './approval'
 
@@ -71,6 +72,10 @@ export function applyEvent(turn: Turn, e: HarnessEvent): Turn {
       if (at >= 0) items[at] = { ...(items[at] as Extract<Item, { kind: 'tool' }>), state: e.error ? 'failed' : 'done' }
       return { ...turn, items }
     }
+    // CLI-50: another link answered for the model, said as the terminal says it.
+    case 'fell-back':
+      items.push({ kind: 'note', line: fellBackLine(e) })
+      return { ...turn, items }
     case 'remembered':
       items.push({
         kind: 'note',

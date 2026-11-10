@@ -154,3 +154,16 @@ test('HAR-11: an answer cut at the token cap ends with a note saying so', () => 
   assert.match((turn.items.at(-1) as { line: string }).line, /^cut short: the answer reached the model’s token cap/)
   assert.equal(fold([{ type: 'done', history: [], text: 'Done.', empty: false, stopped: false }]).items.length, 0)
 })
+
+test('CLI-50: another link answering for the model is a note, as the terminal says it', () => {
+  const t = fold([
+    {
+      type: 'fell-back',
+      failed: [{ index: 0, slot: 'the model', label: 'qwen3 on Darkbloom', server: 'Darkbloom', trouble: 'busy', words: 'is busy or at capacity', detail: '429 capacity' }],
+      to: { index: 1, slot: 'the backup', label: 'claude-sonnet-5-5 on Anthropic', local: false },
+      again: false,
+    } as HarnessEvent,
+  ])
+  assert.equal(t.items.length, 1)
+  assert.match(md(t), /the model is busy or at capacity \(Darkbloom: 429 capacity\); the backup, claude-sonnet-5-5 on Anthropic, answers/)
+})

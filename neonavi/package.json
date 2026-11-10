@@ -9,6 +9,7 @@
   "exports": {
     "./spec": "./src/spec.ts",
     "./harness": "./src/harness.ts",
+    "./fallback": "./src/fallback.ts",
     "./setup": "./src/setup-core.ts",
     "./browser": "./src/browser.ts",
     "./undo": "./src/undo.ts",
