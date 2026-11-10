@@ -357,11 +357,12 @@ export function setupCore(d: CoreDeps) {
     status,
 
     /** The first step of changing a slot: three groups, and "none" for the fallback (SET-18). */
-    async slotMenu(slot: Slot): Promise<{ groups: { id: Group; label: string }[]; none: Choice | null }> {
-      const groups: { id: Group; label: string }[] = [
-        { id: 'providers', label: 'Providers' },
-        { id: 'local', label: 'Local' },
-        { id: 'custom', label: 'Custom' },
+    async slotMenu(slot: Slot): Promise<{ groups: { id: Group; label: string; detail: string }[]; none: Choice | null }> {
+      // SET-29: each group says what it is, for someone who has not set one up before.
+      const groups: { id: Group; label: string; detail: string }[] = [
+        { id: 'providers', label: 'Providers', detail: 'a hosted model, with your API key: Anthropic, OpenAI, Gemini, OpenRouter…' },
+        { id: 'local', label: 'Local', detail: 'a model running on this computer, in LM Studio or Ollama' },
+        { id: 'custom', label: 'Custom', detail: 'your own endpoint that speaks the OpenAI API' },
       ]
       const none = slot === 1 ? (await choicesFor(1, [{ value: null, label: 'none' }]))[0] : null
       return { groups, none }

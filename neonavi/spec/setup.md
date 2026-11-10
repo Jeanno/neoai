@@ -41,6 +41,12 @@ JSON by hand. Everything it writes goes to `~/.neoai/config.json`.
   now. The user can change the primary or the fallback, then finish.
 - SET-18: Changing a slot first offers three groups: Providers, Local and
   Custom. The fallback also offers "none", and never the primary's pick.
+- SET-29: Each group says in a line what it is: a hosted model with your
+  API key (naming a few providers), a model running on this computer (LM
+  Studio, Ollama), or your own OpenAI-compatible endpoint. When nothing
+  answers, the terminal offers "Choose a model" first, Enter is to "leave
+  without a model", and leaving so says navi can't answer and how to come
+  back (SET-27).
 - SET-17: Picks are saved as `model: [primary, fallback]`, without the
   fallback when it is none. Links after the second are kept, after them. A
   local model is saved as `local:<id>`, a provider or custom model as

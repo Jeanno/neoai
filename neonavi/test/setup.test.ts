@@ -283,9 +283,9 @@ test('providers are listed by name, marking those with a key', async () => {
   await runSetup(f.d)
   for (const name of ['OpenAI', 'Anthropic', 'Google Gemini', 'OpenRouter', 'Groq', 'DeepSeek', 'Mistral', 'xAI'])
     assert.match(f.out(), new RegExp(`\\d+  ${name}`))
-  assert.match(f.out(), /Anthropic  key saved/)
-  assert.match(f.out(), /Groq  key from GROQ_API_KEY/)
-  assert.doesNotMatch(f.out(), /OpenAI  key/)
+  assert.match(f.out(), /Anthropic +key saved/)
+  assert.match(f.out(), /Groq +key from GROQ_API_KEY/)
+  assert.doesNotMatch(f.out(), /OpenAI +key/)
 })
 
 // SET-6, SET-20
@@ -639,4 +639,20 @@ test('a secret answer is read but not echoed', async () => {
   assert.equal(await line.ask('key: ', { secret: true }), 'sk-or-secret')
   line.close()
   assert.ok(!shown.includes('sk-or-secret'))
+})
+
+// SET-29
+test('with nothing answering, leaving says navi cannot answer, and each group says what it is', async () => {
+  const f = fake(['1', '', '', ''])
+  assert.equal(await runSetup(f.d), 1)
+  assert.match(f.out(), /1 {2}Choose a model/)
+  assert.match(f.out(), /Providers {2}a hosted model, with your API key/)
+  assert.match(f.out(), /Local {6}a model running on this computer/)
+  assert.match(f.out(), /Custom {5}your own endpoint/)
+  assert.ok(f.out().includes(`No model yet, so navi can't answer. ${CLI_NEXT_STEP}`), f.out())
+  // Something answering keeps the plain words.
+  const ok = fake([''], { local: ['qwen3-4b'] })
+  await runSetup(ok.d)
+  assert.match(ok.out(), /1 {2}Change the primary model/)
+  assert.doesNotMatch(ok.out(), /No model yet/)
 })

@@ -53,8 +53,10 @@ async function choose(d: SetupIO, title: string, rows: Row[], { filter = false }
   let shown = rows.map((r, i) => ({ ...r, i }))
   for (;;) {
     d.print(`\n${title}`)
+    // Details start in one column, so they read as a second column.
+    const wide = Math.max(0, ...shown.filter((r) => r.detail).map((r) => r.label.length))
     shown.forEach((r, n) => {
-      const detail = r.detail ? dim(`  ${r.detail}`) : ''
+      const detail = r.detail ? dim(`  ${' '.repeat(wide - r.label.length)}${r.detail}`) : ''
       const mark = r.current ? dim('  (current)') : ''
       d.print(`   ${String(n + 1).padStart(2)}  ${r.label}${detail}${mark}`)
     })
@@ -331,9 +333,13 @@ export async function runSetup(d: SetupDeps, { check = false } = {}): Promise<nu
   showStatus(d, status)
 
   for (;;) {
-    d.print(`\n  1  Change the primary model\n  2  Change the fallback`)
-    const c = (await d.ask('\nChoose, or press Enter to finish: '))?.trim().toLowerCase()
-    if (c === undefined || c === '' || c === 'q') return code()
+    // SET-29: with nothing answering, the way out says what it leaves behind.
+    d.print(status.answering ? `\n  1  Change the primary model\n  2  Change the fallback` : `\n  1  Choose a model\n  2  Change the fallback`)
+    const c = (await d.ask(status.answering ? '\nChoose, or press Enter to finish: ' : '\nChoose, or press Enter to leave without a model: '))?.trim().toLowerCase()
+    if (c === undefined || c === '' || c === 'q') {
+      if (!status.answering) d.print(dim(`\nNo model yet, so navi can't answer. ${CLI_NEXT_STEP}`))
+      return code()
+    }
     if (c !== '1' && c !== '2') continue
     const slot: Slot = c === '1' ? 0 : 1
     const got = await pick(d, slot)
